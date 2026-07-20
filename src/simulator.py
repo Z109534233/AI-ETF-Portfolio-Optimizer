@@ -96,7 +96,7 @@ def simulate_investment(
     # Create paths DataFrame (sample for performance)
     sample_n = min(n_simulations, 200)
     sample_indices = np.random.choice(n_simulations, sample_n, replace=False)
-    date_index = pd.date_range(start="today", periods=months + 1, freq="ME")
+    date_index = pd.date_range(start="today", periods=months + 1, freq="M")
     paths_df = pd.DataFrame(
         paths[:, sample_indices],
         index=date_index,

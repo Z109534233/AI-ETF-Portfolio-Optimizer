@@ -247,7 +247,7 @@ def compute_all_metrics(prices: pd.Series, benchmark_prices: pd.Series = None,
 
 def monthly_returns_table(prices: pd.Series) -> pd.DataFrame:
     """Create a year x month table of monthly returns."""
-    monthly = prices.resample("ME").last()
+    monthly = prices.resample("M").last()
     monthly_ret = monthly.pct_change().dropna()
     df = pd.DataFrame({
         "Year": monthly_ret.index.year,

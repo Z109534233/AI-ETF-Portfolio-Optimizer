@@ -25,6 +25,10 @@ from src.charts import (
     risk_return_scatter, rolling_metrics_chart, monthly_heatmap
 )
 from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, get_date_range_defaults
+from src.ui import (
+    render_sidebar_nav, render_sidebar_footer, section_header,
+    chart_card, render_footer, error_state
+)
 
 st.set_page_config(
     page_title="ETF Analysis | AI ETF Portfolio Optimizer",
@@ -36,12 +40,12 @@ load_css()
 
 page_header(
     "ETF Analysis",
-    "Historical price analysis, risk metrics, and correlation insights",
-    "📊"
+    "Historical price analysis, risk metrics, and correlation insights"
 )
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
+    render_sidebar_nav()
     st.markdown("### Analysis Settings")
 
     selected_etfs = st.multiselect(
@@ -69,6 +73,8 @@ with st.sidebar:
     show_risk = st.checkbox("Risk Analysis", value=True)
     show_correlation = st.checkbox("Correlation Analysis", value=True)
 
+    render_sidebar_footer()
+
 # ── Validation ────────────────────────────────────────────────────────────────
 if not selected_etfs:
     st.warning("Please select at least one ETF from the sidebar.")
@@ -88,7 +94,7 @@ with st.spinner("Downloading market data..."):
     )
 
 if raw_prices.empty:
-    st.error("No price data available. Please check your ticker symbols and date range.")
+    error_state("No Price Data Available", "Please check your ticker symbols and date range, then try again.")
     st.stop()
 
 prices = clean_price_data(raw_prices)
@@ -96,11 +102,11 @@ etf_prices = prices[[t for t in selected_etfs if t in prices.columns]]
 bench_prices = prices[benchmark] if benchmark in prices.columns else None
 
 if etf_prices.empty:
-    st.error("No valid price data found for the selected ETFs.")
+    error_state("No Valid Price Data", "No valid price data was found for the selected ETFs.")
     st.stop()
 
 # ── Summary KPIs ──────────────────────────────────────────────────────────────
-st.markdown("### Summary Metrics")
+section_header("Summary Metrics")
 cols = st.columns(len(etf_prices.columns))
 for i, ticker in enumerate(etf_prices.columns):
     with cols[i]:
@@ -114,98 +120,96 @@ for i, ticker in enumerate(etf_prices.columns):
 
 # ── Price Analysis ────────────────────────────────────────────────────────────
 if show_price:
-    st.markdown("---")
-    st.markdown("## Price Analysis")
+    section_header("Price Analysis", "Historical, normalized, cumulative and drawdown views")
+    with chart_card("Price Charts", tag=f"{len(etf_prices.columns)} ETFs"):
+        tab1, tab2, tab3, tab4 = st.tabs(["Historical Prices", "Normalized Comparison", "Cumulative Return", "Drawdown"])
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Historical Prices", "Normalized Comparison", "Cumulative Return", "Drawdown"])
+        with tab1:
+            fig = price_chart(etf_prices, "Historical Adjusted Prices")
+            st.plotly_chart(fig, use_container_width=True)
 
-    with tab1:
-        fig = price_chart(etf_prices, "Historical Adjusted Prices")
-        st.plotly_chart(fig, use_container_width=True)
+        with tab2:
+            fig = normalized_price_chart(etf_prices)
+            st.plotly_chart(fig, use_container_width=True)
 
-    with tab2:
-        fig = normalized_price_chart(etf_prices)
-        st.plotly_chart(fig, use_container_width=True)
+        with tab3:
+            fig = cumulative_return_chart(etf_prices)
+            st.plotly_chart(fig, use_container_width=True)
 
-    with tab3:
-        fig = cumulative_return_chart(etf_prices)
-        st.plotly_chart(fig, use_container_width=True)
-
-    with tab4:
-        fig = drawdown_chart(etf_prices)
-        st.plotly_chart(fig, use_container_width=True)
+        with tab4:
+            fig = drawdown_chart(etf_prices)
+            st.plotly_chart(fig, use_container_width=True)
 
     # Technical indicators for single ETF
     if len(etf_prices.columns) == 1:
         ticker = etf_prices.columns[0]
         p = etf_prices[ticker]
-        st.markdown(f"#### Technical Indicators — {ticker}")
         import plotly.graph_objects as go
         from src.charts import apply_dark_theme
-        bb = bollinger_bands(p)
-        fig_bb = go.Figure()
-        fig_bb.add_trace(go.Scatter(x=p.index, y=p, name=ticker, line=dict(color="#3B82F6", width=2)))
-        fig_bb.add_trace(go.Scatter(x=bb.index, y=bb["Upper"], name="BB Upper",
-                                     line=dict(color="#EF4444", dash="dash", width=1)))
-        fig_bb.add_trace(go.Scatter(x=bb.index, y=bb["Middle"], name="BB Middle",
-                                     line=dict(color="#9CA3AF", dash="dot", width=1)))
-        fig_bb.add_trace(go.Scatter(x=bb.index, y=bb["Lower"], name="BB Lower",
-                                     line=dict(color="#10B981", dash="dash", width=1),
-                                     fill="tonexty", fillcolor="rgba(16,185,129,0.05)"))
-        fig_bb.update_layout(title="Bollinger Bands", xaxis_title="Date", yaxis_title="Price")
-        st.plotly_chart(apply_dark_theme(fig_bb), use_container_width=True)
+        from src.theme import COLORS as _C
+        with chart_card(f"Technical Indicators — {ticker}", "20-day Bollinger Bands"):
+            bb = bollinger_bands(p)
+            fig_bb = go.Figure()
+            fig_bb.add_trace(go.Scatter(x=p.index, y=p, name=ticker, line=dict(color=_C["primary"], width=2)))
+            fig_bb.add_trace(go.Scatter(x=bb.index, y=bb["Upper"], name="BB Upper",
+                                         line=dict(color=_C["danger"], dash="dash", width=1)))
+            fig_bb.add_trace(go.Scatter(x=bb.index, y=bb["Middle"], name="BB Middle",
+                                         line=dict(color=_C["text_muted"], dash="dot", width=1)))
+            fig_bb.add_trace(go.Scatter(x=bb.index, y=bb["Lower"], name="BB Lower",
+                                         line=dict(color=_C["success"], dash="dash", width=1),
+                                         fill="tonexty", fillcolor="rgba(52,211,153,0.05)"))
+            fig_bb.update_layout(title="Bollinger Bands", xaxis_title="Date", yaxis_title="Price")
+            st.plotly_chart(apply_dark_theme(fig_bb), use_container_width=True)
 
 # ── Return Analysis ───────────────────────────────────────────────────────────
 if show_returns:
-    st.markdown("---")
-    st.markdown("## Return Analysis")
+    section_header("Return Analysis", "Distribution, seasonality and rolling performance")
+    with chart_card("Return Metrics"):
+        tab1, tab2, tab3, tab4 = st.tabs(["Distribution", "Monthly Heatmap", "Rolling Metrics", "Annual Performance"])
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Distribution", "Monthly Heatmap", "Rolling Metrics", "Annual Performance"])
-
-    with tab1:
-        fig = return_distribution_chart(etf_prices)
-        st.plotly_chart(fig, use_container_width=True)
-
-    with tab2:
-        for ticker in etf_prices.columns:
-            p = etf_prices[ticker].dropna()
-            if len(p) > 30:
-                monthly_ret = monthly_returns_table(p)
-                if not monthly_ret.empty:
-                    st.markdown(f"**{ticker} Monthly Returns**")
-                    fig = monthly_heatmap(monthly_ret)
-                    st.plotly_chart(fig, use_container_width=True)
-
-    with tab3:
-        ticker_select = st.selectbox("Select ETF for rolling metrics", etf_prices.columns.tolist(), key="rolling_ticker")
-        window = st.slider("Rolling Window (days)", 21, 252, 63)
-        p = etf_prices[ticker_select].dropna()
-        if len(p) > window:
-            fig = rolling_metrics_chart(p, window)
+        with tab1:
+            fig = return_distribution_chart(etf_prices)
             st.plotly_chart(fig, use_container_width=True)
 
-    with tab4:
-        returns_df = etf_prices.pct_change().dropna()
-        annual_returns = returns_df.resample("YE").apply(lambda x: (1 + x).prod() - 1) * 100
-        if not annual_returns.empty:
-            import plotly.graph_objects as go
-            from src.charts import apply_dark_theme, CHART_COLORS
-            fig = go.Figure()
-            for i, col in enumerate(annual_returns.columns):
-                fig.add_trace(go.Bar(
-                    x=annual_returns.index.year,
-                    y=annual_returns[col],
-                    name=col,
-                    marker_color=CHART_COLORS[i % len(CHART_COLORS)]
-                ))
-            fig.update_layout(title="Annual Performance (%)", xaxis_title="Year",
-                               yaxis_title="Annual Return (%)", barmode="group")
-            st.plotly_chart(apply_dark_theme(fig), use_container_width=True)
+        with tab2:
+            for ticker in etf_prices.columns:
+                p = etf_prices[ticker].dropna()
+                if len(p) > 30:
+                    monthly_ret = monthly_returns_table(p)
+                    if not monthly_ret.empty:
+                        st.markdown(f"**{ticker} Monthly Returns**")
+                        fig = monthly_heatmap(monthly_ret)
+                        st.plotly_chart(fig, use_container_width=True)
+
+        with tab3:
+            ticker_select = st.selectbox("Select ETF for rolling metrics", etf_prices.columns.tolist(), key="rolling_ticker")
+            window = st.slider("Rolling Window (days)", 21, 252, 63)
+            p = etf_prices[ticker_select].dropna()
+            if len(p) > window:
+                fig = rolling_metrics_chart(p, window)
+                st.plotly_chart(fig, use_container_width=True)
+
+        with tab4:
+            returns_df = etf_prices.pct_change().dropna()
+            annual_returns = returns_df.resample("A").apply(lambda x: (1 + x).prod() - 1) * 100
+            if not annual_returns.empty:
+                import plotly.graph_objects as go
+                from src.charts import apply_dark_theme, CHART_COLORS
+                fig = go.Figure()
+                for i, col in enumerate(annual_returns.columns):
+                    fig.add_trace(go.Bar(
+                        x=annual_returns.index.year,
+                        y=annual_returns[col],
+                        name=col,
+                        marker_color=CHART_COLORS[i % len(CHART_COLORS)]
+                    ))
+                fig.update_layout(title="Annual Performance (%)", xaxis_title="Year",
+                                   yaxis_title="Annual Return (%)", barmode="group")
+                st.plotly_chart(apply_dark_theme(fig), use_container_width=True)
 
 # ── Risk Analysis ─────────────────────────────────────────────────────────────
 if show_risk:
-    st.markdown("---")
-    st.markdown("## Risk Analysis")
+    section_header("Risk Analysis", "Cross-ETF risk metrics and risk/return positioning")
 
     metrics_data = []
     for ticker in etf_prices.columns:
@@ -219,31 +223,32 @@ if show_risk:
         metrics_data.append(row)
 
     if metrics_data:
-        metrics_df = pd.DataFrame(metrics_data).set_index("Ticker")
-        st.dataframe(metrics_df.T, use_container_width=True)
+        with chart_card("Risk Metrics Table"):
+            metrics_df = pd.DataFrame(metrics_data).set_index("Ticker")
+            st.dataframe(metrics_df.T, use_container_width=True)
 
-    fig = risk_return_scatter(etf_prices)
-    st.plotly_chart(fig, use_container_width=True)
+    with chart_card("Risk vs Return"):
+        fig = risk_return_scatter(etf_prices)
+        st.plotly_chart(fig, use_container_width=True)
 
 # ── Correlation Analysis ──────────────────────────────────────────────────────
 if show_correlation:
-    st.markdown("---")
-    st.markdown("## Correlation Analysis")
+    section_header("Correlation Analysis", "Cross-ETF correlation and covariance structure")
 
     if len(etf_prices.columns) >= 2:
-        corr = correlation_matrix(etf_prices)
-        fig = correlation_heatmap(corr)
-        st.plotly_chart(fig, use_container_width=True)
+        with chart_card("Correlation Heatmap"):
+            corr = correlation_matrix(etf_prices)
+            fig = correlation_heatmap(corr)
+            st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown("**Covariance Matrix (Annualized)**")
-        cov = covariance_matrix(etf_prices)
-        st.dataframe(cov.style.format("{:.6f}"), use_container_width=True)
+        with chart_card("Covariance Matrix", "Annualized"):
+            cov = covariance_matrix(etf_prices)
+            st.dataframe(cov.style.format("{:.6f}"), use_container_width=True)
     else:
         st.info("Select at least 2 ETFs to view correlation analysis.")
 
 # ── Downloads ─────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("## Download Data")
+section_header("Download Data")
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -262,3 +267,4 @@ with col3:
         st.download_button("Download Metrics (CSV)", csv3, "etf_metrics.csv", "text/csv")
 
 disclaimer_box()
+render_footer()

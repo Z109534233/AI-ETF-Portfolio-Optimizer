@@ -31,6 +31,11 @@ from src.utils import (
     load_css, page_header, disclaimer_box, dataframe_to_csv,
     weights_to_dataframe, get_date_range_defaults, metric_card_html
 )
+from src.ui import (
+    render_sidebar_nav, render_sidebar_footer, section_header,
+    chart_card, render_footer, error_state
+)
+from src.theme import COLORS
 
 st.set_page_config(
     page_title="Portfolio Optimizer | AI ETF Portfolio Optimizer",
@@ -43,12 +48,12 @@ init_database()
 
 page_header(
     "Portfolio Optimizer",
-    "Mean-variance optimization, efficient frontier, and portfolio backtesting",
-    "⚡"
+    "Mean-variance optimization, efficient frontier, and portfolio backtesting"
 )
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
+    render_sidebar_nav()
     st.markdown("### Portfolio Settings")
 
     selected_etfs = st.multiselect(
@@ -90,6 +95,8 @@ with st.sidebar:
 
     run_btn = st.button("Run Optimization", type="primary", use_container_width=True)
 
+    render_sidebar_footer()
+
 # ── Validation ────────────────────────────────────────────────────────────────
 if len(selected_etfs) < 2:
     st.warning("Please select at least 2 ETFs to run portfolio optimization.")
@@ -109,14 +116,14 @@ if run_btn or st.session_state.opt_result is None:
     with st.spinner("Downloading data and running optimization..."):
         raw_prices = download_etf_data(selected_etfs, str(start_date), str(end_date))
         if raw_prices.empty:
-            st.error("No price data available. Check ticker symbols and date range.")
+            error_state("No Price Data Available", "Check your ticker symbols and date range, then try again.")
             st.stop()
 
         prices_df = clean_price_data(raw_prices)
         prices_df = prices_df[[t for t in selected_etfs if t in prices_df.columns]]
 
         if prices_df.empty or len(prices_df) < 20:
-            st.error("Insufficient price data for optimization.")
+            error_state("Insufficient Price Data", "Widen the date range or choose different ETFs for optimization.")
             st.stop()
 
         result = run_optimization(
@@ -149,36 +156,36 @@ sharpe = result["sharpe_ratio"]
 div_ratio = result.get("diversification_ratio", 1.0)
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-st.markdown("### Optimization Results")
+section_header("Optimization Results")
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    st.markdown(metric_card_html("Expected Annual Return", f"{exp_ret:.2%}", color="#10B981"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Expected Annual Return", f"{exp_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Expected Volatility", f"{exp_vol:.2%}", color="#EF4444"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Expected Volatility", f"{exp_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Sharpe Ratio", f"{sharpe:.2f}", color="#3B82F6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Sharpe Ratio", f"{sharpe:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html("Diversification Ratio", f"{div_ratio:.2f}", color="#8B5CF6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Diversification Ratio", f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 with col5:
-    st.markdown(metric_card_html("Method", optimization_method, color="#F59E0B"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Method", optimization_method, color=COLORS["warning"]), unsafe_allow_html=True)
 
 # ── Allocation Table & Donut ──────────────────────────────────────────────────
-st.markdown("---")
+section_header("Portfolio Allocation")
 col_left, col_right = st.columns([1, 1])
 
 with col_left:
-    st.markdown("### Portfolio Allocation")
-    alloc_df = weights_to_dataframe(weights, investment_amount)
-    st.dataframe(alloc_df[["Ticker", "Weight", "Allocation ($)"]].style.hide(axis="index"),
-                 use_container_width=True)
+    with chart_card("Allocation Table", f"{len(weights)} holdings"):
+        alloc_df = weights_to_dataframe(weights, investment_amount)
+        st.dataframe(alloc_df[["Ticker", "Weight", "Allocation ($)"]].style.hide(axis="index"),
+                     use_container_width=True)
 
 with col_right:
-    fig_donut = allocation_donut_chart(weights, f"Portfolio Allocation — {optimization_method}")
-    st.plotly_chart(fig_donut, use_container_width=True)
+    with chart_card("Allocation Breakdown", optimization_method):
+        fig_donut = allocation_donut_chart(weights, "")
+        st.plotly_chart(fig_donut, use_container_width=True)
 
 # ── Efficient Frontier ────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### Efficient Frontier & Monte Carlo Simulation")
+section_header("Efficient Frontier & Monte Carlo Simulation", f"{n_simulations:,} simulated portfolios")
 
 with st.spinner("Running Monte Carlo simulation..."):
     returns_df = prices_df.pct_change().dropna()
@@ -188,12 +195,12 @@ with st.spinner("Running Monte Carlo simulation..."):
 
     mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
 
-fig_ef = efficient_frontier_chart(mc_df, weights, None, mean_returns, cov)
-st.plotly_chart(fig_ef, use_container_width=True)
+with chart_card("Efficient Frontier"):
+    fig_ef = efficient_frontier_chart(mc_df, weights, None, mean_returns, cov)
+    st.plotly_chart(fig_ef, use_container_width=True)
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### Historical Backtest")
+section_header("Historical Backtest", f"{optimization_method} vs. Equal Weight")
 
 backtest_df = backtest_portfolio(prices_df, weights, investment_amount)
 equal_weights = {t: 1.0 / len(weights) for t in weights.keys()}
@@ -201,32 +208,34 @@ equal_backtest_df = backtest_portfolio(prices_df, equal_weights, investment_amou
 
 if not backtest_df.empty:
     import plotly.graph_objects as go
-    fig_bt = go.Figure()
-    fig_bt.add_trace(go.Scatter(
-        x=backtest_df.index, y=backtest_df["Portfolio Value"],
-        name=f"{optimization_method}", line=dict(color="#3B82F6", width=2.5)
-    ))
-    if not equal_backtest_df.empty:
+    with chart_card("Portfolio Backtest vs Equal Weight"):
+        fig_bt = go.Figure()
         fig_bt.add_trace(go.Scatter(
-            x=equal_backtest_df.index, y=equal_backtest_df["Portfolio Value"],
-            name="Equal Weight", line=dict(color="#9CA3AF", width=1.5, dash="dash")
+            x=backtest_df.index, y=backtest_df["Portfolio Value"],
+            name=f"{optimization_method}", line=dict(color=COLORS["primary"], width=2.5)
         ))
-    fig_bt.update_layout(title="Portfolio Backtest vs Equal Weight",
-                          xaxis_title="Date", yaxis_title="Portfolio Value ($)")
-    st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True)
+        if not equal_backtest_df.empty:
+            fig_bt.add_trace(go.Scatter(
+                x=equal_backtest_df.index, y=equal_backtest_df["Portfolio Value"],
+                name="Equal Weight", line=dict(color=COLORS["text_muted"], width=1.5, dash="dash")
+            ))
+        fig_bt.update_layout(title="Portfolio Backtest vs Equal Weight",
+                              xaxis_title="Date", yaxis_title="Portfolio Value ($)")
+        st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True)
 
     # Drawdown comparison
-    fig_dd = go.Figure()
-    dd = drawdown_series(backtest_df["Portfolio Value"]) * 100
-    fig_dd.add_trace(go.Scatter(x=dd.index, y=dd, fill="tozeroy",
-                                 name=optimization_method, line=dict(color="#EF4444", width=1.5)))
-    if not equal_backtest_df.empty:
-        dd_eq = drawdown_series(equal_backtest_df["Portfolio Value"]) * 100
-        fig_dd.add_trace(go.Scatter(x=dd_eq.index, y=dd_eq, fill="tozeroy",
-                                     name="Equal Weight", line=dict(color="#9CA3AF", width=1.5),
-                                     fillcolor="rgba(156,163,175,0.1)"))
-    fig_dd.update_layout(title="Drawdown Comparison (%)", xaxis_title="Date", yaxis_title="Drawdown (%)")
-    st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True)
+    with chart_card("Drawdown Comparison"):
+        fig_dd = go.Figure()
+        dd = drawdown_series(backtest_df["Portfolio Value"]) * 100
+        fig_dd.add_trace(go.Scatter(x=dd.index, y=dd, fill="tozeroy",
+                                     name=optimization_method, line=dict(color=COLORS["danger"], width=1.5)))
+        if not equal_backtest_df.empty:
+            dd_eq = drawdown_series(equal_backtest_df["Portfolio Value"]) * 100
+            fig_dd.add_trace(go.Scatter(x=dd_eq.index, y=dd_eq, fill="tozeroy",
+                                         name="Equal Weight", line=dict(color=COLORS["text_muted"], width=1.5),
+                                         fillcolor="rgba(148,163,184,0.1)"))
+        fig_dd.update_layout(title="Drawdown Comparison (%)", xaxis_title="Date", yaxis_title="Drawdown (%)")
+        st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True)
 
     # Backtest metrics
     bt_metrics = {
@@ -244,8 +253,7 @@ if not backtest_df.empty:
             st.metric(k, v)
 
 # ── Save & Download ───────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### Save & Export")
+section_header("Save & Export")
 
 col1, col2, col3 = st.columns(3)
 
@@ -310,3 +318,4 @@ with col3:
         st.warning(f"PDF generation unavailable: {e}")
 
 disclaimer_box()
+render_footer()

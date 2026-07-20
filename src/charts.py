@@ -9,50 +9,50 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
-
-# Color palette
-COLORS = {
-    "primary": "#3B82F6",
-    "secondary": "#10B981",
-    "accent": "#F59E0B",
-    "danger": "#EF4444",
-    "purple": "#8B5CF6",
-    "pink": "#EC4899",
-    "bg": "#0B1220",
-    "panel": "#111827",
-    "border": "#1F2937",
-    "text": "#F8FAFC",
-    "muted": "#9CA3AF",
-}
-
-CHART_COLORS = [
-    "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
-    "#EC4899", "#06B6D4", "#84CC16", "#F97316", "#6366F1"
-]
+from src.theme import COLORS, CHART_COLORS, FONT_FAMILY
 
 DARK_TEMPLATE = dict(
     layout=dict(
-        paper_bgcolor=COLORS["bg"],
-        plot_bgcolor=COLORS["panel"],
-        font=dict(color=COLORS["text"], family="Inter, sans-serif", size=12),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=COLORS["text"], family=FONT_FAMILY, size=12),
         xaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"], showgrid=True),
         yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"], showgrid=True),
-        legend=dict(bgcolor=COLORS["panel"], bordercolor=COLORS["border"], borderwidth=1),
+        legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
         margin=dict(l=50, r=30, t=50, b=50),
     )
 )
 
 
 def apply_dark_theme(fig: go.Figure) -> go.Figure:
-    """Apply consistent dark theme to any Plotly figure."""
+    """Apply the shared design-system theme to any Plotly figure.
+
+    Backgrounds are transparent so charts blend seamlessly into the
+    surrounding chart_card() container rather than showing a mismatched panel.
+    """
     fig.update_layout(
-        paper_bgcolor=COLORS["bg"],
-        plot_bgcolor=COLORS["panel"],
-        font=dict(color=COLORS["text"], family="Inter, sans-serif"),
-        xaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"]),
-        yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"]),
-        legend=dict(bgcolor=COLORS["panel"], bordercolor=COLORS["border"], borderwidth=1),
-        margin=dict(l=50, r=30, t=50, b=50),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=COLORS["text_secondary"], family=FONT_FAMILY, size=12),
+        title=dict(font=dict(color=COLORS["text"], size=14)),
+        xaxis=dict(
+            gridcolor=COLORS["border"], linecolor=COLORS["border"],
+            zerolinecolor=COLORS["border"], tickfont=dict(color=COLORS["text_secondary"], size=11),
+        ),
+        yaxis=dict(
+            gridcolor=COLORS["border"], linecolor=COLORS["border"],
+            zerolinecolor=COLORS["border"], tickfont=dict(color=COLORS["text_secondary"], size=11),
+        ),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)",
+            font=dict(color=COLORS["text_secondary"], size=11),
+        ),
+        hoverlabel=dict(
+            bgcolor=COLORS["surface_2"], bordercolor=COLORS["border"],
+            font=dict(color=COLORS["text"], family=FONT_FAMILY, size=12),
+        ),
+        margin=dict(l=48, r=24, t=44, b=44),
+        colorway=CHART_COLORS,
     )
     return fig
 
@@ -297,7 +297,7 @@ def rolling_metrics_chart(prices: pd.Series, window: int = 63,
                         vertical_spacing=0.1)
     fig.add_trace(go.Scatter(
         x=rolling_ret.index, y=rolling_ret,
-        name="Rolling Return", line=dict(color=COLORS["secondary"], width=2)
+        name="Rolling Return", line=dict(color=COLORS["success"], width=2)
     ), row=1, col=1)
     fig.add_trace(go.Scatter(
         x=rolling_vol.index, y=rolling_vol,
@@ -374,8 +374,8 @@ def future_value_distribution_chart(final_values: np.ndarray,
     ))
     fig.add_vline(x=total_contributed, line_dash="dash", line_color=COLORS["danger"],
                   annotation_text="Total Contributed", annotation_font_color=COLORS["danger"])
-    fig.add_vline(x=float(np.median(final_values)), line_dash="dash", line_color=COLORS["secondary"],
-                  annotation_text="Median", annotation_font_color=COLORS["secondary"])
+    fig.add_vline(x=float(np.median(final_values)), line_dash="dash", line_color=COLORS["success"],
+                  annotation_text="Median", annotation_font_color=COLORS["success"])
     fig.update_layout(
         title="Distribution of Final Portfolio Values",
         xaxis_title="Final Value ($)", yaxis_title="Frequency"

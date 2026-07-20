@@ -19,6 +19,8 @@ from src.charts import (
     feature_importance_chart, confusion_matrix_chart, apply_dark_theme, CHART_COLORS
 )
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
+from src.ui import render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer, error_state
+from src.theme import COLORS
 
 st.set_page_config(
     page_title="Machine Learning | AI ETF Portfolio Optimizer",
@@ -30,14 +32,14 @@ load_css()
 
 page_header(
     "Machine Learning",
-    "Educational ML demonstration for ETF return direction prediction",
-    "🤖"
+    "Educational ML demonstration for ETF return direction prediction"
 )
 
 st.warning(f"**Educational Disclaimer**: {DISCLAIMER}")
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
+    render_sidebar_nav()
     st.markdown("### Model Settings")
 
     selected_etf = st.selectbox(
@@ -78,6 +80,8 @@ with st.sidebar:
 
     run_btn = st.button("Train Model", type="primary", use_container_width=True)
 
+    render_sidebar_footer()
+
 # ── Run ML Pipeline ───────────────────────────────────────────────────────────
 if "ml_result" not in st.session_state:
     st.session_state.ml_result = None
@@ -88,12 +92,12 @@ if run_btn or st.session_state.ml_result is None:
     with st.spinner(f"Downloading data and training {model_type}..."):
         raw_prices = download_etf_data([selected_etf], str(start_date), str(end_date))
         if raw_prices.empty:
-            st.error("No price data available. Check ticker and date range.")
+            error_state("No Price Data Available", "Check the ticker symbol and date range, then try again.")
             st.stop()
 
         prices_df = clean_price_data(raw_prices)
         if selected_etf not in prices_df.columns:
-            st.error(f"No data for {selected_etf}.")
+            error_state("Ticker Not Found", f"No data available for '{selected_etf}'.")
             st.stop()
 
         prices = prices_df[selected_etf].dropna()
@@ -109,7 +113,7 @@ if result is None:
     st.stop()
 
 if result.get("error"):
-    st.error(f"ML Error: {result['error']}")
+    error_state("Model Training Failed", str(result["error"]))
     st.stop()
 
 ticker_used = st.session_state.ml_ticker
@@ -122,138 +126,140 @@ test_index = result["test_index"]
 model_name = result["model_name"]
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-st.markdown(f"### {model_name} Results — {ticker_used}")
-st.caption(f"Training samples: {result['train_size']} | Test samples: {result['test_size']}")
+section_header(f"{model_name} Results — {ticker_used}",
+               f"Training samples: {result['train_size']} | Test samples: {result['test_size']}")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown(metric_card_html("Accuracy", f"{metrics['Accuracy']:.2%}", color="#3B82F6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Accuracy", f"{metrics['Accuracy']:.2%}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Precision", f"{metrics['Precision']:.2%}", color="#10B981"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Precision", f"{metrics['Precision']:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Recall", f"{metrics['Recall']:.2%}", color="#8B5CF6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Recall", f"{metrics['Recall']:.2%}", color=COLORS["purple"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html("F1 Score", f"{metrics['F1 Score']:.2%}", color="#F59E0B"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("F1 Score", f"{metrics['F1 Score']:.2%}", color=COLORS["warning"]), unsafe_allow_html=True)
 
 if metrics.get("ROC AUC") != "N/A":
     col1, col2 = st.columns([1, 3])
     with col1:
-        st.markdown(metric_card_html("ROC AUC", f"{metrics['ROC AUC']:.4f}", color="#06B6D4"), unsafe_allow_html=True)
+        st.markdown(metric_card_html("ROC AUC", f"{metrics['ROC AUC']:.4f}", color=COLORS["cyan"]), unsafe_allow_html=True)
 
 # ── Charts ────────────────────────────────────────────────────────────────────
-st.markdown("---")
-tab1, tab2, tab3, tab4 = st.tabs(["Feature Importance", "Confusion Matrix", "Predictions", "Model Limitations"])
+section_header("Model Diagnostics")
+with chart_card("Model Detail"):
+    tab1, tab2, tab3, tab4 = st.tabs(["Feature Importance", "Confusion Matrix", "Predictions", "Model Limitations"])
 
-with tab1:
-    fig_fi = feature_importance_chart(feature_importance)
-    st.plotly_chart(fig_fi, use_container_width=True)
+    with tab1:
+        fig_fi = feature_importance_chart(feature_importance)
+        st.plotly_chart(fig_fi, use_container_width=True)
 
-    st.markdown("**Top 10 Features**")
-    fi_df = feature_importance.head(10).reset_index()
-    fi_df.columns = ["Feature", "Importance Score"]
-    fi_df["Importance Score"] = fi_df["Importance Score"].apply(lambda x: f"{x:.4f}")
-    st.dataframe(fi_df.set_index("Feature"), use_container_width=True)
+        st.markdown("**Top 10 Features**")
+        fi_df = feature_importance.head(10).reset_index()
+        fi_df.columns = ["Feature", "Importance Score"]
+        fi_df["Importance Score"] = fi_df["Importance Score"].apply(lambda x: f"{x:.4f}")
+        st.dataframe(fi_df.set_index("Feature"), use_container_width=True)
 
-with tab2:
-    cm = metrics["Confusion Matrix"]
-    fig_cm = confusion_matrix_chart(cm)
-    st.plotly_chart(fig_cm, use_container_width=True)
+    with tab2:
+        cm = metrics["Confusion Matrix"]
+        fig_cm = confusion_matrix_chart(cm)
+        st.plotly_chart(fig_cm, use_container_width=True)
 
-    st.markdown("**Confusion Matrix Interpretation**")
-    st.markdown("""
+        st.markdown("**Confusion Matrix Interpretation**")
+        st.markdown("""
     | | Predicted Down | Predicted Up |
     |---|---|---|
     | **Actual Down** | True Negative | False Positive |
     | **Actual Up** | False Negative | True Positive |
     """)
 
-with tab3:
-    # Actual vs predicted direction
-    if len(test_index) > 0:
-        prices_series = st.session_state.ml_prices
-        test_prices = prices_series.loc[prices_series.index.isin(test_index)]
+    with tab3:
+        # Actual vs predicted direction
+        if len(test_index) > 0:
+            prices_series = st.session_state.ml_prices
+            test_prices = prices_series.loc[prices_series.index.isin(test_index)]
 
-        if not test_prices.empty:
-            fig_pred = go.Figure()
-            fig_pred.add_trace(go.Scatter(
-                x=test_prices.index, y=test_prices.values,
-                name=ticker_used, line=dict(color="#9CA3AF", width=1.5)
+            if not test_prices.empty:
+                fig_pred = go.Figure()
+                fig_pred.add_trace(go.Scatter(
+                    x=test_prices.index, y=test_prices.values,
+                    name=ticker_used, line=dict(color=COLORS["text_muted"], width=1.5)
+                ))
+
+                # Mark correct and incorrect predictions
+                correct_up = [test_index[i] for i in range(len(y_test))
+                              if y_pred[i] == 1 and y_test.iloc[i] == 1]
+                correct_down = [test_index[i] for i in range(len(y_test))
+                                if y_pred[i] == 0 and y_test.iloc[i] == 0]
+                wrong = [test_index[i] for i in range(len(y_test))
+                         if y_pred[i] != y_test.iloc[i]]
+
+                def get_prices_at(idx_list):
+                    valid = [i for i in idx_list if i in test_prices.index]
+                    return test_prices.loc[valid] if valid else pd.Series(dtype=float)
+
+                cp_up = get_prices_at(correct_up)
+                cp_down = get_prices_at(correct_down)
+                cp_wrong = get_prices_at(wrong)
+
+                if not cp_up.empty:
+                    fig_pred.add_trace(go.Scatter(
+                        x=cp_up.index, y=cp_up.values, mode="markers",
+                        name="Correct Up", marker=dict(color=COLORS["success"], size=6, symbol="triangle-up")
+                    ))
+                if not cp_down.empty:
+                    fig_pred.add_trace(go.Scatter(
+                        x=cp_down.index, y=cp_down.values, mode="markers",
+                        name="Correct Down", marker=dict(color=COLORS["primary"], size=6, symbol="triangle-down")
+                    ))
+                if not cp_wrong.empty:
+                    fig_pred.add_trace(go.Scatter(
+                        x=cp_wrong.index, y=cp_wrong.values, mode="markers",
+                        name="Incorrect", marker=dict(color=COLORS["danger"], size=6, symbol="x")
+                    ))
+
+                fig_pred.update_layout(title="Actual vs Predicted Direction (Test Set)",
+                                        xaxis_title="Date", yaxis_title="Price")
+                st.plotly_chart(apply_dark_theme(fig_pred), use_container_width=True)
+
+            # Prediction probability over time
+            prob_series = pd.Series(y_prob, index=test_index[:len(y_prob)])
+            fig_prob = go.Figure()
+            fig_prob.add_trace(go.Scatter(
+                x=prob_series.index, y=prob_series.values,
+                name="P(Up)", line=dict(color=COLORS["primary"], width=1.5),
+                fill="tozeroy", fillcolor="rgba(59,130,246,0.1)"
             ))
+            fig_prob.add_hline(y=0.5, line_dash="dash", line_color=COLORS["text_muted"], opacity=0.6)
+            fig_prob.update_layout(title="Prediction Probability P(Up Direction)",
+                                    xaxis_title="Date", yaxis_title="Probability",
+                                    yaxis=dict(range=[0, 1]))
+            st.plotly_chart(apply_dark_theme(fig_prob), use_container_width=True)
 
-            # Mark correct and incorrect predictions
-            correct_up = [test_index[i] for i in range(len(y_test))
-                          if y_pred[i] == 1 and y_test.iloc[i] == 1]
-            correct_down = [test_index[i] for i in range(len(y_test))
-                            if y_pred[i] == 0 and y_test.iloc[i] == 0]
-            wrong = [test_index[i] for i in range(len(y_test))
-                     if y_pred[i] != y_test.iloc[i]]
+    with tab4:
+        st.markdown("### Model Limitations & Caveats")
+        st.markdown("""
+        **This machine learning model is for educational demonstration only.**
 
-            def get_prices_at(idx_list):
-                valid = [i for i in idx_list if i in test_prices.index]
-                return test_prices.loc[valid] if valid else pd.Series(dtype=float)
+        **Known Limitations:**
 
-            cp_up = get_prices_at(correct_up)
-            cp_down = get_prices_at(correct_down)
-            cp_wrong = get_prices_at(wrong)
+        1. **Market Efficiency**: Financial markets are highly competitive. If a simple ML model could reliably predict price direction, arbitrage would quickly eliminate the opportunity.
 
-            if not cp_up.empty:
-                fig_pred.add_trace(go.Scatter(
-                    x=cp_up.index, y=cp_up.values, mode="markers",
-                    name="Correct Up", marker=dict(color="#10B981", size=6, symbol="triangle-up")
-                ))
-            if not cp_down.empty:
-                fig_pred.add_trace(go.Scatter(
-                    x=cp_down.index, y=cp_down.values, mode="markers",
-                    name="Correct Down", marker=dict(color="#3B82F6", size=6, symbol="triangle-down")
-                ))
-            if not cp_wrong.empty:
-                fig_pred.add_trace(go.Scatter(
-                    x=cp_wrong.index, y=cp_wrong.values, mode="markers",
-                    name="Incorrect", marker=dict(color="#EF4444", size=6, symbol="x")
-                ))
+        2. **Non-Stationarity**: Financial time series are non-stationary — patterns that worked historically may not persist in the future.
 
-            fig_pred.update_layout(title="Actual vs Predicted Direction (Test Set)",
-                                    xaxis_title="Date", yaxis_title="Price")
-            st.plotly_chart(apply_dark_theme(fig_pred), use_container_width=True)
+        3. **Overfitting Risk**: Even with time-series splitting, models may capture noise rather than signal. The test accuracy may not generalise to live trading.
 
-        # Prediction probability over time
-        prob_series = pd.Series(y_prob, index=test_index[:len(y_prob)])
-        fig_prob = go.Figure()
-        fig_prob.add_trace(go.Scatter(
-            x=prob_series.index, y=prob_series.values,
-            name="P(Up)", line=dict(color="#3B82F6", width=1.5),
-            fill="tozeroy", fillcolor="rgba(59,130,246,0.1)"
-        ))
-        fig_prob.add_hline(y=0.5, line_dash="dash", line_color="#9CA3AF", opacity=0.6)
-        fig_prob.update_layout(title="Prediction Probability P(Up Direction)",
-                                xaxis_title="Date", yaxis_title="Probability",
-                                yaxis=dict(range=[0, 1]))
-        st.plotly_chart(apply_dark_theme(fig_prob), use_container_width=True)
+        4. **Feature Engineering**: The features used (RSI, MACD, etc.) are based on price history only. Fundamental data, macroeconomic factors, and news sentiment are not included.
 
-with tab4:
-    st.markdown("### Model Limitations & Caveats")
-    st.markdown("""
-    **This machine learning model is for educational demonstration only.**
+        5. **Transaction Costs**: Real trading involves bid-ask spreads, commissions, and market impact that are not modelled here.
 
-    **Known Limitations:**
+        6. **Regime Changes**: A model trained on bull-market data may perform poorly in bear markets and vice versa.
 
-    1. **Market Efficiency**: Financial markets are highly competitive. If a simple ML model could reliably predict price direction, arbitrage would quickly eliminate the opportunity.
+        7. **Look-Ahead Bias**: Despite careful time-series splitting, subtle look-ahead bias may still exist in feature engineering.
 
-    2. **Non-Stationarity**: Financial time series are non-stationary — patterns that worked historically may not persist in the future.
+        **Accuracy Benchmark**: A random classifier achieves ~50% accuracy. Meaningful outperformance requires sustained accuracy above 55% after transaction costs.
 
-    3. **Overfitting Risk**: Even with time-series splitting, models may capture noise rather than signal. The test accuracy may not generalise to live trading.
-
-    4. **Feature Engineering**: The features used (RSI, MACD, etc.) are based on price history only. Fundamental data, macroeconomic factors, and news sentiment are not included.
-
-    5. **Transaction Costs**: Real trading involves bid-ask spreads, commissions, and market impact that are not modelled here.
-
-    6. **Regime Changes**: A model trained on bull-market data may perform poorly in bear markets and vice versa.
-
-    7. **Look-Ahead Bias**: Despite careful time-series splitting, subtle look-ahead bias may still exist in feature engineering.
-
-    **Accuracy Benchmark**: A random classifier achieves ~50% accuracy. Meaningful outperformance requires sustained accuracy above 55% after transaction costs.
-
-    **Conclusion**: Use this tool to understand ML concepts in finance, not to make real investment decisions.
-    """)
+        **Conclusion**: Use this tool to understand ML concepts in finance, not to make real investment decisions.
+        """)
 
 disclaimer_box()
+render_footer()

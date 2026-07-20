@@ -20,6 +20,7 @@ from src.financial_metrics import (
 from src.ai_advisor import generate_ai_analysis, DISCLAIMER, get_openai_client
 from src.charts import allocation_donut_chart
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
+from src.ui import render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer
 
 st.set_page_config(
     page_title="AI Advisor | AI ETF Portfolio Optimizer",
@@ -31,8 +32,7 @@ load_css()
 
 page_header(
     "AI Portfolio Advisor",
-    "Educational portfolio analysis and explanation",
-    "🧠"
+    "Educational portfolio analysis and explanation"
 )
 
 # Check OpenAI availability
@@ -50,6 +50,7 @@ st.warning(f"**Important**: {DISCLAIMER}")
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
+    render_sidebar_nav()
     st.markdown("### Portfolio Configuration")
 
     selected_etfs = st.multiselect(
@@ -91,6 +92,8 @@ with st.sidebar:
     end_date = st.date_input("Data End Date", value=default_end)
 
     analyse_btn = st.button("Generate Analysis", type="primary", use_container_width=True)
+
+    render_sidebar_footer()
 
 # ── Validation ────────────────────────────────────────────────────────────────
 if not selected_etfs:
@@ -153,25 +156,26 @@ if result is None:
     st.stop()
 
 # ── Display Results ───────────────────────────────────────────────────────────
+section_header("Analysis Results")
 col_left, col_right = st.columns([2, 1])
 
 with col_left:
-    st.markdown("### Portfolio Analysis")
-    st.markdown(result["analysis"])
+    with chart_card("Portfolio Analysis", tag="AI-Generated" if client else "Rule-Based"):
+        st.markdown(result["analysis"])
 
 with col_right:
-    st.markdown("### Portfolio Overview")
-    fig_donut = allocation_donut_chart(result["weights"])
-    st.plotly_chart(fig_donut, use_container_width=True)
+    with chart_card("Portfolio Overview"):
+        fig_donut = allocation_donut_chart(result["weights"], "")
+        st.plotly_chart(fig_donut, use_container_width=True)
 
-    if result["metrics"]:
-        st.markdown("**Key Metrics**")
-        for k, v in result["metrics"].items():
-            if k not in ["Number of Holdings", "Investment Horizon", "Risk Tolerance", "Investment Objective"]:
-                st.metric(k, v)
+        if result["metrics"]:
+            st.markdown("**Key Metrics**")
+            for k, v in result["metrics"].items():
+                if k not in ["Number of Holdings", "Investment Horizon", "Risk Tolerance", "Investment Objective"]:
+                    st.metric(k, v)
 
 # ── Regenerate ────────────────────────────────────────────────────────────────
-st.markdown("---")
+section_header("Actions")
 col1, col2 = st.columns(2)
 with col1:
     if st.button("Regenerate Analysis"):
@@ -189,3 +193,4 @@ with col2:
         )
 
 disclaimer_box()
+render_footer()

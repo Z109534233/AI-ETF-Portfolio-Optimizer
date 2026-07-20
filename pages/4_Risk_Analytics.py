@@ -26,6 +26,11 @@ from src.charts import (
     rolling_metrics_chart, apply_dark_theme, CHART_COLORS
 )
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
+from src.ui import (
+    render_sidebar_nav, render_sidebar_footer, section_header,
+    chart_card, render_footer, error_state, style_signed_columns
+)
+from src.theme import COLORS
 
 st.set_page_config(
     page_title="Risk Analytics | AI ETF Portfolio Optimizer",
@@ -37,12 +42,12 @@ load_css()
 
 page_header(
     "Risk Analytics",
-    "Portfolio risk metrics, drawdown analysis, and stress testing",
-    "🛡️"
+    "Portfolio risk metrics, drawdown analysis, and stress testing"
 )
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
+    render_sidebar_nav()
     st.markdown("### Portfolio Settings")
 
     selected_etfs = st.multiselect(
@@ -77,6 +82,8 @@ with st.sidebar:
     start_date = st.date_input("Start Date", value=default_start)
     end_date = st.date_input("End Date", value=default_end)
 
+    render_sidebar_footer()
+
 # ── Validation ────────────────────────────────────────────────────────────────
 if not selected_etfs:
     st.warning("Please select at least one ETF.")
@@ -88,7 +95,7 @@ with st.spinner("Downloading market data..."):
     raw_prices = download_etf_data(all_tickers, str(start_date), str(end_date))
 
 if raw_prices.empty:
-    st.error("No price data available.")
+    error_state("No Price Data Available", "Please check your ticker symbols and date range.")
     st.stop()
 
 prices = clean_price_data(raw_prices)
@@ -96,7 +103,7 @@ etf_prices = prices[[t for t in selected_etfs if t in prices.columns]]
 bench_prices = prices[benchmark].dropna() if benchmark in prices.columns else None
 
 if etf_prices.empty:
-    st.error("No valid price data for selected ETFs.")
+    error_state("No Valid Price Data", "No valid price data was found for the selected ETFs.")
     st.stop()
 
 # Build portfolio price series
@@ -108,7 +115,7 @@ port_returns = (returns_df * weights_arr).sum(axis=1)
 port_prices = (1 + port_returns).cumprod() * 100
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-st.markdown("### Portfolio Risk Metrics")
+section_header("Portfolio Risk Metrics")
 
 ann_ret = annualized_return(port_prices)
 ann_vol = annualized_volatility(port_prices)
@@ -122,17 +129,17 @@ dd_dev = downside_deviation(port_prices, risk_free_rate)
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown(metric_card_html("Annualized Return", f"{ann_ret:.2%}", color="#10B981"), unsafe_allow_html=True)
-    st.markdown(metric_card_html("Annualized Volatility", f"{ann_vol:.2%}", color="#EF4444"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Annualized Return", f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Annualized Volatility", f"{ann_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Sharpe Ratio", f"{sr:.2f}", color="#3B82F6"), unsafe_allow_html=True)
-    st.markdown(metric_card_html("Sortino Ratio", f"{so_r:.2f}", color="#8B5CF6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Sharpe Ratio", f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Sortino Ratio", f"{so_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Maximum Drawdown", f"{mdd:.2%}", color="#EF4444"), unsafe_allow_html=True)
-    st.markdown(metric_card_html("Calmar Ratio", f"{cal:.2f}", color="#F59E0B"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Maximum Drawdown", f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Calmar Ratio", f"{cal:.2f}", color=COLORS["warning"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html("VaR (95%)", f"{var95:.2%}", color="#EF4444"), unsafe_allow_html=True)
-    st.markdown(metric_card_html("CVaR (95%)", f"{cvar95:.2%}", color="#EF4444"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("VaR (95%)", f"{var95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html("CVaR (95%)", f"{cvar95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 
 # Benchmark metrics
 if bench_prices is not None and len(bench_prices) > 10:
@@ -141,118 +148,117 @@ if bench_prices is not None and len(bench_prices) > 10:
     te = tracking_error(port_prices, bench_prices)
     ir = information_ratio(port_prices, bench_prices)
 
-    st.markdown("### Benchmark-Relative Metrics")
+    section_header("Benchmark-Relative Metrics", f"vs. {benchmark}")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.markdown(metric_card_html("Beta", f"{b:.2f}", color="#3B82F6"), unsafe_allow_html=True)
+        st.markdown(metric_card_html("Beta", f"{b:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
     with col2:
-        st.markdown(metric_card_html("Alpha", f"{a:.2%}", color="#10B981" if a >= 0 else "#EF4444"), unsafe_allow_html=True)
+        st.markdown(metric_card_html("Alpha", f"{a:.2%}", color=COLORS["success"] if a >= 0 else COLORS["danger"]), unsafe_allow_html=True)
     with col3:
-        st.markdown(metric_card_html("Tracking Error", f"{te:.2%}", color="#F59E0B"), unsafe_allow_html=True)
+        st.markdown(metric_card_html("Tracking Error", f"{te:.2%}", color=COLORS["warning"]), unsafe_allow_html=True)
     with col4:
-        st.markdown(metric_card_html("Information Ratio", f"{ir:.2f}", color="#8B5CF6"), unsafe_allow_html=True)
+        st.markdown(metric_card_html("Information Ratio", f"{ir:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 
 # ── Charts ────────────────────────────────────────────────────────────────────
-st.markdown("---")
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Drawdown", "Rolling Metrics", "Return Distribution", "Correlation", "Risk Contribution"])
+section_header("Risk Charts")
+with chart_card("Risk Detail"):
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Drawdown", "Rolling Metrics", "Return Distribution", "Correlation", "Risk Contribution"])
 
-with tab1:
-    fig_dd = drawdown_chart(etf_prices)
-    st.plotly_chart(fig_dd, use_container_width=True)
+    with tab1:
+        fig_dd = drawdown_chart(etf_prices)
+        st.plotly_chart(fig_dd, use_container_width=True)
 
-    # Portfolio drawdown
-    dd_series = drawdown_series(port_prices) * 100
-    fig_port_dd = go.Figure()
-    fig_port_dd.add_trace(go.Scatter(
-        x=dd_series.index, y=dd_series,
-        fill="tozeroy", name="Portfolio Drawdown",
-        line=dict(color="#EF4444", width=2),
-        fillcolor="rgba(239,68,68,0.15)"
-    ))
-    fig_port_dd.update_layout(title="Portfolio Drawdown (%)", xaxis_title="Date", yaxis_title="Drawdown (%)")
-    st.plotly_chart(apply_dark_theme(fig_port_dd), use_container_width=True)
+        # Portfolio drawdown
+        dd_series = drawdown_series(port_prices) * 100
+        fig_port_dd = go.Figure()
+        fig_port_dd.add_trace(go.Scatter(
+            x=dd_series.index, y=dd_series,
+            fill="tozeroy", name="Portfolio Drawdown",
+            line=dict(color=COLORS["danger"], width=2),
+            fillcolor="rgba(248,113,113,0.15)"
+        ))
+        fig_port_dd.update_layout(title="Portfolio Drawdown (%)", xaxis_title="Date", yaxis_title="Drawdown (%)")
+        st.plotly_chart(apply_dark_theme(fig_port_dd), use_container_width=True)
 
-with tab2:
-    col_sel = st.selectbox("Select ETF for rolling metrics", etf_prices.columns.tolist(), key="risk_rolling")
-    window = st.slider("Rolling Window (days)", 21, 252, 63, key="risk_window")
-    p = etf_prices[col_sel].dropna()
-    if len(p) > window:
-        fig_roll = rolling_metrics_chart(p, window)
-        st.plotly_chart(fig_roll, use_container_width=True)
+    with tab2:
+        col_sel = st.selectbox("Select ETF for rolling metrics", etf_prices.columns.tolist(), key="risk_rolling")
+        window = st.slider("Rolling Window (days)", 21, 252, 63, key="risk_window")
+        p = etf_prices[col_sel].dropna()
+        if len(p) > window:
+            fig_roll = rolling_metrics_chart(p, window)
+            st.plotly_chart(fig_roll, use_container_width=True)
 
-    # Rolling beta
-    if bench_prices is not None and len(bench_prices) > window:
-        ret_etf = p.pct_change().dropna()
-        ret_bench = bench_prices.pct_change().dropna()
-        common = ret_etf.index.intersection(ret_bench.index)
-        if len(common) > window:
-            rolling_beta = pd.Series(index=common, dtype=float)
-            for i in range(window, len(common)):
-                r_e = ret_etf.loc[common[i - window:i]]
-                r_b = ret_bench.loc[common[i - window:i]]
-                cov_mat = np.cov(r_e, r_b)
-                rolling_beta.iloc[i] = cov_mat[0, 1] / cov_mat[1, 1] if cov_mat[1, 1] != 0 else 1.0
-            rolling_beta = rolling_beta.dropna()
-            fig_beta = go.Figure()
-            fig_beta.add_trace(go.Scatter(x=rolling_beta.index, y=rolling_beta,
-                                           name=f"Rolling Beta ({window}d)",
-                                           line=dict(color="#3B82F6", width=2)))
-            fig_beta.add_hline(y=1.0, line_dash="dash", line_color="#9CA3AF", opacity=0.6)
-            fig_beta.update_layout(title=f"Rolling Beta vs {benchmark} ({window}-Day Window)",
-                                    xaxis_title="Date", yaxis_title="Beta")
-            st.plotly_chart(apply_dark_theme(fig_beta), use_container_width=True)
+        # Rolling beta
+        if bench_prices is not None and len(bench_prices) > window:
+            ret_etf = p.pct_change().dropna()
+            ret_bench = bench_prices.pct_change().dropna()
+            common = ret_etf.index.intersection(ret_bench.index)
+            if len(common) > window:
+                rolling_beta = pd.Series(index=common, dtype=float)
+                for i in range(window, len(common)):
+                    r_e = ret_etf.loc[common[i - window:i]]
+                    r_b = ret_bench.loc[common[i - window:i]]
+                    cov_mat = np.cov(r_e, r_b)
+                    rolling_beta.iloc[i] = cov_mat[0, 1] / cov_mat[1, 1] if cov_mat[1, 1] != 0 else 1.0
+                rolling_beta = rolling_beta.dropna()
+                fig_beta = go.Figure()
+                fig_beta.add_trace(go.Scatter(x=rolling_beta.index, y=rolling_beta,
+                                               name=f"Rolling Beta ({window}d)",
+                                               line=dict(color=COLORS["primary"], width=2)))
+                fig_beta.add_hline(y=1.0, line_dash="dash", line_color=COLORS["text_muted"], opacity=0.6)
+                fig_beta.update_layout(title=f"Rolling Beta vs {benchmark} ({window}-Day Window)",
+                                        xaxis_title="Date", yaxis_title="Beta")
+                st.plotly_chart(apply_dark_theme(fig_beta), use_container_width=True)
 
-with tab3:
-    fig_dist = return_distribution_chart(etf_prices)
-    st.plotly_chart(fig_dist, use_container_width=True)
+    with tab3:
+        fig_dist = return_distribution_chart(etf_prices)
+        st.plotly_chart(fig_dist, use_container_width=True)
 
-    # Portfolio return distribution
-    fig_port_dist = go.Figure()
-    fig_port_dist.add_trace(go.Histogram(
-        x=port_returns * 100, nbinsx=60,
-        marker_color="#3B82F6", opacity=0.8, name="Portfolio Returns"
-    ))
-    fig_port_dist.add_vline(x=float(var95 * 100), line_dash="dash", line_color="#EF4444",
-                             annotation_text=f"VaR 95%: {var95:.2%}")
-    fig_port_dist.add_vline(x=float(cvar95 * 100), line_dash="dash", line_color="#F59E0B",
-                             annotation_text=f"CVaR 95%: {cvar95:.2%}")
-    fig_port_dist.update_layout(title="Portfolio Daily Return Distribution",
-                                 xaxis_title="Daily Return (%)", yaxis_title="Frequency")
-    st.plotly_chart(apply_dark_theme(fig_port_dist), use_container_width=True)
+        # Portfolio return distribution
+        fig_port_dist = go.Figure()
+        fig_port_dist.add_trace(go.Histogram(
+            x=port_returns * 100, nbinsx=60,
+            marker_color=COLORS["primary"], opacity=0.8, name="Portfolio Returns"
+        ))
+        fig_port_dist.add_vline(x=float(var95 * 100), line_dash="dash", line_color=COLORS["danger"],
+                                 annotation_text=f"VaR 95%: {var95:.2%}")
+        fig_port_dist.add_vline(x=float(cvar95 * 100), line_dash="dash", line_color=COLORS["warning"],
+                                 annotation_text=f"CVaR 95%: {cvar95:.2%}")
+        fig_port_dist.update_layout(title="Portfolio Daily Return Distribution",
+                                     xaxis_title="Daily Return (%)", yaxis_title="Frequency")
+        st.plotly_chart(apply_dark_theme(fig_port_dist), use_container_width=True)
 
-with tab4:
-    if len(etf_prices.columns) >= 2:
-        corr = correlation_matrix(etf_prices)
-        fig_corr = correlation_heatmap(corr)
-        st.plotly_chart(fig_corr, use_container_width=True)
-    else:
-        st.info("Select at least 2 ETFs for correlation analysis.")
+    with tab4:
+        if len(etf_prices.columns) >= 2:
+            corr = correlation_matrix(etf_prices)
+            fig_corr = correlation_heatmap(corr)
+            st.plotly_chart(fig_corr, use_container_width=True)
+        else:
+            st.info("Select at least 2 ETFs for correlation analysis.")
 
-with tab5:
-    # Risk contribution
-    if len(etf_prices.columns) >= 2:
-        cov = covariance_matrix(etf_prices).values
-        cov += np.eye(len(etf_prices.columns)) * 1e-8
-        port_vol_val = np.sqrt(weights_arr @ cov @ weights_arr)
-        if port_vol_val > 0:
-            marginal = cov @ weights_arr / port_vol_val
-            risk_contrib = weights_arr * marginal
-            risk_contrib_pct = risk_contrib / risk_contrib.sum()
+    with tab5:
+        # Risk contribution
+        if len(etf_prices.columns) >= 2:
+            cov = covariance_matrix(etf_prices).values
+            cov += np.eye(len(etf_prices.columns)) * 1e-8
+            port_vol_val = np.sqrt(weights_arr @ cov @ weights_arr)
+            if port_vol_val > 0:
+                marginal = cov @ weights_arr / port_vol_val
+                risk_contrib = weights_arr * marginal
+                risk_contrib_pct = risk_contrib / risk_contrib.sum()
 
-            fig_rc = go.Figure(go.Bar(
-                x=etf_prices.columns.tolist(),
-                y=risk_contrib_pct * 100,
-                marker_color=CHART_COLORS[:len(etf_prices.columns)],
-                hovertemplate="<b>%{x}</b><br>Risk Contribution: %{y:.2f}%<extra></extra>"
-            ))
-            fig_rc.update_layout(title="Risk Contribution by ETF (%)",
-                                  xaxis_title="ETF", yaxis_title="Risk Contribution (%)")
-            st.plotly_chart(apply_dark_theme(fig_rc), use_container_width=True)
+                fig_rc = go.Figure(go.Bar(
+                    x=etf_prices.columns.tolist(),
+                    y=risk_contrib_pct * 100,
+                    marker_color=CHART_COLORS[:len(etf_prices.columns)],
+                    hovertemplate="<b>%{x}</b><br>Risk Contribution: %{y:.2f}%<extra></extra>"
+                ))
+                fig_rc.update_layout(title="Risk Contribution by ETF (%)",
+                                      xaxis_title="ETF", yaxis_title="Risk Contribution (%)")
+                st.plotly_chart(apply_dark_theme(fig_rc), use_container_width=True)
 
 # ── Stress Tests ──────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### Stress Test Scenarios")
-st.caption("*Simulated stress test results for educational purposes. Actual market impacts may differ.*")
+section_header("Stress Test Scenarios", "Simulated stress test results for educational purposes. Actual market impacts may differ.")
 
 stress_scenarios = {
     "Equity Market Decline (-30%)": -0.30,
@@ -281,7 +287,12 @@ for scenario_name, market_shock in stress_scenarios.items():
         "Impact on $10,000": f"${dollar_impact:,.0f}",
     })
 
-stress_df = pd.DataFrame(stress_rows)
-st.dataframe(stress_df.set_index("Scenario"), use_container_width=True)
+stress_df = pd.DataFrame(stress_rows).set_index("Scenario")
+with chart_card("Stress Test Impact"):
+    st.dataframe(
+        style_signed_columns(stress_df, ["Estimated Portfolio Impact", "Impact on $10,000"]),
+        use_container_width=True,
+    )
 
 disclaimer_box()
+render_footer()

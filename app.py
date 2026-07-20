@@ -2,7 +2,6 @@
 AI ETF Portfolio Optimizer
 Main landing page — professional FinTech dashboard.
 """
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -25,6 +24,11 @@ from src.charts import (
     risk_return_scatter, cumulative_return_chart, apply_dark_theme
 )
 from src.utils import load_css, disclaimer_box, metric_card_html, ensure_directories
+from src.ui import (
+    render_sidebar_nav, render_sidebar_footer, hero_section,
+    section_header, chart_card, feature_card, render_footer
+)
+from src.theme import COLORS
 
 # ── Page Configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -44,58 +48,9 @@ ensure_directories()
 init_database()
 load_css()
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style="
-    background: linear-gradient(135deg, #0B1220 0%, #111827 50%, #0B1220 100%);
-    border-bottom: 2px solid #1F2937;
-    padding: 32px 0 24px 0;
-    margin-bottom: 8px;
-">
-    <h1 style="
-        color: #F8FAFC;
-        font-size: 36px;
-        font-weight: 800;
-        margin: 0 0 8px 0;
-        letter-spacing: -0.5px;
-    ">
-        <span style="color:#3B82F6;">AI</span> ETF Portfolio Optimizer
-    </h1>
-    <p style="color:#9CA3AF;font-size:16px;margin:0 0 4px 0;">
-        AI-Powered ETF Portfolio Analytics and Optimization Platform
-    </p>
-    <p style="color:#6B7280;font-size:13px;margin:0;">
-        Analyse ETF performance, measure portfolio risk, compare allocation strategies,
-        simulate long-term investment outcomes, and generate explainable portfolio insights.
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div style="
-    background: rgba(239,68,68,0.08);
-    border: 1px solid rgba(239,68,68,0.3);
-    border-radius: 6px;
-    padding: 8px 16px;
-    margin: 8px 0 16px 0;
-    color: #FCA5A5;
-    font-size: 12px;
-">
-    ⚠️ <strong>Educational Use Only</strong>: This platform is a portfolio project for academic purposes.
-    All analysis and projections are for educational demonstration only and do not constitute financial advice.
-</div>
-""", unsafe_allow_html=True)
-
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
-    <div style="text-align:center;padding:16px 0 8px 0;">
-        <div style="font-size:32px;">📊</div>
-        <div style="color:#3B82F6;font-weight:700;font-size:16px;">AI ETF Optimizer</div>
-        <div style="color:#6B7280;font-size:11px;">Portfolio Analytics Platform</div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("---")
+    render_sidebar_nav()
     st.markdown("### Quick Settings")
 
     demo_etfs = st.multiselect(
@@ -109,17 +64,10 @@ with st.sidebar:
     end_date = datetime.date.today()
     start_date = datetime.date(end_date.year - 3, end_date.month, end_date.day)
 
-    st.markdown("---")
-    st.markdown("### Navigation")
-    st.markdown("""
-    - 📊 **ETF Analysis** — Price, returns & risk
-    - ⚡ **Portfolio Optimizer** — Efficient frontier
-    - 📈 **Investment Simulator** — Monte Carlo
-    - 🛡️ **Risk Analytics** — Drawdown & VaR
-    - 🤖 **Machine Learning** — Direction prediction
-    - 🧠 **AI Advisor** — Portfolio explanation
-    - 📚 **Portfolio History** — Saved portfolios
-    """)
+    render_sidebar_footer()
+
+# ── Hero ──────────────────────────────────────────────────────────────────────
+hero_section()
 
 # ── Load Dashboard Data ───────────────────────────────────────────────────────
 if not demo_etfs:
@@ -156,146 +104,87 @@ else:
     ann_ret, ann_vol, sr, mdd, port_value, div_r = 0.10, 0.15, 0.67, -0.12, 10800, 1.25
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-st.markdown("### Portfolio Dashboard")
+section_header("Portfolio Dashboard", "Equal-weight preview across your selected ETFs")
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 with col1:
-    st.markdown(metric_card_html("Portfolio Value", f"${port_value:,.0f}", color="#3B82F6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Portfolio Value", f"${port_value:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Annualized Return", f"{ann_ret:.2%}", color="#10B981"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Annualized Return", f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Annualized Volatility", f"{ann_vol:.2%}", color="#EF4444"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Annualized Volatility", f"{ann_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html("Sharpe Ratio", f"{sr:.2f}", color="#3B82F6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Sharpe Ratio", f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col5:
-    st.markdown(metric_card_html("Max Drawdown", f"{mdd:.2%}", color="#EF4444"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Max Drawdown", f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col6:
-    st.markdown(metric_card_html("Diversification Score", f"{div_r:.2f}", color="#8B5CF6"), unsafe_allow_html=True)
+    st.markdown(metric_card_html("Diversification Score", f"{div_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 
 # ── Main Charts ───────────────────────────────────────────────────────────────
-st.markdown("---")
 col_left, col_right = st.columns([3, 2])
 
 with col_left:
-    st.markdown("#### ETF Performance Comparison")
-    if not etf_prices.empty:
-        fig_norm = normalized_price_chart(etf_prices)
-        st.plotly_chart(fig_norm, use_container_width=True)
+    with chart_card("ETF Performance Comparison", "Normalized price, base = 100"):
+        if not etf_prices.empty:
+            fig_norm = normalized_price_chart(etf_prices)
+            st.plotly_chart(fig_norm, use_container_width=True)
 
 with col_right:
-    st.markdown("#### Portfolio Allocation")
-    weights_dict = {t: 1.0 / len(etf_prices.columns) for t in etf_prices.columns}
-    fig_donut = allocation_donut_chart(weights_dict, "Equal Weight Portfolio")
-    st.plotly_chart(fig_donut, use_container_width=True)
+    with chart_card("Portfolio Allocation", "Equal weight across holdings"):
+        weights_dict = {t: 1.0 / len(etf_prices.columns) for t in etf_prices.columns}
+        fig_donut = allocation_donut_chart(weights_dict, "")
+        st.plotly_chart(fig_donut, use_container_width=True)
 
 col_left2, col_right2 = st.columns([3, 2])
 
 with col_left2:
-    st.markdown("#### Portfolio Growth (Equal Weight, $10,000)")
-    if not etf_prices.empty:
-        fig_cum = cumulative_return_chart(etf_prices)
-        st.plotly_chart(fig_cum, use_container_width=True)
+    with chart_card("Portfolio Growth", "Equal weight, starting value $10,000"):
+        if not etf_prices.empty:
+            fig_cum = cumulative_return_chart(etf_prices)
+            st.plotly_chart(fig_cum, use_container_width=True)
 
 with col_right2:
-    st.markdown("#### Risk vs Return")
-    if not etf_prices.empty:
-        fig_rr = risk_return_scatter(etf_prices)
-        st.plotly_chart(fig_rr, use_container_width=True)
+    with chart_card("Risk vs Return", "Annualized volatility vs. return"):
+        if not etf_prices.empty:
+            fig_rr = risk_return_scatter(etf_prices)
+            st.plotly_chart(fig_rr, use_container_width=True)
 
 # ── Feature Overview ──────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### Platform Features")
+section_header("Platform Features", "Seven analytics modules covering the full portfolio workflow")
 
 features = [
-    {
-        "icon": "📊",
-        "title": "ETF Analysis",
-        "desc": "Historical price charts, return distributions, risk metrics, correlation heatmaps, and technical indicators for any ETF.",
-        "page": "ETF_Analysis",
-    },
-    {
-        "icon": "⚡",
-        "title": "Portfolio Optimizer",
-        "desc": "Mean-variance optimization with 5 methods: Equal Weight, Max Sharpe, Min Volatility, Target Return, and Risk Parity.",
-        "page": "Portfolio_Optimizer",
-    },
-    {
-        "icon": "📈",
-        "title": "Investment Simulator",
-        "desc": "Monte Carlo simulation for long-term investment projections with inflation adjustment and scenario comparison.",
-        "page": "Investment_Simulator",
-    },
-    {
-        "icon": "🛡️",
-        "title": "Risk Analytics",
-        "desc": "Comprehensive risk metrics including VaR, CVaR, Beta, Alpha, Tracking Error, and stress test scenarios.",
-        "page": "Risk_Analytics",
-    },
-    {
-        "icon": "🤖",
-        "title": "Machine Learning",
-        "desc": "Educational ML demonstration using Logistic Regression and Random Forest for ETF direction prediction.",
-        "page": "Machine_Learning",
-    },
-    {
-        "icon": "🧠",
-        "title": "AI Advisor",
-        "desc": "AI-powered portfolio explanation using OpenAI GPT with rule-based fallback when API key is not configured.",
-        "page": "AI_Advisor",
-    },
-    {
-        "icon": "📚",
-        "title": "Portfolio History",
-        "desc": "Save, view, compare, and manage portfolios stored in a local SQLite database with CSV export.",
-        "page": "Portfolio_History",
-    },
+    {"icon": "bar-chart", "title": "ETF Analysis",
+     "desc": "Historical price charts, return distributions, risk metrics, correlation heatmaps, and technical indicators for any ETF."},
+    {"icon": "target", "title": "Portfolio Optimizer",
+     "desc": "Mean-variance optimization with 5 methods: Equal Weight, Max Sharpe, Min Volatility, Target Return, and Risk Parity."},
+    {"icon": "trending-up", "title": "Investment Simulator",
+     "desc": "Monte Carlo simulation for long-term investment projections with inflation adjustment and scenario comparison."},
+    {"icon": "shield", "title": "Risk Analytics",
+     "desc": "Comprehensive risk metrics including VaR, CVaR, Beta, Alpha, Tracking Error, and stress test scenarios."},
+    {"icon": "activity", "title": "Machine Learning",
+     "desc": "Educational ML demonstration using Logistic Regression and Random Forest for ETF direction prediction."},
+    {"icon": "layers", "title": "AI Advisor",
+     "desc": "AI-powered portfolio explanation using OpenAI GPT with rule-based fallback when API key is not configured."},
+    {"icon": "pie-chart", "title": "Portfolio History",
+     "desc": "Save, view, compare, and manage portfolios stored in a local SQLite database with CSV export."},
 ]
 
 cols = st.columns(3)
 for i, feature in enumerate(features):
     with cols[i % 3]:
-        st.markdown(f"""
-        <div style="
-            background: #111827;
-            border: 1px solid #1F2937;
-            border-top: 3px solid #3B82F6;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 6px 0;
-            height: 140px;
-        ">
-            <div style="font-size:24px;margin-bottom:6px;">{feature['icon']}</div>
-            <div style="color:#F8FAFC;font-weight:700;font-size:14px;margin-bottom:4px;">{feature['title']}</div>
-            <div style="color:#9CA3AF;font-size:12px;line-height:1.4;">{feature['desc']}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(feature_card(feature["title"], feature["desc"], feature["icon"]), unsafe_allow_html=True)
 
 # ── Tech Stack ────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown("### Technology Stack")
+section_header("Technology Stack")
 tech_cols = st.columns(6)
-tech_stack = [
-    ("Python 3.11", "🐍"), ("Streamlit", "⚡"), ("Pandas / NumPy", "📊"),
-    ("Plotly", "📈"), ("SciPy / Scikit-learn", "🔬"), ("SQLite / SQLAlchemy", "🗄️"),
-]
-for i, (tech, icon) in enumerate(tech_stack):
+tech_stack = ["Python 3.12", "Streamlit", "Pandas / NumPy", "Plotly", "SciPy / Scikit-learn", "SQLite / SQLAlchemy"]
+for i, tech in enumerate(tech_stack):
     with tech_cols[i]:
         st.markdown(f"""
-        <div style="
-            background:#111827;border:1px solid #1F2937;border-radius:6px;
-            padding:10px;text-align:center;
-        ">
-            <div style="font-size:20px;">{icon}</div>
-            <div style="color:#9CA3AF;font-size:11px;margin-top:4px;">{tech}</div>
+        <div class="card" style="text-align:center;padding:12px 8px;">
+            <div style="color:{COLORS['text']};font-size:12px;font-weight:600;">{tech}</div>
         </div>
         """, unsafe_allow_html=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
-st.markdown("---")
 disclaimer_box()
-st.markdown("""
-<div style="text-align:center;color:#4B5563;font-size:11px;padding:8px 0;">
-    AI ETF Portfolio Optimizer — Portfolio Project for UK Master's Programme Applications
-    (Business Analytics / Finance Analytics / FinTech / Data Analytics) |
-    Built with Python & Streamlit
-</div>
-""", unsafe_allow_html=True)
+render_footer()

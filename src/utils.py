@@ -9,6 +9,9 @@ import numpy as np
 import streamlit as st
 from datetime import datetime, date
 
+from src.theme import COLORS, icon_svg
+from src.ui import kpi_card as _kpi_card
+
 
 def load_css(css_path: str = None) -> None:
     """Load custom CSS into Streamlit. Silently skips if file not found."""
@@ -40,40 +43,23 @@ def format_number(value: float, decimals: int = 2) -> str:
 
 def metric_card_html(label: str, value: str, delta: str = None,
                       color: str = "#3B82F6") -> str:
-    """Generate HTML for a styled KPI metric card."""
-    delta_html = ""
-    if delta:
-        delta_color = "#10B981" if not delta.startswith("-") else "#EF4444"
-        delta_html = f'<p style="color:{delta_color};font-size:12px;margin:0;">{delta}</p>'
-    return f"""
-    <div style="
-        background: #111827;
-        border: 1px solid #1F2937;
-        border-left: 4px solid {color};
-        border-radius: 8px;
-        padding: 16px 20px;
-        margin: 4px 0;
-    ">
-        <p style="color:#9CA3AF;font-size:12px;margin:0 0 4px 0;text-transform:uppercase;letter-spacing:0.05em;">{label}</p>
-        <p style="color:#F8FAFC;font-size:22px;font-weight:700;margin:0;">{value}</p>
-        {delta_html}
-    </div>
+    """Generate HTML for a styled KPI metric card (icon + trend aware).
+
+    Kept backward compatible with existing call sites across all pages:
+    `delta` starting with '+'/'-' renders as a colored trend indicator,
+    otherwise it is shown as plain supporting text.
     """
+    trend = delta if delta and delta.strip()[:1] in ("+", "-") else None
+    sub = delta if delta and trend is None else None
+    return _kpi_card(label, value, sub=sub, color=color, trend=trend)
 
 
 def page_header(title: str, subtitle: str = None, icon: str = None) -> None:
-    """Render a styled page header."""
-    icon_html = f'<span style="font-size:28px;margin-right:10px;">{icon}</span>' if icon else ""
-    subtitle_html = f'<p style="color:#9CA3AF;font-size:14px;margin:4px 0 0 0;">{subtitle}</p>' if subtitle else ""
+    """Render a styled page header with a clear title/subtitle hierarchy."""
+    subtitle_html = f'<p class="page-subtitle">{subtitle}</p>' if subtitle else ""
     st.markdown(f"""
-    <div style="
-        padding: 20px 0 16px 0;
-        border-bottom: 2px solid #1F2937;
-        margin-bottom: 24px;
-    ">
-        <h1 style="color:#F8FAFC;font-size:26px;font-weight:700;margin:0;">
-            {icon_html}{title}
-        </h1>
+    <div class="page-header">
+        <h1 class="page-title">{title}</h1>
         {subtitle_html}
     </div>
     """, unsafe_allow_html=True)
@@ -83,12 +69,12 @@ def info_box(text: str, color: str = "#3B82F6") -> None:
     """Render a styled info box."""
     st.markdown(f"""
     <div style="
-        background: rgba(59,130,246,0.1);
+        background: {COLORS['primary_soft']};
         border: 1px solid {color};
-        border-radius: 6px;
+        border-radius: 8px;
         padding: 12px 16px;
         margin: 8px 0;
-        color: #F8FAFC;
+        color: {COLORS['text']};
         font-size: 13px;
     ">
         {text}
@@ -107,15 +93,20 @@ def disclaimer_box(text: str = None) -> None:
         )
     st.markdown(f"""
     <div style="
-        background: rgba(239,68,68,0.08);
-        border: 1px solid rgba(239,68,68,0.4);
-        border-radius: 6px;
+        background: {COLORS['warning_soft']};
+        border: 1px solid rgba(251,191,36,0.35);
+        border-radius: 8px;
         padding: 12px 16px;
         margin: 8px 0;
-        color: #FCA5A5;
+        color: #FDE68A;
         font-size: 12px;
+        line-height: 1.5;
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
     ">
-        ⚠️ {text}
+        <span style="flex-shrink:0;margin-top:1px;">{icon_svg('shield', 14, '#FDE68A')}</span>
+        <span>{text}</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -164,9 +155,9 @@ def validate_weights(weights: dict) -> bool:
 def color_metric(value: float, positive_is_good: bool = True) -> str:
     """Return green or red color string based on value sign."""
     if positive_is_good:
-        return "#10B981" if value >= 0 else "#EF4444"
+        return COLORS["success"] if value >= 0 else COLORS["danger"]
     else:
-        return "#EF4444" if value >= 0 else "#10B981"
+        return COLORS["danger"] if value >= 0 else COLORS["success"]
 
 
 def ensure_directories() -> None:
