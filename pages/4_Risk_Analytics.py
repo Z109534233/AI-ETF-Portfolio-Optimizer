@@ -166,7 +166,7 @@ with chart_card("Risk Detail"):
 
     with tab1:
         fig_dd = drawdown_chart(etf_prices)
-        st.plotly_chart(fig_dd, use_container_width=True)
+        st.plotly_chart(fig_dd, use_container_width=True, key="risk_drawdown_all")
 
         # Portfolio drawdown
         dd_series = drawdown_series(port_prices) * 100
@@ -178,7 +178,7 @@ with chart_card("Risk Detail"):
             fillcolor="rgba(248,113,113,0.15)"
         ))
         fig_port_dd.update_layout(title="Portfolio Drawdown (%)", xaxis_title="Date", yaxis_title="Drawdown (%)")
-        st.plotly_chart(apply_dark_theme(fig_port_dd), use_container_width=True)
+        st.plotly_chart(apply_dark_theme(fig_port_dd), use_container_width=True, key="risk_drawdown_portfolio")
 
     with tab2:
         col_sel = st.selectbox("Select ETF for rolling metrics", etf_prices.columns.tolist(), key="risk_rolling")
@@ -186,7 +186,7 @@ with chart_card("Risk Detail"):
         p = etf_prices[col_sel].dropna()
         if len(p) > window:
             fig_roll = rolling_metrics_chart(p, window)
-            st.plotly_chart(fig_roll, use_container_width=True)
+            st.plotly_chart(fig_roll, use_container_width=True, key="risk_rolling_metrics")
 
         # Rolling beta
         if bench_prices is not None and len(bench_prices) > window:
@@ -208,11 +208,11 @@ with chart_card("Risk Detail"):
                 fig_beta.add_hline(y=1.0, line_dash="dash", line_color=COLORS["text_muted"], opacity=0.6)
                 fig_beta.update_layout(title=f"Rolling Beta vs {benchmark} ({window}-Day Window)",
                                         xaxis_title="Date", yaxis_title="Beta")
-                st.plotly_chart(apply_dark_theme(fig_beta), use_container_width=True)
+                st.plotly_chart(apply_dark_theme(fig_beta), use_container_width=True, key="risk_rolling_beta")
 
     with tab3:
         fig_dist = return_distribution_chart(etf_prices)
-        st.plotly_chart(fig_dist, use_container_width=True)
+        st.plotly_chart(fig_dist, use_container_width=True, key="risk_return_distribution_all")
 
         # Portfolio return distribution
         fig_port_dist = go.Figure()
@@ -226,13 +226,13 @@ with chart_card("Risk Detail"):
                                  annotation_text=f"CVaR 95%: {cvar95:.2%}")
         fig_port_dist.update_layout(title="Portfolio Daily Return Distribution",
                                      xaxis_title="Daily Return (%)", yaxis_title="Frequency")
-        st.plotly_chart(apply_dark_theme(fig_port_dist), use_container_width=True)
+        st.plotly_chart(apply_dark_theme(fig_port_dist), use_container_width=True, key="risk_return_distribution_portfolio")
 
     with tab4:
         if len(etf_prices.columns) >= 2:
             corr = correlation_matrix(etf_prices)
             fig_corr = correlation_heatmap(corr)
-            st.plotly_chart(fig_corr, use_container_width=True)
+            st.plotly_chart(fig_corr, use_container_width=True, key="risk_correlation_heatmap")
         else:
             st.info("Select at least 2 ETFs for correlation analysis.")
 
@@ -255,7 +255,7 @@ with chart_card("Risk Detail"):
                 ))
                 fig_rc.update_layout(title="Risk Contribution by ETF (%)",
                                       xaxis_title="ETF", yaxis_title="Risk Contribution (%)")
-                st.plotly_chart(apply_dark_theme(fig_rc), use_container_width=True)
+                st.plotly_chart(apply_dark_theme(fig_rc), use_container_width=True, key="risk_contribution_bar")
 
 # ── Stress Tests ──────────────────────────────────────────────────────────────
 section_header("Stress Test Scenarios", "Simulated stress test results for educational purposes. Actual market impacts may differ.")

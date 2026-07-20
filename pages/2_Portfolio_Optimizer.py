@@ -182,7 +182,7 @@ with col_left:
 with col_right:
     with chart_card("Allocation Breakdown", optimization_method):
         fig_donut = allocation_donut_chart(weights, "")
-        st.plotly_chart(fig_donut, use_container_width=True)
+        st.plotly_chart(fig_donut, use_container_width=True, key="opt_allocation_donut")
 
 # ── Efficient Frontier ────────────────────────────────────────────────────────
 section_header("Efficient Frontier & Monte Carlo Simulation", f"{n_simulations:,} simulated portfolios")
@@ -197,7 +197,7 @@ with st.spinner("Running Monte Carlo simulation..."):
 
 with chart_card("Efficient Frontier"):
     fig_ef = efficient_frontier_chart(mc_df, weights, None, mean_returns, cov)
-    st.plotly_chart(fig_ef, use_container_width=True)
+    st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
 section_header("Historical Backtest", f"{optimization_method} vs. Equal Weight")
@@ -221,7 +221,7 @@ if not backtest_df.empty:
             ))
         fig_bt.update_layout(title="Portfolio Backtest vs Equal Weight",
                               xaxis_title="Date", yaxis_title="Portfolio Value ($)")
-        st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True)
+        st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True, key="opt_backtest_growth")
 
     # Drawdown comparison
     with chart_card("Drawdown Comparison"):
@@ -235,7 +235,7 @@ if not backtest_df.empty:
                                          name="Equal Weight", line=dict(color=COLORS["text_muted"], width=1.5),
                                          fillcolor="rgba(148,163,184,0.1)"))
         fig_dd.update_layout(title="Drawdown Comparison (%)", xaxis_title="Date", yaxis_title="Drawdown (%)")
-        st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True)
+        st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True, key="opt_backtest_drawdown")
 
     # Backtest metrics
     bt_metrics = {

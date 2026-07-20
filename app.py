@@ -126,13 +126,13 @@ with col_left:
     with chart_card("ETF Performance Comparison", "Normalized price, base = 100"):
         if not etf_prices.empty:
             fig_norm = normalized_price_chart(etf_prices)
-            st.plotly_chart(fig_norm, use_container_width=True)
+            st.plotly_chart(fig_norm, use_container_width=True, key="home_normalized_price")
 
 with col_right:
     with chart_card("Portfolio Allocation", "Equal weight across holdings"):
         weights_dict = {t: 1.0 / len(etf_prices.columns) for t in etf_prices.columns}
         fig_donut = allocation_donut_chart(weights_dict, "")
-        st.plotly_chart(fig_donut, use_container_width=True)
+        st.plotly_chart(fig_donut, use_container_width=True, key="home_allocation_donut")
 
 col_left2, col_right2 = st.columns([3, 2])
 
@@ -140,13 +140,13 @@ with col_left2:
     with chart_card("Portfolio Growth", "Equal weight, starting value $10,000"):
         if not etf_prices.empty:
             fig_cum = cumulative_return_chart(etf_prices)
-            st.plotly_chart(fig_cum, use_container_width=True)
+            st.plotly_chart(fig_cum, use_container_width=True, key="home_cumulative_return")
 
 with col_right2:
     with chart_card("Risk vs Return", "Annualized volatility vs. return"):
         if not etf_prices.empty:
             fig_rr = risk_return_scatter(etf_prices)
-            st.plotly_chart(fig_rr, use_container_width=True)
+            st.plotly_chart(fig_rr, use_container_width=True, key="home_risk_return")
 
 # ── Feature Overview ──────────────────────────────────────────────────────────
 section_header("Platform Features", "Seven analytics modules covering the full portfolio workflow")

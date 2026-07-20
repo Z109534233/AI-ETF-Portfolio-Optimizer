@@ -116,7 +116,7 @@ if selected_portfolio:
         if selected_portfolio["holdings"]:
             with chart_card("Allocation Breakdown"):
                 fig = allocation_donut_chart(selected_portfolio["holdings"], "")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"history_detail_donut_{selected_portfolio['id']}")
 
 # ── Compare Two Portfolios ────────────────────────────────────────────────────
 section_header("Compare Two Portfolios")
@@ -166,12 +166,12 @@ if len(portfolios) >= 2:
             if port_a["holdings"]:
                 with chart_card(port_a["name"]):
                     fig_a = allocation_donut_chart(port_a["holdings"], "")
-                    st.plotly_chart(fig_a, use_container_width=True)
+                    st.plotly_chart(fig_a, use_container_width=True, key=f"history_compare_donut_a_{port_a['id']}")
         with col_b:
             if port_b["holdings"]:
                 with chart_card(port_b["name"]):
                     fig_b = allocation_donut_chart(port_b["holdings"], "")
-                    st.plotly_chart(fig_b, use_container_width=True)
+                    st.plotly_chart(fig_b, use_container_width=True, key=f"history_compare_donut_b_{port_b['id']}")
 
         # Allocation comparison bar chart
         with chart_card("Allocation Comparison"):
@@ -191,7 +191,8 @@ if len(portfolios) >= 2:
             ))
             fig_bar.update_layout(title="Allocation Comparison (%)",
                                    xaxis_title="ETF", yaxis_title="Weight (%)", barmode="group")
-            st.plotly_chart(apply_dark_theme(fig_bar), use_container_width=True)
+            st.plotly_chart(apply_dark_theme(fig_bar), use_container_width=True,
+                             key=f"history_compare_bar_{port_a['id']}_{port_b['id']}")
 else:
     st.info("Save at least 2 portfolios to enable comparison.")
 

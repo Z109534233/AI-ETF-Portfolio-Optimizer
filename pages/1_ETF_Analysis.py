@@ -126,19 +126,19 @@ if show_price:
 
         with tab1:
             fig = price_chart(etf_prices, "Historical Adjusted Prices")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="etf_price_historical")
 
         with tab2:
             fig = normalized_price_chart(etf_prices)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="etf_price_normalized")
 
         with tab3:
             fig = cumulative_return_chart(etf_prices)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="etf_price_cumulative")
 
         with tab4:
             fig = drawdown_chart(etf_prices)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="etf_price_drawdown")
 
     # Technical indicators for single ETF
     if len(etf_prices.columns) == 1:
@@ -159,7 +159,7 @@ if show_price:
                                          line=dict(color=_C["success"], dash="dash", width=1),
                                          fill="tonexty", fillcolor="rgba(52,211,153,0.05)"))
             fig_bb.update_layout(title="Bollinger Bands", xaxis_title="Date", yaxis_title="Price")
-            st.plotly_chart(apply_dark_theme(fig_bb), use_container_width=True)
+            st.plotly_chart(apply_dark_theme(fig_bb), use_container_width=True, key="etf_bollinger_bands")
 
 # ── Return Analysis ───────────────────────────────────────────────────────────
 if show_returns:
@@ -169,7 +169,7 @@ if show_returns:
 
         with tab1:
             fig = return_distribution_chart(etf_prices)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="etf_return_distribution")
 
         with tab2:
             for ticker in etf_prices.columns:
@@ -179,7 +179,7 @@ if show_returns:
                     if not monthly_ret.empty:
                         st.markdown(f"**{ticker} Monthly Returns**")
                         fig = monthly_heatmap(monthly_ret)
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key=f"etf_monthly_heatmap_{ticker}")
 
         with tab3:
             ticker_select = st.selectbox("Select ETF for rolling metrics", etf_prices.columns.tolist(), key="rolling_ticker")
@@ -187,7 +187,7 @@ if show_returns:
             p = etf_prices[ticker_select].dropna()
             if len(p) > window:
                 fig = rolling_metrics_chart(p, window)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="etf_rolling_metrics")
 
         with tab4:
             returns_df = etf_prices.pct_change().dropna()
@@ -205,7 +205,7 @@ if show_returns:
                     ))
                 fig.update_layout(title="Annual Performance (%)", xaxis_title="Year",
                                    yaxis_title="Annual Return (%)", barmode="group")
-                st.plotly_chart(apply_dark_theme(fig), use_container_width=True)
+                st.plotly_chart(apply_dark_theme(fig), use_container_width=True, key="etf_annual_performance")
 
 # ── Risk Analysis ─────────────────────────────────────────────────────────────
 if show_risk:
@@ -229,7 +229,7 @@ if show_risk:
 
     with chart_card("Risk vs Return"):
         fig = risk_return_scatter(etf_prices)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="etf_risk_return_scatter")
 
 # ── Correlation Analysis ──────────────────────────────────────────────────────
 if show_correlation:
@@ -239,7 +239,7 @@ if show_correlation:
         with chart_card("Correlation Heatmap"):
             corr = correlation_matrix(etf_prices)
             fig = correlation_heatmap(corr)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="etf_correlation_heatmap")
 
         with chart_card("Covariance Matrix", "Annualized"):
             cov = covariance_matrix(etf_prices)

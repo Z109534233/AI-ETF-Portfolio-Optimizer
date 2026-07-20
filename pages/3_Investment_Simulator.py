@@ -133,7 +133,7 @@ with chart_card("Simulation Detail"):
 
     with tab1:
         fig_mc = monte_carlo_paths_chart(paths_df, f"Monte Carlo Simulation — {years} Years")
-        st.plotly_chart(fig_mc, use_container_width=True)
+        st.plotly_chart(fig_mc, use_container_width=True, key="sim_monte_carlo_paths")
 
     with tab2:
         # Compound growth projection (deterministic)
@@ -159,7 +159,7 @@ with chart_card("Simulation Detail"):
             title="Compound Growth Projection (Deterministic)",
             xaxis_title="Years", yaxis_title="Value ($)"
         )
-        st.plotly_chart(apply_dark_theme(fig_growth), use_container_width=True)
+        st.plotly_chart(apply_dark_theme(fig_growth), use_container_width=True, key="sim_compound_growth")
 
         # Contributions vs gains
         fig_bar = go.Figure()
@@ -170,11 +170,11 @@ with chart_card("Simulation Detail"):
                                   name="Investment Gain", marker_color=COLORS["success"]))
         fig_bar.update_layout(title="Contributions vs Investment Gains",
                                xaxis_title="Year", yaxis_title="Value ($)", barmode="stack")
-        st.plotly_chart(apply_dark_theme(fig_bar), use_container_width=True)
+        st.plotly_chart(apply_dark_theme(fig_bar), use_container_width=True, key="sim_contributions_vs_gains")
 
     with tab3:
         fig_dist = future_value_distribution_chart(final_values, total_contributed)
-        st.plotly_chart(fig_dist, use_container_width=True)
+        st.plotly_chart(fig_dist, use_container_width=True, key="sim_value_distribution")
 
         # Percentile table
         percentiles = [5, 10, 25, 50, 75, 90, 95]

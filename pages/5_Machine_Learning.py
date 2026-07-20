@@ -151,7 +151,7 @@ with chart_card("Model Detail"):
 
     with tab1:
         fig_fi = feature_importance_chart(feature_importance)
-        st.plotly_chart(fig_fi, use_container_width=True)
+        st.plotly_chart(fig_fi, use_container_width=True, key="ml_feature_importance")
 
         st.markdown("**Top 10 Features**")
         fi_df = feature_importance.head(10).reset_index()
@@ -162,7 +162,7 @@ with chart_card("Model Detail"):
     with tab2:
         cm = metrics["Confusion Matrix"]
         fig_cm = confusion_matrix_chart(cm)
-        st.plotly_chart(fig_cm, use_container_width=True)
+        st.plotly_chart(fig_cm, use_container_width=True, key="ml_confusion_matrix")
 
         st.markdown("**Confusion Matrix Interpretation**")
         st.markdown("""
@@ -219,7 +219,7 @@ with chart_card("Model Detail"):
 
                 fig_pred.update_layout(title="Actual vs Predicted Direction (Test Set)",
                                         xaxis_title="Date", yaxis_title="Price")
-                st.plotly_chart(apply_dark_theme(fig_pred), use_container_width=True)
+                st.plotly_chart(apply_dark_theme(fig_pred), use_container_width=True, key="ml_predictions")
 
             # Prediction probability over time
             prob_series = pd.Series(y_prob, index=test_index[:len(y_prob)])
@@ -233,7 +233,7 @@ with chart_card("Model Detail"):
             fig_prob.update_layout(title="Prediction Probability P(Up Direction)",
                                     xaxis_title="Date", yaxis_title="Probability",
                                     yaxis=dict(range=[0, 1]))
-            st.plotly_chart(apply_dark_theme(fig_prob), use_container_width=True)
+            st.plotly_chart(apply_dark_theme(fig_prob), use_container_width=True, key="ml_prediction_probability")
 
     with tab4:
         st.markdown("### Model Limitations & Caveats")

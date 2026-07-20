@@ -166,7 +166,7 @@ with col_left:
 with col_right:
     with chart_card("Portfolio Overview"):
         fig_donut = allocation_donut_chart(result["weights"], "")
-        st.plotly_chart(fig_donut, use_container_width=True)
+        st.plotly_chart(fig_donut, use_container_width=True, key="ai_advisor_allocation_donut")
 
         if result["metrics"]:
             st.markdown("**Key Metrics**")
