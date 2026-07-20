@@ -1,0 +1,254 @@
+/* AI ETF Portfolio Optimizer — Custom Stylesheet */
+
+/* ── Global ─────────────────────────────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Hide Streamlit Branding ─────────────────────────────────────────────── */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header { visibility: hidden; }
+
+/* ── Main Container ──────────────────────────────────────────────────────── */
+.main .block-container {
+    padding-top: 1rem;
+    padding-bottom: 2rem;
+    max-width: 1400px;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background-color: #0D1526 !important;
+    border-right: 1px solid #1F2937;
+}
+
+[data-testid="stSidebar"] .stMarkdown h3 {
+    color: #3B82F6;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+}
+
+/* ── Metric Cards ────────────────────────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: #111827;
+    border: 1px solid #1F2937;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+[data-testid="stMetricLabel"] {
+    color: #9CA3AF !important;
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+[data-testid="stMetricValue"] {
+    color: #F8FAFC !important;
+    font-size: 20px !important;
+    font-weight: 700 !important;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: 12px !important;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.stButton > button {
+    background: linear-gradient(135deg, #2563EB, #3B82F6);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 8px 20px;
+    transition: all 0.2s ease;
+    letter-spacing: 0.02em;
+}
+
+.stButton > button:hover {
+    background: linear-gradient(135deg, #1D4ED8, #2563EB);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    transform: translateY(-1px);
+}
+
+.stButton > button[kind="secondary"] {
+    background: transparent;
+    border: 1px solid #374151;
+    color: #9CA3AF;
+}
+
+.stButton > button[kind="secondary"]:hover {
+    border-color: #3B82F6;
+    color: #3B82F6;
+}
+
+/* ── Download Buttons ────────────────────────────────────────────────────── */
+.stDownloadButton > button {
+    background: transparent;
+    border: 1px solid #374151;
+    color: #9CA3AF;
+    border-radius: 6px;
+    font-size: 12px;
+    padding: 6px 16px;
+    transition: all 0.2s ease;
+}
+
+.stDownloadButton > button:hover {
+    border-color: #10B981;
+    color: #10B981;
+    background: rgba(16, 185, 129, 0.05);
+}
+
+/* ── DataFrames / Tables ─────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border: 1px solid #1F2937;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #111827;
+    border-bottom: 2px solid #1F2937;
+    gap: 0;
+}
+
+.stTabs [data-baseweb="tab"] {
+    color: #9CA3AF;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 20px;
+    border-radius: 0;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #3B82F6 !important;
+    border-bottom: 2px solid #3B82F6 !important;
+    background: transparent !important;
+}
+
+/* ── Selectbox / Multiselect ─────────────────────────────────────────────── */
+.stSelectbox > div > div,
+.stMultiSelect > div > div {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    color: #F8FAFC;
+}
+
+/* ── Sliders ─────────────────────────────────────────────────────────────── */
+.stSlider [data-baseweb="slider"] {
+    padding: 4px 0;
+}
+
+/* ── Text Input ──────────────────────────────────────────────────────────── */
+.stTextInput > div > div > input {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    color: #F8FAFC;
+    font-size: 13px;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* ── Number Input ────────────────────────────────────────────────────────── */
+.stNumberInput > div > div > input {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    color: #F8FAFC;
+}
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+.stAlert {
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+/* ── Expander ────────────────────────────────────────────────────────────── */
+.streamlit-expanderHeader {
+    background: #111827;
+    border: 1px solid #1F2937;
+    border-radius: 6px;
+    color: #F8FAFC;
+    font-size: 13px;
+}
+
+/* ── Headings ────────────────────────────────────────────────────────────── */
+h1, h2, h3 {
+    color: #F8FAFC;
+    font-weight: 700;
+}
+
+h2 {
+    font-size: 20px;
+    border-bottom: 1px solid #1F2937;
+    padding-bottom: 8px;
+    margin-top: 24px;
+}
+
+h3 {
+    font-size: 16px;
+    color: #E5E7EB;
+}
+
+/* ── Caption / Small Text ────────────────────────────────────────────────── */
+.stCaption {
+    color: #6B7280 !important;
+    font-size: 11px !important;
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+.stSpinner > div {
+    border-top-color: #3B82F6 !important;
+}
+
+/* ── Plotly Charts ───────────────────────────────────────────────────────── */
+.js-plotly-plot {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* ── Horizontal Rule ─────────────────────────────────────────────────────── */
+hr {
+    border-color: #1F2937;
+    margin: 16px 0;
+}
+
+/* ── Checkbox ────────────────────────────────────────────────────────────── */
+.stCheckbox > label {
+    color: #D1D5DB;
+    font-size: 13px;
+}
+
+/* ── Radio ───────────────────────────────────────────────────────────────── */
+.stRadio > label {
+    color: #D1D5DB;
+    font-size: 13px;
+}
+
+/* ── Date Input ──────────────────────────────────────────────────────────── */
+.stDateInput > div > div > input {
+    background: #111827;
+    border: 1px solid #374151;
+    color: #F8FAFC;
+    border-radius: 6px;
+}
+
+/* ── Text Area ───────────────────────────────────────────────────────────── */
+.stTextArea > div > div > textarea {
+    background: #111827;
+    border: 1px solid #374151;
+    color: #F8FAFC;
+    border-radius: 6px;
+    font-size: 13px;
+}
