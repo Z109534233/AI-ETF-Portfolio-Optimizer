@@ -10,6 +10,7 @@ import numpy as np
 def clean_price_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Clean and validate price data.
+    - Remove columns (tickers) with no valid data at all
     - Remove rows where all values are NaN
     - Forward-fill then back-fill missing values
     - Remove duplicate indices
@@ -23,6 +24,16 @@ def clean_price_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # Sort by date
     df = df.sort_index()
+
+    # Drop columns (tickers) that have no valid data whatsoever. A column
+    # that is 100% NaN (e.g. a ticker that failed to download) would
+    # otherwise survive ffill()/bfill() completely unchanged -- there is
+    # nothing to fill from -- and silently poison every downstream
+    # computation that relies on this DataFrame's column count matching
+    # its actual data (e.g. covariance matrices).
+    df = df.dropna(axis=1, how="all")
+    if df.empty:
+        return df
 
     # Remove rows where all values are NaN
     df = df.dropna(how="all")

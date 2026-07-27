@@ -22,48 +22,102 @@ DEFAULT_ETFS = [
 def download_etf_data(tickers: list, start_date: str, end_date: str, price_field: str = "Close") -> pd.DataFrame:
     """
     Download historical price data for a list of ETF tickers.
+
+    Each ticker is downloaded independently rather than using yfinance's
+    batch multi-ticker mode. This is a deliberate root-cause fix: in batch
+    mode, yfinance's returned column structure (flat columns vs. a
+    MultiIndex, and how many columns come back) depends on how many of the
+    requested tickers actually returned data -- not just on how many were
+    requested. That is rarely a problem locally (requests to Yahoo Finance
+    almost always succeed), but on Streamlit Cloud, Yahoo Finance frequently
+    rate-limits or blocks requests from cloud data-center IP ranges, so
+    batch downloads partially fail in ways that silently reshape the
+    result and corrupt everything downstream (covariance matrices,
+    optimization, etc.). Downloading per-ticker means each ticker's
+    success or failure is independent and unambiguous, and a single-ticker
+    yfinance response always has a flat, predictable column structure.
+
     Returns a DataFrame with dates as index and tickers as columns.
-    Falls back to sample data if download fails.
+    Tickers that fail to download (no data, or a network/API error) are
+    OMITTED from the result and reported via st.warning() -- callers must
+    check which of their requested tickers are actually present in the
+    returned columns. Falls back to fully simulated sample data only if
+    *every* requested ticker fails to download.
     """
     if not tickers:
         return pd.DataFrame()
 
-    try:
-        raw = yf.download(
-            tickers=tickers,
-            start=start_date,
-            end=end_date,
-            auto_adjust=True,
-            progress=False,
-            threads=True
+    series = {}
+    failed = []
+
+    for ticker in tickers:
+        try:
+            raw = yf.download(
+                tickers=ticker,
+                start=start_date,
+                end=end_date,
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+            )
+        except Exception:
+            raw = None
+
+        if raw is None or raw.empty:
+            failed.append(ticker)
+            continue
+
+        # A single-ticker yfinance download always has flat columns
+        # (Open/High/Low/Close/Volume) -- there is no MultiIndex ambiguity
+        # to resolve here, unlike batch multi-ticker downloads.
+        if isinstance(raw.columns, pd.MultiIndex):
+            # Some yfinance versions still return a MultiIndex even for a
+            # single ticker; flatten to the first (and only) ticker level.
+            raw.columns = raw.columns.get_level_values(0)
+
+        if price_field in raw.columns:
+            col = raw[price_field]
+        elif "Close" in raw.columns:
+            col = raw["Close"]
+        else:
+            failed.append(ticker)
+            continue
+
+        if isinstance(col, pd.DataFrame):
+            col = col.iloc[:, 0]
+        col = col.dropna()
+
+        if col.empty:
+            failed.append(ticker)
+            continue
+
+        series[ticker] = col
+
+    if not series:
+        # Every single ticker failed -- fall back to simulated sample data
+        # so the rest of the app remains usable (e.g. offline development).
+        st.warning(
+            f"Could not download live data for any requested ticker "
+            f"({', '.join(tickers)}). This is commonly caused by Yahoo "
+            "Finance rate-limiting on Streamlit Cloud, an invalid ticker "
+            "symbol, or a date range with no trading data. Using simulated "
+            "sample data instead."
+        )
+        return _generate_sample_data(tickers, start_date, end_date)
+
+    df = pd.DataFrame(series)
+    df.index = pd.to_datetime(df.index)
+    df = df.dropna(how="all")
+
+    if failed:
+        st.warning(
+            f"No data returned for: {', '.join(failed)}. This usually means "
+            "Yahoo Finance had no data for that symbol/date range, or (on "
+            "Streamlit Cloud) is temporarily rate-limiting requests. "
+            "These tickers were excluded from the analysis."
         )
 
-        if raw.empty:
-            return _generate_sample_data(tickers, start_date, end_date)
-
-        # Handle single vs multiple tickers
-        if len(tickers) == 1:
-            ticker = tickers[0]
-            if price_field in raw.columns:
-                df = raw[[price_field]].rename(columns={price_field: ticker})
-            else:
-                df = raw[["Close"]].rename(columns={"Close": ticker})
-        else:
-            if price_field in raw.columns.get_level_values(0):
-                df = raw[price_field]
-            elif "Close" in raw.columns.get_level_values(0):
-                df = raw["Close"]
-            else:
-                df = raw.iloc[:, :len(tickers)]
-                df.columns = tickers[:len(df.columns)]
-
-        df = df.dropna(how="all")
-        df.index = pd.to_datetime(df.index)
-        return df
-
-    except Exception as e:
-        st.warning(f"Could not download live data: {e}. Using sample data.")
-        return _generate_sample_data(tickers, start_date, end_date)
+    return df
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

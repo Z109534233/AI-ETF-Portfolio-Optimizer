@@ -183,9 +183,36 @@ def correlation_matrix(prices_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def covariance_matrix(prices_df: pd.DataFrame, periods_per_year: int = 252) -> pd.DataFrame:
-    """Compute annualized covariance matrix from price DataFrame."""
-    returns = prices_df.pct_change().dropna()
-    return returns.cov() * periods_per_year
+    """Compute annualized covariance matrix from price DataFrame.
+
+    Two properties are guaranteed regardless of missing/misaligned data:
+
+    1. The result is always reindexed to exactly `prices_df.columns` (both
+       rows and columns), so `cov.shape == (n, n)` where
+       `n == len(prices_df.columns)`. Callers that regularize the matrix
+       (e.g. `cov += np.eye(n) * 1e-8`) can rely on this without checking.
+       Any ticker pandas could not compute a variance for appears as a row/
+       column of NaN instead of silently shrinking the matrix -- which
+       previously caused a numpy shape-mismatch crash when a ticker's data
+       was missing or misaligned (see pages/2_Portfolio_Optimizer.py).
+
+    2. Rows are only dropped when *every* ticker is missing on that date
+       (`how="all"`), not when *any single* ticker is missing
+       (pandas' `dropna()` default, `how="any"`). With `how="any"`, one
+       ticker having a single missing/misaligned date -- common with
+       partial Yahoo Finance failures, since different tickers can have
+       different trading calendars or gaps -- would silently wipe out that
+       date's return for every OTHER ticker too, and in the worst case
+       collapse the whole return series to zero rows. `DataFrame.cov()`
+       already excludes NaNs pairwise per column pair, so pre-dropping
+       rows with `how="any"` was unnecessary and actively harmful.
+    """
+    if prices_df.empty:
+        return pd.DataFrame(index=prices_df.columns, columns=prices_df.columns, dtype=float)
+
+    returns = prices_df.pct_change(fill_method=None).dropna(how="all")
+    cov = returns.cov() * periods_per_year
+    return cov.reindex(index=prices_df.columns, columns=prices_df.columns)
 
 
 def diversification_ratio(weights: np.ndarray, cov_matrix: np.ndarray) -> float:

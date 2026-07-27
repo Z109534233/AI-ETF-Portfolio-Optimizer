@@ -214,26 +214,68 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
     Main optimization function. Returns weights and portfolio metrics.
     """
     tickers = prices_df.columns.tolist()
-    returns_df = prices_df.pct_change().dropna()
+    n = len(tickers)
 
-    if returns_df.empty or len(returns_df) < 10:
-        n = len(tickers)
-        weights = np.array([1.0 / n] * n)
+    def _fallback_result(error_message: str) -> dict:
+        weights = np.array([1.0 / n] * n) if n else np.array([])
         return {
             "weights": dict(zip(tickers, weights)),
             "expected_return": 0.0,
             "expected_volatility": 0.0,
             "sharpe_ratio": 0.0,
             "method": method,
-            "error": "Insufficient data for optimization."
+            "error": error_message,
         }
+
+    if prices_df.empty or n == 0:
+        return _fallback_result("No price data available for optimization.")
+
+    # dropna(how="all") -- not the pandas default how="any" -- so that one
+    # ticker missing a single date cannot wipe out that date for every
+    # other ticker too (see covariance_matrix() for the full rationale).
+    returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
+
+    if returns_df.empty or len(returns_df) < 10:
+        return _fallback_result("Insufficient data for optimization.")
 
     mean_returns = returns_df.mean().values
     cov = covariance_matrix(prices_df)
     cov_array = cov.values.copy()
 
+    # covariance_matrix() guarantees cov_array.shape == (n, n), so this
+    # regularization step can never hit a shape mismatch. It can still
+    # contain NaN, though, if a ticker has no valid overlapping return
+    # data at all (e.g. it failed to download and slipped through) --
+    # check for that explicitly rather than silently doing NaN arithmetic.
+    if cov_array.shape != (n, n):
+        return _fallback_result(
+            f"Covariance matrix shape {cov_array.shape} does not match "
+            f"{n} tickers; aborting optimization."
+        )
+
+    if not np.isfinite(cov_array).all():
+        # A NaN on the DIAGONAL means that specific ticker has no valid
+        # data at all (its own variance couldn't be computed) -- that
+        # ticker is unambiguously the problem. A NaN only OFF the diagonal
+        # means two otherwise-valid tickers simply have no overlapping
+        # trading dates between them, which isn't any single ticker's
+        # "fault". We distinguish these so the error message names the
+        # actual culprit instead of blaming every ticker whenever one is bad.
+        diag_nan = ~np.isfinite(np.diag(cov_array))
+        if diag_nan.any():
+            bad_tickers = [tickers[i] for i, bad in enumerate(diag_nan) if bad]
+            return _fallback_result(
+                f"No valid price data for: {', '.join(bad_tickers)}. "
+                "Remove these tickers or widen the date range."
+            )
+        return _fallback_result(
+            "Some selected ETFs have no overlapping trading dates with each "
+            "other. Widen the date range or choose ETFs with more shared "
+            "trading history."
+        )
+
     # Regularize covariance matrix to avoid singularity
-    cov_array += np.eye(len(tickers)) * 1e-8
+    cov_array += np.eye(n) * 1e-8
 
     try:
         if method == "Equal Weight":
@@ -268,7 +310,6 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
         }
 
     except Exception as e:
-        n = len(tickers)
         weights = np.array([1.0 / n] * n)
         return {
             "weights": dict(zip(tickers, weights)),

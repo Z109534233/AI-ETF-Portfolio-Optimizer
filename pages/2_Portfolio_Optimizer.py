@@ -109,12 +109,30 @@ if start_date >= end_date:
     st.stop()
 
 # ── State Management ──────────────────────────────────────────────────────────
+# `run_inputs` fingerprints everything the optimization result depends on.
+# Without this, changing the ETF selection, date range, or optimization
+# method WITHOUT re-clicking "Run Optimization" would silently keep
+# showing stale results computed from a previous, different selection
+# (st.button() only returns True on the exact rerun it was clicked in;
+# every other widget change also triggers a rerun but leaves run_btn
+# False, and the old code only recomputed when run_btn was True or no
+# result existed yet). We now recompute whenever the actual inputs change.
+run_inputs = (
+    tuple(sorted(selected_etfs)), str(start_date), str(end_date),
+    optimization_method, round(min_weight, 6), round(max_weight, 6),
+    allow_short, target_return_pct,
+)
+
 if "opt_result" not in st.session_state:
     st.session_state.opt_result = None
 if "prices_df" not in st.session_state:
     st.session_state.prices_df = None
+if "opt_run_inputs" not in st.session_state:
+    st.session_state.opt_run_inputs = None
 
-if run_btn or st.session_state.opt_result is None:
+inputs_changed = run_inputs != st.session_state.opt_run_inputs
+
+if run_btn or inputs_changed or st.session_state.opt_result is None:
     with st.spinner(t("msg_running_optimization")):
         raw_prices = download_etf_data(selected_etfs, str(start_date), str(end_date))
         if raw_prices.empty:
@@ -124,8 +142,49 @@ if run_btn or st.session_state.opt_result is None:
         prices_df = clean_price_data(raw_prices)
         prices_df = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
 
-        if prices_df.empty or len(prices_df) < 20:
-            error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
+        # ── Validate prices_df ──────────────────────────────────────────
+        # clean_price_data() now drops any ticker with zero valid data, so
+        # a ticker that failed to download (common on Streamlit Cloud when
+        # Yahoo Finance rate-limits cloud IPs) is silently absent from
+        # prices_df.columns rather than lingering as an all-NaN column.
+        # Report exactly which requested tickers are missing.
+        missing_tickers = [tk for tk in selected_etfs if tk not in prices_df.columns]
+        if missing_tickers:
+            st.warning(
+                f"No usable price data for: {', '.join(missing_tickers)}. "
+                "These tickers were excluded from the optimization."
+            )
+
+        if prices_df.empty or len(prices_df.columns) < 2:
+            error_state(
+                t("msg_no_price_data_title"),
+                "At least 2 ETFs with valid price data are required to run "
+                "portfolio optimization. Try different tickers or a wider "
+                "date range."
+            )
+            st.stop()
+
+        if len(prices_df) < 20:
+            error_state(
+                t("msg_no_price_data_title"),
+                f"Only {len(prices_df)} trading day(s) of overlapping data "
+                "were found — at least 20 are required for a meaningful "
+                "optimization. Widen the date range."
+            )
+            st.stop()
+
+        # ── Validate returns_df ─────────────────────────────────────────
+        # how="all" (not the pandas default how="any"): a single ticker
+        # missing one date must not wipe out that date for every other
+        # ticker too. See covariance_matrix() for the full rationale.
+        returns_df_check = prices_df.pct_change(fill_method=None).dropna(how="all")
+        if returns_df_check.empty or len(returns_df_check) < 10:
+            error_state(
+                t("msg_no_price_data_title"),
+                "Not enough overlapping daily returns could be computed "
+                "from the downloaded price data. Widen the date range or "
+                "choose different ETFs."
+            )
             st.stop()
 
         result = run_optimization(
@@ -143,11 +202,12 @@ if run_btn or st.session_state.opt_result is None:
 
         st.session_state.opt_result = result
         st.session_state.prices_df = prices_df
+        st.session_state.opt_run_inputs = run_inputs
 
 result = st.session_state.opt_result
 prices_df = st.session_state.prices_df
 
-if result is None or prices_df is None:
+if result is None or prices_df is None or prices_df.empty:
     st.info(t("msg_configure_and_run", action=t("btn_run_optimization")))
     st.stop()
 
@@ -189,11 +249,55 @@ with col_right:
 # ── Efficient Frontier ────────────────────────────────────────────────────────
 section_header(t("opt_efficient_frontier_title"), t("opt_efficient_frontier_sub", count=f"{n_simulations:,}"))
 
+n_tickers = len(prices_df.columns)
+
 with st.spinner(t("msg_running_optimization")):
-    returns_df = prices_df.pct_change().dropna()
+    # how="all" (not the pandas default how="any"): a single ticker missing
+    # one date must not wipe out that date for every other ticker too.
+    returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
     mean_returns = returns_df.mean().values
-    cov = covariance_matrix(prices_df).values
-    cov += np.eye(len(prices_df.columns)) * 1e-8
+    cov_df = covariance_matrix(prices_df)
+    cov = cov_df.values
+
+    # Defensive validation: covariance_matrix() guarantees cov.shape ==
+    # (n_tickers, n_tickers) and run_optimization() already validated this
+    # same data upstream, so these checks should never fire in practice --
+    # but if prices_df ever reaches here in an unexpected state (e.g. a
+    # future code change, or a Yahoo Finance edge case not seen before),
+    # we show a clear error instead of crashing on `cov += np.eye(...)`
+    # with an opaque numpy shape-mismatch exception.
+    if cov.shape != (n_tickers, n_tickers):
+        error_state(
+            t("msg_no_price_data_title"),
+            f"Internal error: covariance matrix shape {cov.shape} does not "
+            f"match {n_tickers} selected ETFs. Please re-run the optimization."
+        )
+        st.stop()
+
+    if not np.isfinite(cov).all():
+        # A NaN on the diagonal means that ticker has no valid data at all;
+        # a NaN only off the diagonal means two otherwise-fine tickers just
+        # don't share any trading dates. Distinguish these so the message
+        # names the actual problem ticker(s) instead of every ticker.
+        diag_nan = ~np.isfinite(np.diag(cov))
+        if diag_nan.any():
+            bad_tickers = [prices_df.columns[i] for i in range(n_tickers) if diag_nan[i]]
+            error_state(
+                t("msg_no_price_data_title"),
+                f"No valid price data for: {', '.join(bad_tickers)}. "
+                "Remove these tickers or widen the date range, then re-run "
+                "the optimization."
+            )
+        else:
+            error_state(
+                t("msg_no_price_data_title"),
+                "Some selected ETFs have no overlapping trading dates with "
+                "each other. Widen the date range or choose ETFs with more "
+                "shared trading history."
+            )
+        st.stop()
+
+    cov += np.eye(n_tickers) * 1e-8
 
     mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
 
