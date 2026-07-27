@@ -9,47 +9,50 @@ import contextlib
 import streamlit as st
 
 from src.theme import COLORS, icon_svg
+from src.i18n import t, language_selector
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 NAV_ITEMS = [
-    {"page": "app.py", "label": "Dashboard"},
-    {"page": "pages/1_ETF_Analysis.py", "label": "ETF Analysis"},
-    {"page": "pages/2_Portfolio_Optimizer.py", "label": "Portfolio Optimizer"},
-    {"page": "pages/3_Investment_Simulator.py", "label": "Investment Simulator"},
-    {"page": "pages/4_Risk_Analytics.py", "label": "Risk Analytics"},
-    {"page": "pages/5_Machine_Learning.py", "label": "Machine Learning"},
-    {"page": "pages/6_AI_Advisor.py", "label": "AI Advisor"},
-    {"page": "pages/7_Portfolio_History.py", "label": "Portfolio History"},
+    {"page": "app.py", "label_key": "nav_home"},
+    {"page": "pages/1_ETF_Analysis.py", "label_key": "nav_etf_analysis"},
+    {"page": "pages/2_Portfolio_Optimizer.py", "label_key": "nav_portfolio_optimizer"},
+    {"page": "pages/3_Investment_Simulator.py", "label_key": "nav_investment_simulator"},
+    {"page": "pages/4_Risk_Analytics.py", "label_key": "nav_risk_analytics"},
+    {"page": "pages/5_Machine_Learning.py", "label_key": "nav_machine_learning"},
+    {"page": "pages/6_AI_Advisor.py", "label_key": "nav_ai_advisor"},
+    {"page": "pages/7_Portfolio_History.py", "label_key": "nav_portfolio_history"},
 ]
 
 
 def render_sidebar_nav() -> None:
-    """Render the branded product header and primary navigation list.
-
-    The currently active page is highlighted automatically by Streamlit
-    (st.page_link sets aria-current="page"), styled via assets/style.css.
+    """Render the language switcher, branded product header, and primary
+    navigation list. The currently active page is highlighted automatically
+    by Streamlit (st.page_link sets aria-current="page"), styled via
+    assets/style.css.
     """
-    st.markdown("""
+    language_selector()
+
+    st.markdown(f"""
     <div class="sidebar-brand">
         <div class="sidebar-brand-mark">AI</div>
         <div class="sidebar-brand-text">
-            <div class="sidebar-brand-name">AI ETF Optimizer</div>
-            <div class="sidebar-brand-sub">Portfolio Analytics Platform</div>
+            <div class="sidebar-brand-name">{t("sidebar_brand_name")}</div>
+            <div class="sidebar-brand-sub">{t("sidebar_brand_sub")}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-nav-label">Navigation</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sidebar-nav-label">{t("nav_section_label")}</div>', unsafe_allow_html=True)
     for item in NAV_ITEMS:
-        st.page_link(item["page"], label=item["label"])
+        st.page_link(item["page"], label=t(item["label_key"]))
 
 
 def render_sidebar_footer() -> None:
     """Render the pinned-to-bottom sidebar footer. Call last inside `with st.sidebar:`."""
-    st.markdown("""
+    st.markdown(f"""
     <div class="sidebar-footer">
-        <div class="sidebar-footer-badge">Educational Use Only</div>
-        <div class="sidebar-footer-text">Not financial advice</div>
+        <div class="sidebar-footer-badge">{t("sidebar_footer_badge")}</div>
+        <div class="sidebar-footer-text">{t("sidebar_footer_text")}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -59,26 +62,22 @@ def hero_section() -> None:
     st.markdown(f"""
     <div class="hero">
         <div class="hero-badges">
-            <span class="badge badge-blue">Live Market Data</span>
-            <span class="badge badge-green">Portfolio Analytics</span>
-            <span class="badge badge-neutral">Educational Use</span>
+            <span class="badge badge-blue">{t("hero_badge_live_data")}</span>
+            <span class="badge badge-green">{t("hero_badge_portfolio_analytics")}</span>
+            <span class="badge badge-neutral">{t("hero_badge_educational")}</span>
         </div>
-        <h1 class="hero-title">AI ETF Portfolio Optimizer</h1>
-        <p class="hero-subtitle">AI-Powered ETF Portfolio Analytics and Optimization Platform</p>
-        <p class="hero-desc">
-            Analyse ETF performance, measure portfolio risk, compare allocation strategies,
-            simulate long-term investment outcomes, and generate explainable portfolio
-            insights — in one professional analytics workspace.
-        </p>
+        <h1 class="hero-title">{t("hero_title")}</h1>
+        <p class="hero-subtitle">{t("hero_subtitle")}</p>
+        <p class="hero-desc">{t("hero_desc")}</p>
     </div>
     """, unsafe_allow_html=True)
 
     col1, col2, _ = st.columns([1.3, 1, 3])
     with col1:
-        if st.button("Launch Portfolio Optimizer", type="primary", use_container_width=True):
+        if st.button(t("btn_launch_optimizer"), type="primary", use_container_width=True):
             st.switch_page("pages/2_Portfolio_Optimizer.py")
     with col2:
-        if st.button("Analyze ETFs", type="secondary", use_container_width=True):
+        if st.button(t("btn_analyze_etfs"), type="secondary", use_container_width=True):
             st.switch_page("pages/1_ETF_Analysis.py")
 
 
@@ -100,14 +99,14 @@ def badge(text: str, variant: str = "neutral") -> str:
 
 # ── KPI Cards ───────────────────────────────────────────────────────────────────
 _LABEL_ICON_MAP = [
-    (("return", "growth", "gain"), "trending-up"),
-    (("drawdown", "loss"), "trending-down"),
-    (("volatility", "risk", "std"), "activity"),
-    (("sharpe", "sortino", "calmar", "ratio", "score"), "target"),
-    (("value", "$", "amount", "invest"), "dollar"),
-    (("diversif", "holdings", "assets"), "layers"),
-    (("allocation", "weight"), "pie-chart"),
-    (("var", "cvar"), "shield"),
+    (("return", "growth", "gain", "報酬", "成長", "收益"), "trending-up"),
+    (("drawdown", "loss", "回撤", "虧損"), "trending-down"),
+    (("volatility", "risk", "std", "波動", "風險"), "activity"),
+    (("sharpe", "sortino", "calmar", "ratio", "score", "比率", "分數"), "target"),
+    (("value", "$", "amount", "invest", "價值", "金額", "投資"), "dollar"),
+    (("diversif", "holdings", "assets", "分散", "持股"), "layers"),
+    (("allocation", "weight", "配置", "權重"), "pie-chart"),
+    (("var", "cvar", "風險值"), "shield"),
 ]
 
 
@@ -229,10 +228,10 @@ def style_signed_columns(df, columns):
 # ── Footer ──────────────────────────────────────────────────────────────────────
 def render_footer() -> None:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-    st.markdown("""
+    st.markdown(f"""
     <div class="app-footer">
-        <div class="app-footer-brand">AI ETF Portfolio Optimizer</div>
-        <div class="app-footer-sub">Built with Python, Streamlit and financial analytics</div>
-        <div class="app-footer-disclaimer">Educational use only — not financial advice.</div>
+        <div class="app-footer-brand">{t("footer_brand")}</div>
+        <div class="app-footer-sub">{t("footer_built_with")}</div>
+        <div class="app-footer-disclaimer">{t("footer_disclaimer")}</div>
     </div>
     """, unsafe_allow_html=True)

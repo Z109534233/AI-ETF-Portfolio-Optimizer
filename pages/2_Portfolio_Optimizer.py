@@ -36,6 +36,7 @@ from src.ui import (
     chart_card, render_footer, error_state
 )
 from src.theme import COLORS
+from src.i18n import t, t_opt_method, OPTIMIZATION_METHOD_KEYS
 
 st.set_page_config(
     page_title="Portfolio Optimizer | AI ETF Portfolio Optimizer",
@@ -46,64 +47,65 @@ st.set_page_config(
 load_css()
 init_database()
 
-page_header(
-    "Portfolio Optimizer",
-    "Mean-variance optimization, efficient frontier, and portfolio backtesting"
-)
+page_header(t("opt_title"), t("opt_subtitle"))
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_nav()
-    st.markdown("### Portfolio Settings")
+    st.markdown(f"### {t('opt_sidebar_settings')}")
 
     selected_etfs = st.multiselect(
-        "Select ETFs",
+        t("field_select_etfs"),
         options=DEFAULT_ETFS,
         default=["VOO", "QQQ", "BND", "GLD", "VNQ"],
-        help="Select 2 or more ETFs to optimize"
+        help=t("opt_select_etfs_help")
     )
 
-    custom_ticker = st.text_input("Add Custom Ticker", placeholder="e.g. ARKK").upper().strip()
+    custom_ticker = st.text_input(t("field_add_custom_ticker"), placeholder="e.g. ARKK").upper().strip()
     if custom_ticker and custom_ticker not in selected_etfs:
         selected_etfs.append(custom_ticker)
 
-    investment_amount = st.number_input("Investment Amount ($)", min_value=100.0,
+    investment_amount = st.number_input(t("field_investment_amount_usd"), min_value=100.0,
                                          max_value=10_000_000.0, value=10000.0, step=500.0)
 
     default_start, default_end = get_date_range_defaults()
-    start_date = st.date_input("Start Date", value=default_start)
-    end_date = st.date_input("End Date", value=default_end)
+    start_date = st.date_input(t("field_start_date"), value=default_start)
+    end_date = st.date_input(t("field_end_date"), value=default_end)
 
-    risk_free_rate = st.slider("Risk-Free Rate (%)", 0.0, 10.0, 5.0, 0.25) / 100
+    risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, 5.0, 0.25) / 100
 
     st.markdown("---")
-    st.markdown("### Optimization Constraints")
+    st.markdown(f"### {t('opt_constraints_label')}")
+    # Pre-resolve labels once (within a valid script context) rather than
+    # passing a format_func that reads st.session_state on every invocation.
+    _opt_method_labels = {k: t_opt_method(k) for k in OPTIMIZATION_METHOD_KEYS}
     optimization_method = st.selectbox(
-        "Optimization Method",
-        ["Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility", "Target Return", "Risk Parity"]
+        t("opt_method_label"),
+        list(OPTIMIZATION_METHOD_KEYS.keys()),
+        format_func=lambda x: _opt_method_labels.get(x, x),
     )
 
-    min_weight = st.slider("Min Weight per ETF (%)", 0.0, 20.0, 0.0, 1.0) / 100
-    max_weight = st.slider("Max Weight per ETF (%)", 10.0, 100.0, 100.0, 5.0) / 100
-    allow_short = st.checkbox("Allow Short Selling", value=False)
+    min_weight = st.slider(t("opt_min_weight"), 0.0, 20.0, 0.0, 1.0) / 100
+    max_weight = st.slider(t("opt_max_weight"), 10.0, 100.0, 100.0, 5.0) / 100
+    allow_short = st.checkbox(t("opt_allow_short"), value=False)
 
     target_return_pct = None
     if optimization_method == "Target Return":
-        target_return_pct = st.slider("Target Annual Return (%)", 1.0, 30.0, 10.0, 0.5) / 100
+        target_return_pct = st.slider(t("opt_target_return_pct"), 1.0, 30.0, 10.0, 0.5) / 100
 
-    n_simulations = st.slider("Monte Carlo Simulations", 1000, 10000, 5000, 500)
+    n_simulations = st.slider(t("opt_mc_simulations"), 1000, 10000, 5000, 500)
 
-    run_btn = st.button("Run Optimization", type="primary", use_container_width=True)
+    run_btn = st.button(t("btn_run_optimization"), type="primary", use_container_width=True)
 
     render_sidebar_footer()
 
 # ── Validation ────────────────────────────────────────────────────────────────
 if len(selected_etfs) < 2:
-    st.warning("Please select at least 2 ETFs to run portfolio optimization.")
+    st.warning(t("msg_select_two_etfs"))
     st.stop()
 
 if start_date >= end_date:
-    st.error("Start date must be before end date.")
+    st.error(t("msg_start_before_end"))
     st.stop()
 
 # ── State Management ──────────────────────────────────────────────────────────
@@ -113,17 +115,17 @@ if "prices_df" not in st.session_state:
     st.session_state.prices_df = None
 
 if run_btn or st.session_state.opt_result is None:
-    with st.spinner("Downloading data and running optimization..."):
+    with st.spinner(t("msg_running_optimization")):
         raw_prices = download_etf_data(selected_etfs, str(start_date), str(end_date))
         if raw_prices.empty:
-            error_state("No Price Data Available", "Check your ticker symbols and date range, then try again.")
+            error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
             st.stop()
 
         prices_df = clean_price_data(raw_prices)
-        prices_df = prices_df[[t for t in selected_etfs if t in prices_df.columns]]
+        prices_df = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
 
         if prices_df.empty or len(prices_df) < 20:
-            error_state("Insufficient Price Data", "Widen the date range or choose different ETFs for optimization.")
+            error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
             st.stop()
 
         result = run_optimization(
@@ -137,7 +139,7 @@ if run_btn or st.session_state.opt_result is None:
         )
 
         if result.get("error"):
-            st.warning(f"Optimization note: {result['error']}")
+            st.warning(t("opt_note_prefix", error=result["error"]))
 
         st.session_state.opt_result = result
         st.session_state.prices_df = prices_df
@@ -146,7 +148,7 @@ result = st.session_state.opt_result
 prices_df = st.session_state.prices_df
 
 if result is None or prices_df is None:
-    st.info("Configure settings in the sidebar and click **Run Optimization**.")
+    st.info(t("msg_configure_and_run", action=t("btn_run_optimization")))
     st.stop()
 
 weights = result["weights"]
@@ -156,38 +158,38 @@ sharpe = result["sharpe_ratio"]
 div_ratio = result.get("diversification_ratio", 1.0)
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-section_header("Optimization Results")
+section_header(t("opt_results_title"))
 col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    st.markdown(metric_card_html("Expected Annual Return", f"{exp_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_expected_annual_return"), f"{exp_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Expected Volatility", f"{exp_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_expected_volatility"), f"{exp_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Sharpe Ratio", f"{sharpe:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sharpe:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html("Diversification Ratio", f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_diversification_ratio"), f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 with col5:
-    st.markdown(metric_card_html("Method", optimization_method, color=COLORS["warning"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_method"), t_opt_method(optimization_method), color=COLORS["warning"]), unsafe_allow_html=True)
 
 # ── Allocation Table & Donut ──────────────────────────────────────────────────
-section_header("Portfolio Allocation")
+section_header(t("opt_allocation_title"))
 col_left, col_right = st.columns([1, 1])
 
 with col_left:
-    with chart_card("Allocation Table", f"{len(weights)} holdings"):
+    with chart_card(t("opt_allocation_table_card"), t("opt_allocation_table_holdings", count=len(weights))):
         alloc_df = weights_to_dataframe(weights, investment_amount)
         st.dataframe(alloc_df[["Ticker", "Weight", "Allocation ($)"]].style.hide(axis="index"),
                      use_container_width=True)
 
 with col_right:
-    with chart_card("Allocation Breakdown", optimization_method):
+    with chart_card(t("opt_allocation_breakdown_card"), t_opt_method(optimization_method)):
         fig_donut = allocation_donut_chart(weights, "")
         st.plotly_chart(fig_donut, use_container_width=True, key="opt_allocation_donut")
 
 # ── Efficient Frontier ────────────────────────────────────────────────────────
-section_header("Efficient Frontier & Monte Carlo Simulation", f"{n_simulations:,} simulated portfolios")
+section_header(t("opt_efficient_frontier_title"), t("opt_efficient_frontier_sub", count=f"{n_simulations:,}"))
 
-with st.spinner("Running Monte Carlo simulation..."):
+with st.spinner(t("msg_running_optimization")):
     returns_df = prices_df.pct_change().dropna()
     mean_returns = returns_df.mean().values
     cov = covariance_matrix(prices_df).values
@@ -195,77 +197,76 @@ with st.spinner("Running Monte Carlo simulation..."):
 
     mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
 
-with chart_card("Efficient Frontier"):
+with chart_card(t("opt_efficient_frontier_card")):
     fig_ef = efficient_frontier_chart(mc_df, weights, None, mean_returns, cov)
     st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
-section_header("Historical Backtest", f"{optimization_method} vs. Equal Weight")
+section_header(t("opt_backtest_title"), t("opt_backtest_sub", method=t_opt_method(optimization_method)))
 
 backtest_df = backtest_portfolio(prices_df, weights, investment_amount)
-equal_weights = {t: 1.0 / len(weights) for t in weights.keys()}
+equal_weights = {tk: 1.0 / len(weights) for tk in weights.keys()}
 equal_backtest_df = backtest_portfolio(prices_df, equal_weights, investment_amount)
 
 if not backtest_df.empty:
     import plotly.graph_objects as go
-    with chart_card("Portfolio Backtest vs Equal Weight"):
+    with chart_card(t("opt_backtest_card")):
         fig_bt = go.Figure()
         fig_bt.add_trace(go.Scatter(
             x=backtest_df.index, y=backtest_df["Portfolio Value"],
-            name=f"{optimization_method}", line=dict(color=COLORS["primary"], width=2.5)
+            name=t_opt_method(optimization_method), line=dict(color=COLORS["primary"], width=2.5)
         ))
         if not equal_backtest_df.empty:
             fig_bt.add_trace(go.Scatter(
                 x=equal_backtest_df.index, y=equal_backtest_df["Portfolio Value"],
-                name="Equal Weight", line=dict(color=COLORS["text_muted"], width=1.5, dash="dash")
+                name=t("chart_equal_weight"), line=dict(color=COLORS["text_muted"], width=1.5, dash="dash")
             ))
-        fig_bt.update_layout(title="Portfolio Backtest vs Equal Weight",
-                              xaxis_title="Date", yaxis_title="Portfolio Value ($)")
+        fig_bt.update_layout(title=t("chart_portfolio_backtest_vs_equal"),
+                              xaxis_title=t("chart_date"), yaxis_title=t("chart_portfolio_value_usd"))
         st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True, key="opt_backtest_growth")
 
     # Drawdown comparison
-    with chart_card("Drawdown Comparison"):
+    with chart_card(t("opt_drawdown_comparison_card")):
         fig_dd = go.Figure()
         dd = drawdown_series(backtest_df["Portfolio Value"]) * 100
         fig_dd.add_trace(go.Scatter(x=dd.index, y=dd, fill="tozeroy",
-                                     name=optimization_method, line=dict(color=COLORS["danger"], width=1.5)))
+                                     name=t_opt_method(optimization_method), line=dict(color=COLORS["danger"], width=1.5)))
         if not equal_backtest_df.empty:
             dd_eq = drawdown_series(equal_backtest_df["Portfolio Value"]) * 100
             fig_dd.add_trace(go.Scatter(x=dd_eq.index, y=dd_eq, fill="tozeroy",
-                                         name="Equal Weight", line=dict(color=COLORS["text_muted"], width=1.5),
+                                         name=t("chart_equal_weight"), line=dict(color=COLORS["text_muted"], width=1.5),
                                          fillcolor="rgba(148,163,184,0.1)"))
-        fig_dd.update_layout(title="Drawdown Comparison (%)", xaxis_title="Date", yaxis_title="Drawdown (%)")
+        fig_dd.update_layout(title=t("chart_drawdown_comparison_pct"), xaxis_title=t("chart_date"), yaxis_title=t("chart_drawdown_pct"))
         st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True, key="opt_backtest_drawdown")
 
     # Backtest metrics
     bt_metrics = {
-        "Total Return": f"{backtest_df['Cumulative Return'].iloc[-1]:.2%}",
-        "Annualized Return": f"{annualized_return(backtest_df['Portfolio Value']):.2%}",
-        "Annualized Volatility": f"{annualized_volatility(backtest_df['Portfolio Value']):.2%}",
-        "Sharpe Ratio": f"{sharpe_ratio(backtest_df['Portfolio Value'], risk_free_rate):.2f}",
-        "Maximum Drawdown": f"{maximum_drawdown(backtest_df['Portfolio Value']):.2%}",
-        "Final Value": f"${backtest_df['Portfolio Value'].iloc[-1]:,.2f}",
+        t("metric_total_return"): f"{backtest_df['Cumulative Return'].iloc[-1]:.2%}",
+        t("metric_annualized_return"): f"{annualized_return(backtest_df['Portfolio Value']):.2%}",
+        t("metric_annualized_volatility"): f"{annualized_volatility(backtest_df['Portfolio Value']):.2%}",
+        t("metric_sharpe_ratio"): f"{sharpe_ratio(backtest_df['Portfolio Value'], risk_free_rate):.2f}",
+        t("metric_maximum_drawdown"): f"{maximum_drawdown(backtest_df['Portfolio Value']):.2%}",
+        t("metric_final_value"): f"${backtest_df['Portfolio Value'].iloc[-1]:,.2f}",
     }
-    st.markdown("**Backtest Performance Summary**")
+    st.markdown(f"**{t('opt_backtest_summary')}**")
     cols = st.columns(len(bt_metrics))
     for i, (k, v) in enumerate(bt_metrics.items()):
         with cols[i]:
             st.metric(k, v)
 
 # ── Save & Download ───────────────────────────────────────────────────────────
-section_header("Save & Export")
+section_header(t("opt_save_export_title"))
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    portfolio_name = st.text_input("Portfolio Name", value=f"Portfolio_{optimization_method.replace(' ', '_')}")
-    notes = st.text_area("Notes (optional)", height=80)
-    if st.button("Save Portfolio", type="primary"):
-        metrics_to_save = {
-            "Expected Annual Return": f"{exp_ret:.2%}",
-            "Expected Annual Volatility": f"{exp_vol:.2%}",
-            "Sharpe Ratio": f"{sharpe:.2f}",
-        }
+    portfolio_name = st.text_input(t("field_portfolio_name"), value=f"Portfolio_{optimization_method.replace(' ', '_')}")
+    notes = st.text_area(t("field_notes_optional"), height=80)
+    if st.button(t("btn_save_portfolio"), type="primary"):
+        # NOTE: optimization_method is stored in English (the raw selectbox
+        # value) so it stays consistent regardless of which language was
+        # active when saved; it is translated only at display time via
+        # t_opt_method() wherever it is shown (e.g. Portfolio History page).
         success = save_portfolio(
             name=portfolio_name,
             weights=weights,
@@ -277,20 +278,24 @@ with col1:
             notes=notes
         )
         if success:
-            st.success(f"Portfolio '{portfolio_name}' saved successfully!")
+            st.success(t("opt_portfolio_saved_success", name=portfolio_name))
         else:
-            st.error("Failed to save portfolio. Please try again.")
+            st.error(t("opt_portfolio_save_failed"))
 
 with col2:
     alloc_csv = dataframe_to_csv(alloc_df)
     st.download_button(
-        "Download Allocation CSV",
+        t("btn_download_allocation_csv"),
         alloc_csv, "portfolio_allocation.csv", "text/csv",
         use_container_width=True
     )
 
 with col3:
     try:
+        # NOTE: these dict keys are fixed English labels that
+        # src/report_generator.py matches against internally to build the
+        # PDF's metrics table — they must NOT be translated, or the PDF
+        # report would silently lose all metric rows.
         bt_metrics_full = {
             "Expected Annual Return": f"{exp_ret:.2%}",
             "Expected Annual Volatility": f"{exp_vol:.2%}",
@@ -310,12 +315,12 @@ with col3:
             notes=notes
         )
         st.download_button(
-            "Download PDF Report",
+            t("btn_download_pdf_report"),
             pdf_bytes, f"{portfolio_name}.pdf", "application/pdf",
             use_container_width=True
         )
     except Exception as e:
-        st.warning(f"PDF generation unavailable: {e}")
+        st.warning(t("opt_pdf_unavailable", error=e))
 
 disclaimer_box()
 render_footer()

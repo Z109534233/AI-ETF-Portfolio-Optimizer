@@ -11,6 +11,7 @@ from datetime import datetime, date
 
 from src.theme import COLORS, icon_svg
 from src.ui import kpi_card as _kpi_card
+from src.i18n import t
 
 
 def load_css(css_path: str = None) -> None:
@@ -85,12 +86,7 @@ def info_box(text: str, color: str = "#3B82F6") -> None:
 def disclaimer_box(text: str = None) -> None:
     """Render an educational disclaimer box."""
     if text is None:
-        text = (
-            "This platform is for <strong>educational purposes only</strong> and does not constitute "
-            "financial advice. All analysis, projections, and AI-generated content are for "
-            "demonstration purposes. Past performance does not guarantee future results. "
-            "Always consult a qualified financial adviser before making investment decisions."
-        )
+        text = t("disclaimer_full")
     st.markdown(f"""
     <div style="
         background: {COLORS['warning_soft']};

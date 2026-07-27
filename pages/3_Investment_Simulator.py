@@ -18,6 +18,7 @@ from src.charts import monte_carlo_paths_chart, future_value_distribution_chart,
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, dataframe_to_csv
 from src.ui import render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer
 from src.theme import COLORS
+from src.i18n import t, t_market_scenario, MARKET_SCENARIO_KEYS
 
 st.set_page_config(
     page_title="Investment Simulator | AI ETF Portfolio Optimizer",
@@ -28,43 +29,44 @@ st.set_page_config(
 load_css()
 init_database()
 
-page_header(
-    "Investment Simulator",
-    "Long-term investment projection with Monte Carlo simulation"
-)
+page_header(t("sim_title"), t("sim_subtitle"))
 
-st.info(
-    "**Projection Disclaimer**: All projections are hypothetical and based on assumed return and "
-    "volatility parameters. They do not represent guaranteed outcomes. Market conditions vary "
-    "significantly over time. This tool is for educational purposes only."
-)
+st.info(t("sim_projection_disclaimer"))
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_nav()
-    st.markdown("### Simulation Parameters")
+    st.markdown(f"### {t('sim_sidebar_params')}")
 
-    initial_investment = st.number_input("Initial Investment ($)", 100.0, 1_000_000.0, 10000.0, 500.0)
-    monthly_contribution = st.number_input("Monthly Contribution ($)", 0.0, 50000.0, 500.0, 100.0)
-    years = st.slider("Investment Period (Years)", 1, 40, 20)
+    initial_investment = st.number_input(t("sim_initial_investment"), 100.0, 1_000_000.0, 10000.0, 500.0)
+    monthly_contribution = st.number_input(t("sim_monthly_contribution"), 0.0, 50000.0, 500.0, 100.0)
+    years = st.slider(t("sim_investment_years"), 1, 40, 20)
 
     st.markdown("---")
-    st.markdown("### Market Assumptions")
-    scenario = st.selectbox("Market Scenario", list(MARKET_SCENARIOS.keys()) + ["Custom"])
+    st.markdown(f"### {t('sim_market_assumptions')}")
+    # Pre-resolve labels once (within a valid script context) rather than
+    # passing a format_func that reads st.session_state on every invocation.
+    _scenario_labels = {k: t_market_scenario(k) for k in MARKET_SCENARIOS}
+    _scenario_labels["Custom"] = t("sim_scenario_custom")
+    scenario = st.selectbox(
+        t("sim_market_scenario"),
+        list(MARKET_SCENARIOS.keys()) + ["Custom"],
+        format_func=lambda x: _scenario_labels.get(x, x),
+    )
 
     if scenario == "Custom":
-        annual_return = st.slider("Expected Annual Return (%)", -5.0, 30.0, 10.0, 0.5) / 100
-        annual_volatility = st.slider("Expected Annual Volatility (%)", 1.0, 50.0, 15.0, 0.5) / 100
+        annual_return = st.slider(t("sim_expected_annual_return_pct"), -5.0, 30.0, 10.0, 0.5) / 100
+        annual_volatility = st.slider(t("sim_expected_annual_volatility_pct"), 1.0, 50.0, 15.0, 0.5) / 100
     else:
         annual_return = MARKET_SCENARIOS[scenario]["return"]
         annual_volatility = MARKET_SCENARIOS[scenario]["volatility"]
-        st.info(f"Return: {annual_return:.1%} | Volatility: {annual_volatility:.1%}")
+        st.info(t("sim_scenario_return_vol", ret=f"{annual_return:.1%}", vol=f"{annual_volatility:.1%}"))
 
-    inflation_rate = st.slider("Inflation Rate (%)", 0.0, 10.0, 2.5, 0.25) / 100
-    annual_fee = st.slider("Annual Management Fee (%)", 0.0, 3.0, 0.1, 0.05) / 100
-    n_simulations = st.slider("Number of Simulations", 200, 5000, 1000, 100)
+    inflation_rate = st.slider(t("sim_inflation_rate_pct"), 0.0, 10.0, 2.5, 0.25) / 100
+    annual_fee = st.slider(t("sim_annual_fee_pct"), 0.0, 3.0, 0.1, 0.05) / 100
+    n_simulations = st.slider(t("sim_number_of_simulations"), 200, 5000, 1000, 100)
 
-    run_btn = st.button("Run Simulation", type="primary", use_container_width=True)
+    run_btn = st.button(t("btn_run_simulation"), type="primary", use_container_width=True)
 
     render_sidebar_footer()
 
@@ -73,7 +75,7 @@ if "sim_result" not in st.session_state:
     st.session_state.sim_result = None
 
 if run_btn or st.session_state.sim_result is None:
-    with st.spinner("Running Monte Carlo simulation..."):
+    with st.spinner(t("sim_running_monte_carlo")):
         sim_result = simulate_investment(
             initial_investment=initial_investment,
             monthly_contribution=monthly_contribution,
@@ -97,7 +99,7 @@ if run_btn or st.session_state.sim_result is None:
 
 sim_result = st.session_state.sim_result
 if sim_result is None:
-    st.info("Configure parameters in the sidebar and click **Run Simulation**.")
+    st.info(t("msg_configure_and_run", action=t("btn_run_simulation")))
     st.stop()
 
 summary = sim_result["summary"]
@@ -107,32 +109,34 @@ final_values = sim_result["all_final_values"]
 total_contributed = summary["total_contributed"]
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-section_header("Simulation Results", f"{n_simulations:,} simulated paths over {years} years")
+section_header(t("sim_results_title"), t("sim_results_sub", count=f"{n_simulations:,}", years=years))
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown(metric_card_html("Median Final Value", f"${summary['median_final']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_median_final_value"), f"${summary['median_final']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Total Contributed", f"${total_contributed:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_total_contributed"), f"${total_contributed:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Median Investment Gain", f"${summary['median_gain']:,.0f}", color=COLORS["purple"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_median_investment_gain"), f"${summary['median_gain']:,.0f}", color=COLORS["purple"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html("Inflation-Adj. Value", f"${summary['real_median_final']:,.0f}", color=COLORS["warning"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_inflation_adjusted_value"), f"${summary['real_median_final']:,.0f}", color=COLORS["warning"]), unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.markdown(metric_card_html("Optimistic (90th pct)", f"${summary['optimistic_final']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_optimistic_90"), f"${summary['optimistic_final']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Pessimistic (10th pct)", f"${summary['pessimistic_final']:,.0f}", color=COLORS["danger"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_pessimistic_10"), f"${summary['pessimistic_final']:,.0f}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Probability of Profit", f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_probability_of_profit"), f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
 
 # ── Charts ────────────────────────────────────────────────────────────────────
-section_header("Projection Charts")
-with chart_card("Simulation Detail"):
-    tab1, tab2, tab3, tab4 = st.tabs(["Monte Carlo Paths", "Compound Growth", "Value Distribution", "Annual Table"])
+section_header(t("sim_projection_charts_title"))
+with chart_card(t("sim_simulation_detail_card")):
+    tab1, tab2, tab3, tab4 = st.tabs([
+        t("sim_tab_monte_carlo"), t("sim_tab_compound_growth"), t("sim_tab_value_distribution"), t("sim_tab_annual_table")
+    ])
 
     with tab1:
-        fig_mc = monte_carlo_paths_chart(paths_df, f"Monte Carlo Simulation — {years} Years")
+        fig_mc = monte_carlo_paths_chart(paths_df, t("chart_monte_carlo_simulation") + f" — {years}")
         st.plotly_chart(fig_mc, use_container_width=True, key="sim_monte_carlo_paths")
 
     with tab2:
@@ -144,20 +148,20 @@ with chart_card("Simulation Detail"):
         fig_growth = go.Figure()
         fig_growth.add_trace(go.Scatter(
             x=growth_df["Year"], y=growth_df["Balance"],
-            name="Portfolio Balance", line=dict(color=COLORS["primary"], width=2.5),
+            name=t("chart_portfolio_balance"), line=dict(color=COLORS["primary"], width=2.5),
             fill="tozeroy", fillcolor="rgba(59,130,246,0.1)"
         ))
         fig_growth.add_trace(go.Scatter(
             x=growth_df["Year"], y=growth_df["Contributed"],
-            name="Total Contributed", line=dict(color=COLORS["text_muted"], width=2, dash="dash")
+            name=t("chart_total_contributed"), line=dict(color=COLORS["text_muted"], width=2, dash="dash")
         ))
         fig_growth.add_trace(go.Scatter(
             x=growth_df["Year"], y=growth_df["Real Balance"],
-            name="Real Value (Inflation-Adj.)", line=dict(color=COLORS["warning"], width=1.5, dash="dot")
+            name=t("chart_real_value_inflation_adj"), line=dict(color=COLORS["warning"], width=1.5, dash="dot")
         ))
         fig_growth.update_layout(
-            title="Compound Growth Projection (Deterministic)",
-            xaxis_title="Years", yaxis_title="Value ($)"
+            title=t("chart_portfolio_growth_deterministic"),
+            xaxis_title=t("chart_years"), yaxis_title=t("chart_value_usd")
         )
         st.plotly_chart(apply_dark_theme(fig_growth), use_container_width=True, key="sim_compound_growth")
 
@@ -165,11 +169,11 @@ with chart_card("Simulation Detail"):
         fig_bar = go.Figure()
         yearly = growth_df[growth_df["Year"] == growth_df["Year"].astype(int)]
         fig_bar.add_trace(go.Bar(x=yearly["Year"], y=yearly["Contributed"],
-                                  name="Contributed", marker_color=COLORS["primary"]))
+                                  name=t("chart_contributed"), marker_color=COLORS["primary"]))
         fig_bar.add_trace(go.Bar(x=yearly["Year"], y=yearly["Gain"].clip(lower=0),
-                                  name="Investment Gain", marker_color=COLORS["success"]))
-        fig_bar.update_layout(title="Contributions vs Investment Gains",
-                               xaxis_title="Year", yaxis_title="Value ($)", barmode="stack")
+                                  name=t("chart_investment_gain"), marker_color=COLORS["success"]))
+        fig_bar.update_layout(title=t("chart_contributions_vs_gains"),
+                               xaxis_title=t("chart_year"), yaxis_title=t("chart_value_usd"), barmode="stack")
         st.plotly_chart(apply_dark_theme(fig_bar), use_container_width=True, key="sim_contributions_vs_gains")
 
     with tab3:
@@ -178,36 +182,48 @@ with chart_card("Simulation Detail"):
 
         # Percentile table
         percentiles = [5, 10, 25, 50, 75, 90, 95]
+        percentile_col = t("sim_percentile_col")
         pct_data = {
-            "Percentile": [f"{p}th" for p in percentiles],
-            "Final Value": [f"${np.percentile(final_values, p):,.0f}" for p in percentiles],
-            "Gain": [f"${np.percentile(final_values, p) - total_contributed:,.0f}" for p in percentiles],
-            "Return Multiple": [f"{np.percentile(final_values, p) / initial_investment:.1f}x" for p in percentiles],
+            percentile_col: [f"{p}th" for p in percentiles],
+            t("sim_final_value_col"): [f"${np.percentile(final_values, p):,.0f}" for p in percentiles],
+            t("sim_gain_col"): [f"${np.percentile(final_values, p) - total_contributed:,.0f}" for p in percentiles],
+            t("sim_return_multiple_col"): [f"{np.percentile(final_values, p) / initial_investment:.1f}x" for p in percentiles],
         }
-        st.markdown("**Outcome Percentile Table**")
-        st.dataframe(pd.DataFrame(pct_data).set_index("Percentile"), use_container_width=True)
+        st.markdown(f"**{t('sim_outcome_percentile_table')}**")
+        st.dataframe(pd.DataFrame(pct_data).set_index(percentile_col), use_container_width=True)
 
     with tab4:
-        st.markdown("**Annual Balance Summary (Median Path)**")
+        st.markdown(f"**{t('sim_annual_balance_summary')}**")
         display_table = annual_table.copy()
         for col in ["Portfolio Value", "Total Contributed", "Investment Gain", "Real Value (Inflation-Adj.)"]:
             display_table[col] = display_table[col].apply(lambda x: f"${x:,.0f}")
         display_table["Return %"] = display_table["Return %"].apply(lambda x: f"{x:.1f}%")
-        st.dataframe(display_table.set_index("Year"), use_container_width=True)
+        display_table = display_table.rename(columns={
+            "Portfolio Value": t("metric_final_value"),
+            "Total Contributed": t("chart_total_contributed"),
+            "Investment Gain": t("chart_investment_gain"),
+            "Real Value (Inflation-Adj.)": t("chart_real_value_inflation_adj"),
+            "Return %": t("chart_return"),
+            "Year": t("chart_year"),
+        })
+        st.dataframe(display_table.set_index(t("chart_year")), use_container_width=True)
 
         csv = dataframe_to_csv(annual_table)
-        st.download_button("Download Annual Table (CSV)", csv, "simulation_annual.csv", "text/csv")
+        st.download_button(t("btn_download_annual_table"), csv, "simulation_annual.csv", "text/csv")
 
 # ── Scenario Comparison ───────────────────────────────────────────────────────
-section_header("Market Scenario Comparison")
-with st.spinner("Computing scenario comparison..."):
+section_header(t("sim_scenario_comparison_title"))
+with st.spinner(t("msg_running_optimization")):
     scenario_df = scenario_comparison(initial_investment, monthly_contribution, years, annual_fee)
-with chart_card("Scenario Comparison Table"):
-    st.dataframe(scenario_df.set_index("Scenario"), use_container_width=True)
+with chart_card(t("sim_scenario_comparison_card")):
+    display_scenario_df = scenario_df.copy()
+    display_scenario_df["Scenario"] = display_scenario_df["Scenario"].apply(t_market_scenario)
+    st.dataframe(display_scenario_df.rename(columns={"Scenario": t("sim_market_scenario")}).set_index(t("sim_market_scenario")),
+                 use_container_width=True)
 
 # ── Save Simulation ───────────────────────────────────────────────────────────
-section_header("Save Simulation")
-if st.button("Save Simulation to History"):
+section_header(t("sim_save_simulation_title"))
+if st.button(t("btn_save_simulation_history")):
     success = save_simulation(
         initial_investment=initial_investment,
         monthly_contribution=monthly_contribution,
@@ -216,9 +232,9 @@ if st.button("Save Simulation to History"):
         final_value=summary["median_final"]
     )
     if success:
-        st.success("Simulation saved to history.")
+        st.success(t("sim_saved_success"))
     else:
-        st.warning("Could not save simulation.")
+        st.warning(t("sim_save_failed"))
 
 disclaimer_box()
 render_footer()

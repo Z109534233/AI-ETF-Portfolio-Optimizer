@@ -29,6 +29,7 @@ from src.ui import (
     section_header, chart_card, feature_card, render_footer
 )
 from src.theme import COLORS
+from src.i18n import t
 
 # ── Page Configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -51,13 +52,13 @@ load_css()
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_nav()
-    st.markdown("### Quick Settings")
+    st.markdown(f"### {t('home_quick_settings')}")
 
     demo_etfs = st.multiselect(
-        "Dashboard ETFs",
+        t("home_dashboard_etfs_label"),
         DEFAULT_ETFS,
         default=["VOO", "QQQ", "BND", "GLD"],
-        help="Select ETFs for the dashboard preview"
+        help=t("home_dashboard_etfs_help"),
     )
 
     import datetime
@@ -73,11 +74,11 @@ hero_section()
 if not demo_etfs:
     demo_etfs = ["VOO", "QQQ", "BND", "GLD"]
 
-with st.spinner("Loading market data for dashboard..."):
+with st.spinner(t("home_loading_market_data")):
     raw_prices = download_etf_data(demo_etfs, str(start_date), str(end_date))
 
 if raw_prices.empty:
-    st.warning("Live market data unavailable. Dashboard is showing sample data.")
+    st.warning(t("home_live_data_unavailable"))
     from src.data_loader import _generate_sample_data
     raw_prices = _generate_sample_data(demo_etfs, str(start_date), str(end_date))
 
@@ -104,77 +105,70 @@ else:
     ann_ret, ann_vol, sr, mdd, port_value, div_r = 0.10, 0.15, 0.67, -0.12, 10800, 1.25
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-section_header("Portfolio Dashboard", "Equal-weight preview across your selected ETFs")
+section_header(t("home_dashboard_title"), t("home_dashboard_subtitle"))
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 with col1:
-    st.markdown(metric_card_html("Portfolio Value", f"${port_value:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_portfolio_value"), f"${port_value:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html("Annualized Return", f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_annualized_return"), f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html("Annualized Volatility", f"{ann_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_annualized_volatility"), f"{ann_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html("Sharpe Ratio", f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col5:
-    st.markdown(metric_card_html("Max Drawdown", f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_maximum_drawdown"), f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col6:
-    st.markdown(metric_card_html("Diversification Score", f"{div_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_diversification_score"), f"{div_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 
 # ── Main Charts ───────────────────────────────────────────────────────────────
 col_left, col_right = st.columns([3, 2])
 
 with col_left:
-    with chart_card("ETF Performance Comparison", "Normalized price, base = 100"):
+    with chart_card(t("home_chart_etf_performance_title"), t("home_chart_etf_performance_sub")):
         if not etf_prices.empty:
             fig_norm = normalized_price_chart(etf_prices)
             st.plotly_chart(fig_norm, use_container_width=True, key="home_normalized_price")
 
 with col_right:
-    with chart_card("Portfolio Allocation", "Equal weight across holdings"):
-        weights_dict = {t: 1.0 / len(etf_prices.columns) for t in etf_prices.columns}
+    with chart_card(t("home_chart_allocation_title"), t("home_chart_allocation_sub")):
+        weights_dict = {tk: 1.0 / len(etf_prices.columns) for tk in etf_prices.columns}
         fig_donut = allocation_donut_chart(weights_dict, "")
         st.plotly_chart(fig_donut, use_container_width=True, key="home_allocation_donut")
 
 col_left2, col_right2 = st.columns([3, 2])
 
 with col_left2:
-    with chart_card("Portfolio Growth", "Equal weight, starting value $10,000"):
+    with chart_card(t("home_chart_growth_title"), t("home_chart_growth_sub")):
         if not etf_prices.empty:
             fig_cum = cumulative_return_chart(etf_prices)
             st.plotly_chart(fig_cum, use_container_width=True, key="home_cumulative_return")
 
 with col_right2:
-    with chart_card("Risk vs Return", "Annualized volatility vs. return"):
+    with chart_card(t("home_chart_risk_return_title"), t("home_chart_risk_return_sub")):
         if not etf_prices.empty:
             fig_rr = risk_return_scatter(etf_prices)
             st.plotly_chart(fig_rr, use_container_width=True, key="home_risk_return")
 
 # ── Feature Overview ──────────────────────────────────────────────────────────
-section_header("Platform Features", "Seven analytics modules covering the full portfolio workflow")
+section_header(t("home_features_title"), t("home_features_subtitle"))
 
 features = [
-    {"icon": "bar-chart", "title": "ETF Analysis",
-     "desc": "Historical price charts, return distributions, risk metrics, correlation heatmaps, and technical indicators for any ETF."},
-    {"icon": "target", "title": "Portfolio Optimizer",
-     "desc": "Mean-variance optimization with 5 methods: Equal Weight, Max Sharpe, Min Volatility, Target Return, and Risk Parity."},
-    {"icon": "trending-up", "title": "Investment Simulator",
-     "desc": "Monte Carlo simulation for long-term investment projections with inflation adjustment and scenario comparison."},
-    {"icon": "shield", "title": "Risk Analytics",
-     "desc": "Comprehensive risk metrics including VaR, CVaR, Beta, Alpha, Tracking Error, and stress test scenarios."},
-    {"icon": "activity", "title": "Machine Learning",
-     "desc": "Educational ML demonstration using Logistic Regression and Random Forest for ETF direction prediction."},
-    {"icon": "layers", "title": "AI Advisor",
-     "desc": "AI-powered portfolio explanation using OpenAI GPT with rule-based fallback when API key is not configured."},
-    {"icon": "pie-chart", "title": "Portfolio History",
-     "desc": "Save, view, compare, and manage portfolios stored in a local SQLite database with CSV export."},
+    {"icon": "bar-chart", "title_key": "feature_etf_analysis_title", "desc_key": "feature_etf_analysis_desc"},
+    {"icon": "target", "title_key": "feature_portfolio_optimizer_title", "desc_key": "feature_portfolio_optimizer_desc"},
+    {"icon": "trending-up", "title_key": "feature_investment_simulator_title", "desc_key": "feature_investment_simulator_desc"},
+    {"icon": "shield", "title_key": "feature_risk_analytics_title", "desc_key": "feature_risk_analytics_desc"},
+    {"icon": "activity", "title_key": "feature_machine_learning_title", "desc_key": "feature_machine_learning_desc"},
+    {"icon": "layers", "title_key": "feature_ai_advisor_title", "desc_key": "feature_ai_advisor_desc"},
+    {"icon": "pie-chart", "title_key": "feature_portfolio_history_title", "desc_key": "feature_portfolio_history_desc"},
 ]
 
 cols = st.columns(3)
 for i, feature in enumerate(features):
     with cols[i % 3]:
-        st.markdown(feature_card(feature["title"], feature["desc"], feature["icon"]), unsafe_allow_html=True)
+        st.markdown(feature_card(t(feature["title_key"]), t(feature["desc_key"]), feature["icon"]), unsafe_allow_html=True)
 
 # ── Tech Stack ────────────────────────────────────────────────────────────────
-section_header("Technology Stack")
+section_header(t("home_tech_stack_title"))
 tech_cols = st.columns(6)
 tech_stack = ["Python 3.12", "Streamlit", "Pandas / NumPy", "Plotly", "SciPy / Scikit-learn", "SQLite / SQLAlchemy"]
 for i, tech in enumerate(tech_stack):

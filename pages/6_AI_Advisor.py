@@ -21,6 +21,10 @@ from src.ai_advisor import generate_ai_analysis, DISCLAIMER, get_openai_client
 from src.charts import allocation_donut_chart
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
 from src.ui import render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer
+from src.i18n import (
+    t, t_investment_objective, t_risk_level,
+    INVESTMENT_OBJECTIVE_KEYS, RISK_LEVEL_KEYS
+)
 
 st.set_page_config(
     page_title="AI Advisor | AI ETF Portfolio Optimizer",
@@ -30,74 +34,81 @@ st.set_page_config(
 
 load_css()
 
-page_header(
-    "AI Portfolio Advisor",
-    "Educational portfolio analysis and explanation"
-)
+page_header(t("ai_title"), t("ai_subtitle"))
 
 # Check OpenAI availability
 client = get_openai_client()
 if client is None:
-    st.info(
-        "**AI Analysis Mode**: OpenAI API key not configured. "
-        "The advisor will use rule-based analysis. "
-        "To enable AI-powered analysis, add `OPENAI_API_KEY` to your Streamlit secrets."
-    )
+    st.info(t("ai_mode_info"))
 else:
-    st.success("AI-powered analysis is available.")
+    st.success(t("ai_mode_success"))
 
-st.warning(f"**Important**: {DISCLAIMER}")
+st.warning(t("ai_disclaimer_banner"))
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_nav()
-    st.markdown("### Portfolio Configuration")
+    st.markdown(f"### {t('ai_sidebar_config')}")
 
     selected_etfs = st.multiselect(
-        "Select ETFs",
+        t("field_select_etfs"),
         options=DEFAULT_ETFS,
         default=["VOO", "QQQ", "BND", "GLD"],
     )
 
-    custom_ticker = st.text_input("Add Custom Ticker", placeholder="e.g. ARKK").upper().strip()
+    custom_ticker = st.text_input(t("field_add_custom_ticker"), placeholder="e.g. ARKK").upper().strip()
     if custom_ticker and custom_ticker not in selected_etfs:
         selected_etfs.append(custom_ticker)
 
-    st.markdown("#### Portfolio Weights")
+    st.markdown(f"#### {t('ai_weights_label')}")
     weights_input = {}
     if selected_etfs:
         equal_w = 1.0 / len(selected_etfs)
         for ticker in selected_etfs:
-            w = st.slider(f"{ticker} (%)", 0.0, 100.0, equal_w * 100, 1.0, key=f"ai_w_{ticker}")
+            w = st.slider(t("ai_weight_pct", ticker=ticker), 0.0, 100.0, equal_w * 100, 1.0, key=f"ai_w_{ticker}")
             weights_input[ticker] = w / 100.0
         total_w = sum(weights_input.values())
         if abs(total_w - 1.0) > 0.01 and total_w > 0:
-            st.warning(f"Weights sum to {total_w:.1%}. Will be normalised.")
+            st.warning(t("ai_weights_normalised_warning", total=f"{total_w:.1%}"))
             weights_input = {k: v / total_w for k, v in weights_input.items()}
 
-    investment_amount = st.number_input("Investment Amount ($)", 100.0, 10_000_000.0, 10000.0, 500.0)
+    investment_amount = st.number_input(t("field_investment_amount_usd"), 100.0, 10_000_000.0, 10000.0, 500.0)
 
     st.markdown("---")
-    st.markdown("### Investor Profile")
+    st.markdown(f"### {t('ai_investor_profile')}")
+    # NOTE: format_func displays the translated label while the selectbox
+    # still returns the raw English value (required by ai_advisor.py's
+    # rule-based generator, which has no dependency on the exact string —
+    # we immediately translate to display text below for use everywhere else).
+    # Labels are pre-resolved once (within a valid script context) rather
+    # than passing a format_func that reads st.session_state on every call.
+    _objective_labels = {k: t_investment_objective(k) for k in INVESTMENT_OBJECTIVE_KEYS}
+    _risk_labels = {k: t_risk_level(k) for k in RISK_LEVEL_KEYS}
     investment_objective = st.selectbox(
-        "Investment Objective",
-        ["Long-term Growth", "Income & Dividends", "Capital Preservation",
-         "Balanced Growth & Income", "Aggressive Growth", "Retirement Planning"]
+        t("ai_investment_objective_label"),
+        list(INVESTMENT_OBJECTIVE_KEYS.keys()),
+        format_func=lambda x: _objective_labels.get(x, x),
     )
-    risk_level = st.selectbox("Risk Tolerance", ["Conservative", "Moderate", "Aggressive"])
-    investment_horizon = st.slider("Investment Horizon (Years)", 1, 40, 10)
+    risk_level = st.selectbox(
+        t("ai_risk_tolerance_label"),
+        list(RISK_LEVEL_KEYS.keys()),
+        format_func=lambda x: _risk_labels.get(x, x),
+    )
+    investment_objective = t_investment_objective(investment_objective)
+    risk_level = t_risk_level(risk_level)
+    investment_horizon = st.slider(t("ai_investment_horizon_years"), 1, 40, 10)
 
     default_start, default_end = get_date_range_defaults()
-    start_date = st.date_input("Data Start Date", value=default_start)
-    end_date = st.date_input("Data End Date", value=default_end)
+    start_date = st.date_input(t("ai_data_start_date"), value=default_start)
+    end_date = st.date_input(t("ai_data_end_date"), value=default_end)
 
-    analyse_btn = st.button("Generate Analysis", type="primary", use_container_width=True)
+    analyse_btn = st.button(t("btn_generate_analysis"), type="primary", use_container_width=True)
 
     render_sidebar_footer()
 
 # ── Validation ────────────────────────────────────────────────────────────────
 if not selected_etfs:
-    st.warning("Please select at least one ETF.")
+    st.warning(t("msg_select_one_etf"))
     st.stop()
 
 # ── Data Loading & Metrics ────────────────────────────────────────────────────
@@ -105,16 +116,16 @@ if "ai_result" not in st.session_state:
     st.session_state.ai_result = None
 
 if analyse_btn or st.session_state.ai_result is None:
-    with st.spinner("Downloading data and computing metrics..."):
+    with st.spinner(t("msg_downloading_market_data")):
         raw_prices = download_etf_data(selected_etfs, str(start_date), str(end_date))
         prices_df = clean_price_data(raw_prices) if not raw_prices.empty else pd.DataFrame()
 
         # Compute portfolio metrics
         metrics = {}
         if not prices_df.empty:
-            etf_prices = prices_df[[t for t in selected_etfs if t in prices_df.columns]]
+            etf_prices = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
             if not etf_prices.empty:
-                weights_arr = np.array([weights_input.get(t, 0) for t in etf_prices.columns])
+                weights_arr = np.array([weights_input.get(tk, 0) for tk in etf_prices.columns])
                 if weights_arr.sum() > 0:
                     weights_arr = weights_arr / weights_arr.sum()
                 returns_df = etf_prices.pct_change().dropna()
@@ -122,20 +133,20 @@ if analyse_btn or st.session_state.ai_result is None:
                 port_prices = (1 + port_returns).cumprod() * 100
 
                 metrics = {
-                    "Annualized Return": f"{annualized_return(port_prices):.2%}",
-                    "Annualized Volatility": f"{annualized_volatility(port_prices):.2%}",
-                    "Sharpe Ratio": f"{sharpe_ratio(port_prices, 0.05):.2f}",
-                    "Sortino Ratio": f"{sortino_ratio(port_prices, 0.05):.2f}",
-                    "Maximum Drawdown": f"{maximum_drawdown(port_prices):.2%}",
-                    "Calmar Ratio": f"{calmar_ratio(port_prices):.2f}",
-                    "VaR (95%)": f"{value_at_risk(port_prices, 0.95):.2%}",
-                    "Number of Holdings": str(len(selected_etfs)),
-                    "Investment Horizon": f"{investment_horizon} years",
-                    "Risk Tolerance": risk_level,
-                    "Investment Objective": investment_objective,
+                    t("metric_annualized_return"): f"{annualized_return(port_prices):.2%}",
+                    t("metric_annualized_volatility"): f"{annualized_volatility(port_prices):.2%}",
+                    t("metric_sharpe_ratio"): f"{sharpe_ratio(port_prices, 0.05):.2f}",
+                    t("metric_sortino_ratio"): f"{sortino_ratio(port_prices, 0.05):.2f}",
+                    t("metric_maximum_drawdown"): f"{maximum_drawdown(port_prices):.2%}",
+                    t("metric_calmar_ratio"): f"{calmar_ratio(port_prices):.2f}",
+                    t("metric_var_95"): f"{value_at_risk(port_prices, 0.95):.2%}",
+                    t("metric_number_of_holdings"): str(len(selected_etfs)),
+                    t("metric_investment_horizon"): f"{investment_horizon}",
+                    t("metric_risk_tolerance"): risk_level,
+                    t("metric_investment_objective"): investment_objective,
                 }
 
-    with st.spinner("Generating portfolio analysis..."):
+    with st.spinner(t("msg_generating_report")):
         analysis_text = generate_ai_analysis(
             portfolio_weights=weights_input,
             metrics=metrics,
@@ -152,33 +163,38 @@ if analyse_btn or st.session_state.ai_result is None:
 
 result = st.session_state.ai_result
 if result is None:
-    st.info("Configure your portfolio in the sidebar and click **Generate Analysis**.")
+    st.info(t("ai_configure_and_generate"))
     st.stop()
 
 # ── Display Results ───────────────────────────────────────────────────────────
-section_header("Analysis Results")
+section_header(t("ai_analysis_results_title"))
 col_left, col_right = st.columns([2, 1])
 
+_excluded_metric_keys = {
+    t("metric_number_of_holdings"), t("metric_investment_horizon"),
+    t("metric_risk_tolerance"), t("metric_investment_objective"),
+}
+
 with col_left:
-    with chart_card("Portfolio Analysis", tag="AI-Generated" if client else "Rule-Based"):
+    with chart_card(t("ai_portfolio_analysis_card"), tag=t("ai_tag_generated") if client else t("ai_tag_rule_based")):
         st.markdown(result["analysis"])
 
 with col_right:
-    with chart_card("Portfolio Overview"):
+    with chart_card(t("ai_portfolio_overview_card")):
         fig_donut = allocation_donut_chart(result["weights"], "")
         st.plotly_chart(fig_donut, use_container_width=True, key="ai_advisor_allocation_donut")
 
         if result["metrics"]:
-            st.markdown("**Key Metrics**")
+            st.markdown(f"**{t('ai_key_metrics')}**")
             for k, v in result["metrics"].items():
-                if k not in ["Number of Holdings", "Investment Horizon", "Risk Tolerance", "Investment Objective"]:
+                if k not in _excluded_metric_keys:
                     st.metric(k, v)
 
 # ── Regenerate ────────────────────────────────────────────────────────────────
-section_header("Actions")
+section_header(t("ai_actions_title"))
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("Regenerate Analysis"):
+    if st.button(t("btn_regenerate_analysis")):
         st.session_state.ai_result = None
         st.rerun()
 
@@ -186,7 +202,7 @@ with col2:
     if result["analysis"]:
         analysis_bytes = result["analysis"].encode("utf-8")
         st.download_button(
-            "Download Analysis (TXT)",
+            t("btn_download_analysis_txt"),
             analysis_bytes,
             "portfolio_analysis.txt",
             "text/plain"
