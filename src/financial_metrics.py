@@ -272,17 +272,75 @@ def compute_all_metrics(prices: pd.Series, benchmark_prices: pd.Series = None,
     return metrics
 
 
-def monthly_returns_table(prices: pd.Series) -> pd.DataFrame:
-    """Create a year x month table of monthly returns."""
-    monthly = prices.resample("M").last()
-    monthly_ret = monthly.pct_change().dropna()
-    df = pd.DataFrame({
-        "Year": monthly_ret.index.year,
-        "Month": monthly_ret.index.month,
-        "Return": monthly_ret.values
-    })
-    pivot = df.pivot_table(index="Year", columns="Month", values="Return", aggfunc="first")
-    month_names = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-                   7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
-    pivot.columns = [month_names.get(c, str(c)) for c in pivot.columns]
-    return pivot
+def monthly_returns_table(prices) -> pd.DataFrame:
+    """Create a year x month table of monthly returns.
+
+    Hardened against real-world failures seen on Streamlit Cloud, where
+    `requirements.txt` pins `pandas>=2.0.0` with no upper bound, so Cloud
+    installs whatever the latest pandas is at deploy time:
+
+    - `prices` must be a pandas Series (or single-column DataFrame, which
+      is squeezed to a Series); any other type returns an empty DataFrame
+      instead of raising.
+    - A non-DatetimeIndex is coerced via `pd.to_datetime()`; a
+      timezone-aware index is left as-is (`pd.to_datetime` preserves tz
+      info, and `resample()` works natively on tz-aware indexes).
+    - Empty input, or less than ~1 month of history, returns an empty
+      DataFrame -- there is nothing to compute a monthly return from.
+    - pandas >= 2.2 requires the "ME" (month-end) resample alias; the old
+      "M" alias is deprecated there and removed entirely in pandas 3.0.
+      We use "ME" exclusively (never "M") so this works on whatever
+      pandas version Streamlit Cloud actually installs.
+    - The resample/pivot logic is wrapped in try/except so any other
+      unexpected failure degrades to an empty DataFrame instead of
+      crashing the page -- this function is guaranteed to never raise.
+
+    Return format is unchanged: a DataFrame indexed by Year, with one
+    column per month ("Jan".."Dec") of monthly returns.
+    """
+    empty_result = pd.DataFrame()
+
+    if not isinstance(prices, (pd.Series, pd.DataFrame)):
+        return empty_result
+
+    if isinstance(prices, pd.DataFrame):
+        if prices.shape[1] != 1:
+            return empty_result
+        prices = prices.iloc[:, 0]
+
+    if prices.empty:
+        return empty_result
+
+    prices = prices.copy()
+
+    if not isinstance(prices.index, pd.DatetimeIndex):
+        try:
+            prices.index = pd.to_datetime(prices.index)
+        except Exception:
+            return empty_result
+
+    prices = prices.sort_index()
+
+    # Need at least ~1 month of history to compute a single monthly return.
+    if prices.index.max() - prices.index.min() < pd.Timedelta(days=28):
+        return empty_result
+
+    try:
+        monthly = prices.resample("ME").last()
+        monthly_ret = monthly.pct_change().dropna()
+
+        if monthly_ret.empty:
+            return empty_result
+
+        df = pd.DataFrame({
+            "Year": monthly_ret.index.year,
+            "Month": monthly_ret.index.month,
+            "Return": monthly_ret.values
+        })
+        pivot = df.pivot_table(index="Year", columns="Month", values="Return", aggfunc="first")
+        month_names = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+                       7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
+        pivot.columns = [month_names.get(c, str(c)) for c in pivot.columns]
+        return pivot
+    except Exception:
+        return empty_result
