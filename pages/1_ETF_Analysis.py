@@ -192,7 +192,7 @@ if show_returns:
                 st.plotly_chart(fig, use_container_width=True, key="etf_rolling_metrics")
 
         with tab4:
-            returns_df = etf_prices.pct_change().dropna()
+            returns_df = etf_prices.pct_change().dropna() 
             annual_returns = returns_df.resample("A").apply(lambda x: (1 + x).prod() - 1) * 100
             if not annual_returns.empty:
                 import plotly.graph_objects as go
