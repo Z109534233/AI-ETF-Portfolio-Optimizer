@@ -83,13 +83,17 @@ def hero_section() -> None:
 
 # ── Section / Page Headers ──────────────────────────────────────────────────────
 def section_header(title: str, subtitle: str = None) -> None:
+    # Built as a single-line string deliberately: when subtitle is None,
+    # sub_html is "" and, if placed on its own line inside a multi-line
+    # HTML block, that line becomes blank. Streamlit's markdown renderer
+    # treats a blank line as the end of a raw-HTML block, so everything
+    # after it (the closing </div>, etc.) gets re-parsed as plain markdown
+    # text instead of HTML and is displayed literally on the page. Keeping
+    # the whole block on one line makes that impossible regardless of
+    # which optional pieces are present.
     sub_html = f'<div class="section-subtitle">{subtitle}</div>' if subtitle else ""
-    st.markdown(f"""
-    <div class="section-header">
-        <div class="section-title">{title}</div>
-        {sub_html}
-    </div>
-    """, unsafe_allow_html=True)
+    html = f'<div class="section-header"><div class="section-title">{title}</div>{sub_html}</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def badge(text: str, variant: str = "neutral") -> str:
@@ -164,15 +168,24 @@ def chart_card(title: str, subtitle: str = None, tag: str = None):
     with container:
         sub_html = f'<div class="chart-card-subtitle">{subtitle}</div>' if subtitle else ""
         tag_html = f'<span class="badge badge-neutral">{tag}</span>' if tag else ""
-        st.markdown(f"""
-        <div class="chart-card-header">
-            <div>
-                <div class="chart-card-title">{title}</div>
-                {sub_html}
-            </div>
-            {tag_html}
-        </div>
-        """, unsafe_allow_html=True)
+        # Built as a single-line string deliberately: when subtitle/tag are
+        # None, sub_html/tag_html are "" and, if placed on their own line
+        # inside a multi-line HTML block, that line becomes blank.
+        # Streamlit's markdown renderer treats a blank line as the end of
+        # a raw-HTML block, so everything after it (the closing </div>,
+        # the tag <span>, etc.) gets re-parsed as plain markdown text
+        # instead of HTML and is displayed literally on the page -- this
+        # was the exact cause of "</div>" and the badge <span> showing up
+        # as raw text instead of rendering. Keeping the whole header on
+        # one line makes that impossible regardless of which optional
+        # pieces are present.
+        header_html = (
+            '<div class="chart-card-header">'
+            f'<div><div class="chart-card-title">{title}</div>{sub_html}</div>'
+            f'{tag_html}'
+            '</div>'
+        )
+        st.markdown(header_html, unsafe_allow_html=True)
         yield container
 
 

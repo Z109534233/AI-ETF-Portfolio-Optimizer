@@ -57,13 +57,15 @@ def metric_card_html(label: str, value: str, delta: str = None,
 
 def page_header(title: str, subtitle: str = None, icon: str = None) -> None:
     """Render a styled page header with a clear title/subtitle hierarchy."""
+    # Built as a single-line string deliberately: when subtitle is None,
+    # subtitle_html is "" and, if placed on its own line inside a
+    # multi-line HTML block, that line becomes blank. Streamlit's markdown
+    # renderer treats a blank line as the end of a raw-HTML block, so
+    # everything after it (the closing </div>) gets re-parsed as plain
+    # markdown text instead of HTML and is displayed literally on the page.
     subtitle_html = f'<p class="page-subtitle">{subtitle}</p>' if subtitle else ""
-    st.markdown(f"""
-    <div class="page-header">
-        <h1 class="page-title">{title}</h1>
-        {subtitle_html}
-    </div>
-    """, unsafe_allow_html=True)
+    html = f'<div class="page-header"><h1 class="page-title">{title}</h1>{subtitle_html}</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def info_box(text: str, color: str = "#3B82F6") -> None:
