@@ -26,7 +26,8 @@ from src.charts import (
 from src.utils import load_css, disclaimer_box, metric_card_html, ensure_directories
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, hero_section,
-    section_header, chart_card, feature_card, render_footer
+    section_header, chart_card, feature_card, render_footer,
+    process_flow, question_grid
 )
 from src.theme import COLORS
 from src.i18n import t
@@ -69,6 +70,50 @@ with st.sidebar:
 
 # ── Hero ──────────────────────────────────────────────────────────────────────
 hero_section()
+
+# ── Why Choose This Platform ─────────────────────────────────────────────────
+section_header(t("home_why_choose_title"), t("home_why_choose_subtitle"))
+why_choose = [
+    {"icon": "search", "title_key": "why_etf_analytics_title", "desc_key": "why_etf_analytics_desc"},
+    {"icon": "target", "title_key": "why_portfolio_optimization_title", "desc_key": "why_portfolio_optimization_desc"},
+    {"icon": "trending-up", "title_key": "why_investment_simulation_title", "desc_key": "why_investment_simulation_desc"},
+    {"icon": "cpu", "title_key": "why_ai_insights_title", "desc_key": "why_ai_insights_desc"},
+]
+why_cols = st.columns(4)
+for i, card in enumerate(why_choose):
+    with why_cols[i]:
+        st.markdown(feature_card(t(card["title_key"]), t(card["desc_key"]), card["icon"]), unsafe_allow_html=True)
+
+# ── How It Works ──────────────────────────────────────────────────────────────
+section_header(t("home_how_it_works_title"), t("home_how_it_works_subtitle"))
+process_flow([
+    t("step_choose_etfs"),
+    t("step_analyze_performance"),
+    t("step_optimize_portfolio"),
+    t("step_simulate_investment"),
+    t("step_ai_insights"),
+])
+
+# ── Who Is This Platform For ─────────────────────────────────────────────────
+section_header(t("home_target_users_title"), t("home_target_users_subtitle"))
+personas = [
+    {"icon": "search", "title_key": "persona_beginner_title", "desc_key": "persona_beginner_desc"},
+    {"icon": "shield", "title_key": "persona_long_term_title", "desc_key": "persona_long_term_desc"},
+    {"icon": "book", "title_key": "persona_student_title", "desc_key": "persona_student_desc"},
+]
+persona_cols = st.columns(3)
+for i, card in enumerate(personas):
+    with persona_cols[i]:
+        st.markdown(feature_card(t(card["title_key"]), t(card["desc_key"]), card["icon"]), unsafe_allow_html=True)
+
+# ── Common Investment Questions ──────────────────────────────────────────────
+section_header(t("home_problem_title"))
+question_grid(
+    [t(f"problem_q{i}") for i in range(1, 7)],
+    t("home_problem_conclusion"),
+)
+
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
 # ── Load Dashboard Data ───────────────────────────────────────────────────────
 if not demo_etfs:

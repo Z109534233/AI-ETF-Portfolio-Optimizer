@@ -68,17 +68,19 @@ def hero_section() -> None:
         </div>
         <h1 class="hero-title">{t("hero_title")}</h1>
         <p class="hero-subtitle">{t("hero_subtitle")}</p>
-        <p class="hero-desc">{t("hero_desc")}</p>
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2, _ = st.columns([1.3, 1, 3])
+    col1, col2, col3, _ = st.columns([1.2, 1.2, 1.2, 2.4])
     with col1:
-        if st.button(t("btn_launch_optimizer"), type="primary", use_container_width=True):
-            st.switch_page("pages/2_Portfolio_Optimizer.py")
-    with col2:
         if st.button(t("btn_analyze_etfs"), type="secondary", use_container_width=True):
             st.switch_page("pages/1_ETF_Analysis.py")
+    with col2:
+        if st.button(t("btn_launch_optimizer"), type="primary", use_container_width=True):
+            st.switch_page("pages/2_Portfolio_Optimizer.py")
+    with col3:
+        if st.button(t("btn_investment_simulator_cta"), type="secondary", use_container_width=True):
+            st.switch_page("pages/3_Investment_Simulator.py")
 
 
 # ── Section / Page Headers ──────────────────────────────────────────────────────
@@ -200,6 +202,39 @@ def feature_card(title: str, desc: str, icon: str = "activity") -> str:
     """
 
 
+# ── Process Flow (How It Works) ──────────────────────────────────────────────────
+def process_flow(steps: list) -> None:
+    """Render a horizontal numbered step timeline. `steps` is a list of label
+    strings. Built as a single-line HTML string (no embedded newlines) to
+    avoid the blank-line-terminates-raw-HTML-block markdown rendering bug.
+    """
+    parts = []
+    for i, label in enumerate(steps, start=1):
+        parts.append(
+            f'<div class="process-step">'
+            f'<div class="process-step-number">{i}</div>'
+            f'<div class="process-step-title">{label}</div>'
+            f'</div>'
+        )
+        if i < len(steps):
+            parts.append('<div class="process-arrow">&#8594;</div>')
+    html = '<div class="process-flow">' + "".join(parts) + '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
+# ── Question Grid (Common Investment Questions) ──────────────────────────────────
+def question_grid(questions: list, conclusion: str = None) -> None:
+    """Render a grid of question chips with an optional concluding statement
+    below. Built as single-line HTML strings to avoid the blank-line
+    raw-HTML-termination bug.
+    """
+    help_icon = icon_svg("help-circle", 16, COLORS["primary"])
+    items = "".join(f'<div class="question-item">{help_icon}<span>{q}</span></div>' for q in questions)
+    st.markdown(f'<div class="question-grid">{items}</div>', unsafe_allow_html=True)
+    if conclusion:
+        st.markdown(f'<div class="question-conclusion">{conclusion}</div>', unsafe_allow_html=True)
+
+
 # ── Empty / Error States ─────────────────────────────────────────────────────────
 def empty_state(title: str, description: str, icon: str = "layers") -> None:
     st.markdown(f"""
@@ -244,7 +279,8 @@ def render_footer() -> None:
     st.markdown(f"""
     <div class="app-footer">
         <div class="app-footer-brand">{t("footer_brand")}</div>
-        <div class="app-footer-sub">{t("footer_built_with")}</div>
+        <div class="app-footer-tagline">{t("footer_tagline")}</div>
         <div class="app-footer-disclaimer">{t("footer_disclaimer")}</div>
+        <div class="app-footer-sub">{t("footer_built_with")}</div>
     </div>
     """, unsafe_allow_html=True)

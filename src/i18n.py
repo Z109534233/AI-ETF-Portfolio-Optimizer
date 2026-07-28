@@ -54,10 +54,51 @@ TRANSLATIONS = {
         "hero_badge_portfolio_analytics": "投資組合分析",
         "hero_badge_educational": "教學用途",
         "hero_title": "AI ETF 投資組合最佳化平台",
-        "hero_subtitle": "AI 驅動的 ETF 投資組合分析與最佳化平台",
-        "hero_desc": "分析 ETF 績效、衡量投資組合風險、比較資產配置策略、模擬長期投資結果，並產生容易理解的投資組合分析。",
-        "btn_launch_optimizer": "開始投資組合最佳化",
-        "btn_analyze_etfs": "分析 ETF",
+        "hero_subtitle": "透過數據分析、投資組合最佳化、風險評估與 AI 分析，協助使用者建立更合理的 ETF 長期投資策略。",
+        "btn_launch_optimizer": "最佳化投資組合",
+        "btn_analyze_etfs": "開始 ETF 分析",
+        "btn_investment_simulator_cta": "投資模擬",
+
+        # ── Why Choose This Platform ─────────────────────────────────────
+        "home_why_choose_title": "為什麼選擇這個平台",
+        "home_why_choose_subtitle": "從研究、建構到理解投資組合，你所需要的工具都在這裡。",
+        "why_etf_analytics_title": "ETF 分析",
+        "why_etf_analytics_desc": "分析 ETF 的績效、波動率與歷史報酬率。",
+        "why_portfolio_optimization_title": "投資組合最佳化",
+        "why_portfolio_optimization_desc": "運用現代投資組合理論，產生最佳化的 ETF 資產配置。",
+        "why_investment_simulation_title": "投資模擬",
+        "why_investment_simulation_desc": "模擬不同策略下的長期財富累積結果。",
+        "why_ai_insights_title": "AI 投資洞察",
+        "why_ai_insights_desc": "以自然語言說明投資組合的優勢、風險與分散程度。",
+
+        # ── How It Works ──────────────────────────────────────────────────
+        "home_how_it_works_title": "如何運作",
+        "home_how_it_works_subtitle": "從選擇 ETF 到 AI 分析洞察，只需五個步驟。",
+        "step_choose_etfs": "選擇 ETF",
+        "step_analyze_performance": "分析績效",
+        "step_optimize_portfolio": "最佳化投資組合",
+        "step_simulate_investment": "模擬投資",
+        "step_ai_insights": "AI 分析洞察",
+
+        # ── Who Is This Platform For ─────────────────────────────────────
+        "home_target_users_title": "這個平台適合誰？",
+        "home_target_users_subtitle": "為 ETF 投資旅程的每個階段而設計。",
+        "persona_beginner_title": "ETF 初學者",
+        "persona_beginner_desc": "適合剛開始接觸 ETF 投資的使用者。",
+        "persona_long_term_title": "長期投資人",
+        "persona_long_term_desc": "建立分散且適合退休規劃的投資組合。",
+        "persona_student_title": "財金學生",
+        "persona_student_desc": "學習投資組合最佳化與金融分析技術。",
+
+        # ── Common Investment Questions (Problem Statement) ──────────────
+        "home_problem_title": "常見投資疑問",
+        "problem_q1": "我應該投資哪一檔 ETF？",
+        "problem_q2": "我該選擇 VOO 還是 QQQ？",
+        "problem_q3": "我該如何配置我的投資組合？",
+        "problem_q4": "我的投資在 20 年後可以成長多少？",
+        "problem_q5": "我的投資組合風險是不是太高？",
+        "problem_q6": "我的投資組合分散程度如何？",
+        "home_problem_conclusion": "本平台運用金融分析與最佳化模型，協助你回答這些問題。",
 
         # ── Home Page Sections ──────────────────────────────────────────
         "home_dashboard_title": "投資組合儀表板",
@@ -216,12 +257,13 @@ TRANSLATIONS = {
         "disclaimer_past_performance": "過去績效不代表未來結果。",
         "disclaimer_projections_hypothetical": "所有預測結果均為假設情境，並具有不確定性。",
         "footer_brand": "AI ETF 投資組合最佳化平台",
-        "footer_built_with": "使用 Python、Streamlit 與金融分析技術開發",
-        "footer_disclaimer": "僅供教學使用 — 非投資建議。",
+        "footer_tagline": "ETF 投資人的決策支援平台",
+        "footer_built_with": "採用 Python、Streamlit、Plotly 與金融分析技術構建",
+        "footer_disclaimer": "僅供教學使用",
 
         # ── ETF Analysis Page ────────────────────────────────────────────
         "etf_analysis_title": "ETF 分析",
-        "etf_analysis_subtitle": "歷史價格分析、風險指標與相關性洞察",
+        "etf_analysis_subtitle": "分析 ETF 的績效、波動率與歷史報酬率，找出適合你的投資標的。",
         "etf_sidebar_settings": "分析設定",
         "etf_select_etfs_help": "選擇一檔或多檔 ETF 進行分析",
         "etf_benchmark_help": "選擇基準 ETF",
@@ -269,7 +311,7 @@ TRANSLATIONS = {
 
         # ── Portfolio Optimizer Page ─────────────────────────────────────
         "opt_title": "投資組合最佳化",
-        "opt_subtitle": "均值變異數最佳化、效率前緣與投資組合回測",
+        "opt_subtitle": "運用現代投資組合理論，產生最佳化的 ETF 資產配置。",
         "opt_sidebar_settings": "投資組合設定",
         "opt_select_etfs_help": "選擇 2 檔以上 ETF 進行最佳化",
         "opt_constraints_label": "最佳化限制條件",
@@ -310,7 +352,7 @@ TRANSLATIONS = {
 
         # ── Investment Simulator Page ────────────────────────────────────
         "sim_title": "投資模擬",
-        "sim_subtitle": "以蒙地卡羅模擬進行長期投資推估",
+        "sim_subtitle": "模擬不同策略下的長期財富累積結果。",
         "sim_projection_disclaimer": (
             "**推估結果免責聲明**：所有推估結果均為假設情境，並基於假定的報酬與波動率參數。"
             "推估結果不代表保證的投資成果，市場狀況會隨時間大幅變動。此工具僅供教學用途使用。"
@@ -363,7 +405,7 @@ TRANSLATIONS = {
 
         # ── Risk Analytics Page ──────────────────────────────────────────
         "risk_title": "風險分析",
-        "risk_subtitle": "投資組合風險指標、回撤分析與壓力測試",
+        "risk_subtitle": "評估投資組合風險、回撤與壓力情境，做出更審慎的投資決策。",
         "risk_sidebar_settings": "投資組合設定",
         "risk_select_etfs_help": "選擇要分析的 ETF",
         "risk_weights_label": "投資組合權重",
@@ -405,8 +447,8 @@ TRANSLATIONS = {
 
         # ── Machine Learning Page ────────────────────────────────────────
         "ml_title": "機器學習",
-        "ml_subtitle": "ETF 報酬方向預測之教學展示",
-        "ml_disclaimer_banner": "**教學免責聲明**：市場預測具有高度不確定性，本功能僅供教學與技術展示使用。",
+        "ml_subtitle": "本頁面使用機器學習進行教育性市場分析，而非投資預測。",
+        "ml_disclaimer_banner": "**教學免責聲明**：本頁面使用機器學習進行教育性市場分析，而非投資預測，市場預測具有高度不確定性。",
         "ml_sidebar_settings": "模型設定",
         "ml_select_etf_help": "選擇一檔 ETF 進行機器學習分析",
         "ml_custom_ticker": "自訂代碼",
@@ -472,7 +514,7 @@ TRANSLATIONS = {
 
         # ── AI Advisor Page ───────────────────────────────────────────────
         "ai_title": "AI 投資分析",
-        "ai_subtitle": "教學用投資組合分析與說明",
+        "ai_subtitle": "以自然語言說明投資組合的優勢、風險與分散程度。",
         "ai_mode_info": (
             "**AI 分析模式**：尚未設定 OpenAI API 金鑰，將以規則式分析產生內容。"
             "如需啟用 AI 驅動分析，請於 Streamlit 密鑰設定中加入 `OPENAI_API_KEY`。"
@@ -577,7 +619,7 @@ TRANSLATIONS = {
 
         # ── Portfolio History Page ───────────────────────────────────────
         "hist_title": "投資組合紀錄",
-        "hist_subtitle": "檢視、比較與管理已儲存的投資組合",
+        "hist_subtitle": "追蹤、比較與管理你已儲存的投資組合決策紀錄。",
         "hist_no_portfolios_title": "尚未儲存任何投資組合",
         "hist_no_portfolios_desc": "請至投資組合最佳化頁面建立並儲存您的第一個投資組合。",
         "hist_saved_portfolios_count": "已儲存投資組合（共 {count} 個）",
@@ -729,10 +771,51 @@ TRANSLATIONS = {
         "hero_badge_portfolio_analytics": "Portfolio Analytics",
         "hero_badge_educational": "Educational Use",
         "hero_title": "AI ETF Portfolio Optimizer",
-        "hero_subtitle": "AI-Powered ETF Portfolio Analytics and Optimization Platform",
-        "hero_desc": "Analyse ETF performance, measure portfolio risk, compare allocation strategies, simulate long-term investment outcomes, and generate explainable portfolio insights.",
-        "btn_launch_optimizer": "Launch Portfolio Optimizer",
-        "btn_analyze_etfs": "Analyze ETFs",
+        "hero_subtitle": "Build smarter ETF portfolios with data-driven analytics, portfolio optimization, risk assessment and AI-powered insights.",
+        "btn_launch_optimizer": "Optimize Portfolio",
+        "btn_analyze_etfs": "Start ETF Analysis",
+        "btn_investment_simulator_cta": "Investment Simulator",
+
+        # ── Why Choose This Platform ─────────────────────────────────────
+        "home_why_choose_title": "Why Choose This Platform",
+        "home_why_choose_subtitle": "Everything you need to research, build, and understand your portfolio.",
+        "why_etf_analytics_title": "ETF Analytics",
+        "why_etf_analytics_desc": "Analyze ETF performance, volatility, and historical returns.",
+        "why_portfolio_optimization_title": "Portfolio Optimization",
+        "why_portfolio_optimization_desc": "Generate optimized ETF allocations using Modern Portfolio Theory.",
+        "why_investment_simulation_title": "Investment Simulation",
+        "why_investment_simulation_desc": "Simulate long-term wealth accumulation under different strategies.",
+        "why_ai_insights_title": "AI Investment Insights",
+        "why_ai_insights_desc": "Explain portfolio strengths, risks, and diversification in plain language.",
+
+        # ── How It Works ──────────────────────────────────────────────────
+        "home_how_it_works_title": "How It Works",
+        "home_how_it_works_subtitle": "From choosing ETFs to AI-powered insights, in five simple steps.",
+        "step_choose_etfs": "Choose ETFs",
+        "step_analyze_performance": "Analyze Performance",
+        "step_optimize_portfolio": "Optimize Portfolio",
+        "step_simulate_investment": "Simulate Investment",
+        "step_ai_insights": "AI Insights",
+
+        # ── Who Is This Platform For ─────────────────────────────────────
+        "home_target_users_title": "Who Is This Platform For?",
+        "home_target_users_subtitle": "Designed for every stage of your ETF investing journey.",
+        "persona_beginner_title": "ETF Beginner",
+        "persona_beginner_desc": "Suitable for investors starting their ETF journey.",
+        "persona_long_term_title": "Long-Term Investor",
+        "persona_long_term_desc": "Build diversified portfolios for retirement planning.",
+        "persona_student_title": "Finance Student",
+        "persona_student_desc": "Learn portfolio optimization and financial analytics.",
+
+        # ── Common Investment Questions (Problem Statement) ──────────────
+        "home_problem_title": "Common Investment Questions",
+        "problem_q1": "Which ETF should I invest in?",
+        "problem_q2": "Should I choose VOO or QQQ?",
+        "problem_q3": "How should I allocate my portfolio?",
+        "problem_q4": "How much could my investment grow in 20 years?",
+        "problem_q5": "Is my portfolio too risky?",
+        "problem_q6": "How diversified is my portfolio?",
+        "home_problem_conclusion": "This platform helps answer these questions using financial analytics and optimization models.",
 
         # ── Home Page Sections ──────────────────────────────────────────
         "home_dashboard_title": "Portfolio Dashboard",
@@ -892,12 +975,13 @@ TRANSLATIONS = {
         "disclaimer_past_performance": "Past performance does not guarantee future results.",
         "disclaimer_projections_hypothetical": "All projections are hypothetical and involve uncertainty.",
         "footer_brand": "AI ETF Portfolio Optimizer",
-        "footer_built_with": "Built with Python, Streamlit and financial analytics",
-        "footer_disclaimer": "Educational use only — not financial advice.",
+        "footer_tagline": "Decision Support Platform for ETF Investors",
+        "footer_built_with": "Powered by Python, Streamlit, Plotly and Financial Analytics",
+        "footer_disclaimer": "Educational Use Only",
 
         # ── ETF Analysis Page ────────────────────────────────────────────
         "etf_analysis_title": "ETF Analysis",
-        "etf_analysis_subtitle": "Historical price analysis, risk metrics, and correlation insights",
+        "etf_analysis_subtitle": "Analyze ETF performance, volatility, and historical returns to find the right holdings for you.",
         "etf_sidebar_settings": "Analysis Settings",
         "etf_select_etfs_help": "Select one or more ETFs to analyse",
         "etf_benchmark_help": "Select benchmark ETF",
@@ -945,7 +1029,7 @@ TRANSLATIONS = {
 
         # ── Portfolio Optimizer Page ─────────────────────────────────────
         "opt_title": "Portfolio Optimizer",
-        "opt_subtitle": "Mean-variance optimization, efficient frontier, and portfolio backtesting",
+        "opt_subtitle": "Generate optimized ETF allocations using Modern Portfolio Theory.",
         "opt_sidebar_settings": "Portfolio Settings",
         "opt_select_etfs_help": "Select 2 or more ETFs to optimize",
         "opt_constraints_label": "Optimization Constraints",
@@ -986,7 +1070,7 @@ TRANSLATIONS = {
 
         # ── Investment Simulator Page ────────────────────────────────────
         "sim_title": "Investment Simulator",
-        "sim_subtitle": "Long-term investment projection with Monte Carlo simulation",
+        "sim_subtitle": "Simulate long-term wealth accumulation under different strategies.",
         "sim_projection_disclaimer": (
             "**Projection Disclaimer**: All projections are hypothetical and based on assumed return and "
             "volatility parameters. They do not represent guaranteed outcomes. Market conditions vary "
@@ -1040,7 +1124,7 @@ TRANSLATIONS = {
 
         # ── Risk Analytics Page ──────────────────────────────────────────
         "risk_title": "Risk Analytics",
-        "risk_subtitle": "Portfolio risk metrics, drawdown analysis, and stress testing",
+        "risk_subtitle": "Assess portfolio risk, drawdowns, and stress scenarios to make more informed decisions.",
         "risk_sidebar_settings": "Portfolio Settings",
         "risk_select_etfs_help": "Select ETFs to analyse",
         "risk_weights_label": "Portfolio Weights",
@@ -1082,8 +1166,8 @@ TRANSLATIONS = {
 
         # ── Machine Learning Page ────────────────────────────────────────
         "ml_title": "Machine Learning",
-        "ml_subtitle": "Educational ML demonstration for ETF return direction prediction",
-        "ml_disclaimer_banner": "**Educational Disclaimer**: Market predictions are uncertain and are provided only as an educational demonstration.",
+        "ml_subtitle": "Machine learning is used for educational market analysis rather than investment prediction.",
+        "ml_disclaimer_banner": "**Educational Disclaimer**: Machine learning is used for educational market analysis rather than investment prediction. Market outcomes are highly uncertain.",
         "ml_sidebar_settings": "Model Settings",
         "ml_select_etf_help": "Select one ETF for ML analysis",
         "ml_custom_ticker": "Custom Ticker",
@@ -1149,7 +1233,7 @@ TRANSLATIONS = {
 
         # ── AI Advisor Page ───────────────────────────────────────────────
         "ai_title": "AI Advisor",
-        "ai_subtitle": "Educational portfolio analysis and explanation",
+        "ai_subtitle": "Explain portfolio strengths, risks, and diversification in plain language.",
         "ai_mode_info": (
             "**AI Analysis Mode**: OpenAI API key not configured. "
             "The advisor will use rule-based analysis. "
@@ -1255,7 +1339,7 @@ TRANSLATIONS = {
 
         # ── Portfolio History Page ───────────────────────────────────────
         "hist_title": "Portfolio History",
-        "hist_subtitle": "View, compare, and manage your saved portfolios",
+        "hist_subtitle": "Track, compare, and manage your saved portfolio decisions.",
         "hist_no_portfolios_title": "No Saved Portfolios Yet",
         "hist_no_portfolios_desc": "Go to the Portfolio Optimizer page to create and save your first portfolio.",
         "hist_saved_portfolios_count": "Saved Portfolios ({count} total)",
