@@ -217,6 +217,33 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .feature-card-title { color: var(--text); font-weight: 700; font-size: 14.5px; margin-bottom: 6px; }
 .feature-card-desc { color: var(--text-secondary); font-size: 12.5px; line-height: 1.55; }
 
+/* ── News Cards (Market Intelligence) ─────────────────────────────────────── */
+.news-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+    padding: 14px 16px; margin: 8px 0; transition: border-color 0.18s ease, transform 0.18s ease;
+}
+.news-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.news-card-title { color: var(--text); font-size: 14px; font-weight: 700; line-height: 1.4; margin-bottom: 6px; }
+.news-card-title a { color: inherit; text-decoration: none; }
+.news-card-title a:hover { color: var(--primary); }
+.news-card-meta {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    color: var(--text-muted); font-size: 11.5px; margin-bottom: 10px;
+}
+.news-card-meta svg { flex-shrink: 0; }
+.news-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.news-card-link { display: flex; align-items: center; }
+
+/* ── Status Cards (Affected ETFs / Market Intelligence) ───────────────────── */
+.status-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 16px 18px; margin: 6px 0; display: flex; flex-direction: column;
+    gap: 8px; min-height: 92px;
+}
+.status-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.status-card-ticker { color: var(--text); font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
+.status-card-sector { color: var(--text-secondary); font-size: 12.5px; }
+
 /* ── Empty / Error State Cards ────────────────────────────────────────────── */
 .state-card {
     background: var(--surface);

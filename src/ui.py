@@ -20,6 +20,7 @@ NAV_ITEMS = [
     {"page": "pages/4_Risk_Analytics.py", "label_key": "nav_risk_analytics"},
     {"page": "pages/5_Machine_Learning.py", "label_key": "nav_machine_learning"},
     {"page": "pages/6_AI_Advisor.py", "label_key": "nav_ai_advisor"},
+    {"page": "pages/8_Market_Intelligence.py", "label_key": "nav_market_intelligence", "icon": "📰"},
     {"page": "pages/7_Portfolio_History.py", "label_key": "nav_portfolio_history"},
 ]
 
@@ -44,7 +45,7 @@ def render_sidebar_nav() -> None:
 
     st.markdown(f'<div class="sidebar-nav-label">{t("nav_section_label")}</div>', unsafe_allow_html=True)
     for item in NAV_ITEMS:
-        st.page_link(item["page"], label=t(item["label_key"]))
+        st.page_link(item["page"], label=t(item["label_key"]), icon=item.get("icon"))
 
 
 def render_sidebar_footer() -> None:
@@ -233,6 +234,49 @@ def question_grid(questions: list, conclusion: str = None) -> None:
     st.markdown(f'<div class="question-grid">{items}</div>', unsafe_allow_html=True)
     if conclusion:
         st.markdown(f'<div class="question-conclusion">{conclusion}</div>', unsafe_allow_html=True)
+
+
+# ── News Card (Market Intelligence) ──────────────────────────────────────────────
+def news_card(title: str, time_str: str, source: str, impact_label: str,
+               impact_variant: str = "neutral", url: str = None) -> str:
+    """Render a single breaking-news card: title (optionally linked), publish
+    time, source, and a market-impact badge with an outbound link icon.
+    Built as one HTML string (no embedded blank lines) to avoid the
+    blank-line raw-HTML-termination bug documented on chart_card()/section_header().
+    """
+    title_html = f'<a href="{url}" target="_blank" rel="noopener noreferrer">{title}</a>' if url else title
+    clock_icon = icon_svg("clock", 13, COLORS["text_muted"])
+    link_html = (
+        f'<a class="news-card-link" href="{url}" target="_blank" rel="noopener noreferrer">'
+        f'{icon_svg("external-link", 14, COLORS["primary"])}</a>'
+    ) if url else ""
+    return (
+        '<div class="news-card">'
+        f'<div class="news-card-title">{title_html}</div>'
+        f'<div class="news-card-meta">{clock_icon}<span>{time_str}</span><span>&middot;</span><span>{source}</span></div>'
+        '<div class="news-card-footer">'
+        f'<span class="badge badge-{impact_variant}">{impact_label}</span>'
+        f'{link_html}'
+        '</div>'
+        '</div>'
+    )
+
+
+# ── Status Card (Affected ETFs / Market Intelligence) ───────────────────────────
+def status_card(ticker: str, sector: str, status_label: str, status_variant: str = "neutral") -> str:
+    """Render a compact status card: a ticker, its sector/category, and an
+    impact badge (e.g. Positive/Negative/Neutral). Built as a single-line
+    HTML string for the same blank-line-safety reason as news_card().
+    """
+    return (
+        '<div class="status-card">'
+        '<div class="status-card-top">'
+        f'<div class="status-card-ticker">{ticker}</div>'
+        f'<span class="badge badge-{status_variant}">{status_label}</span>'
+        '</div>'
+        f'<div class="status-card-sector">{sector}</div>'
+        '</div>'
+    )
 
 
 # ── Empty / Error States ─────────────────────────────────────────────────────────

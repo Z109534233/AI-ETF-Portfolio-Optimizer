@@ -221,6 +221,21 @@ def allocation_donut_chart(weights: dict, title: str = None) -> go.Figure:
     return apply_dark_theme(fig)
 
 
+def sentiment_donut_chart(bullish_pct: float, neutral_pct: float, bearish_pct: float) -> go.Figure:
+    """Donut chart for aggregate news-headline sentiment (Market Intelligence page)."""
+    labels = [t("chart_bullish"), t("chart_neutral"), t("chart_bearish")]
+    values = [bullish_pct, neutral_pct, bearish_pct]
+    colors = [COLORS["success"], COLORS["text_muted"], COLORS["danger"]]
+    fig = go.Figure(data=[go.Pie(
+        labels=labels, values=values,
+        hole=0.6, textinfo="label+percent",
+        marker=dict(colors=colors, line=dict(color=COLORS["bg"], width=2)),
+        hovertemplate="<b>%{label}</b><br>%{value:.1f}%<extra></extra>"
+    )])
+    fig.update_layout(showlegend=False)
+    return apply_dark_theme(fig)
+
+
 def risk_return_scatter(prices_df: pd.DataFrame, periods_per_year: int = 252) -> go.Figure:
     """Risk vs Return scatter plot for multiple ETFs."""
     from src.financial_metrics import annualized_return, annualized_volatility
