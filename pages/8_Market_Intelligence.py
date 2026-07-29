@@ -19,6 +19,7 @@ from src.market_intelligence import (
     fetch_market_indices, fetch_fear_greed_index, get_affected_etfs,
     calculate_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
+    calculate_affected_markets,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -27,7 +28,7 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, news_card, status_card, star_rating_html,
-    empty_state, error_state,
+    market_impact_card, empty_state, error_state,
 )
 from src.i18n import t
 
@@ -58,10 +59,12 @@ try:
     affected_etfs = get_affected_etfs(news_items)
     sentiment = calculate_market_sentiment(news_items)
     calendar_events = get_economic_calendar()
+    affected_markets = calculate_affected_markets(news_items)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
     affected_etfs, sentiment, calendar_events = [], calculate_market_sentiment([]), []
+    affected_markets = []
     data_load_failed = True
 
 if data_load_failed:
@@ -96,6 +99,24 @@ with col6:
                           color=COLORS["text_muted"]),
         unsafe_allow_html=True,
     )
+
+# ── Section 1b: Affected Markets ─────────────────────────────────────────────
+section_header(t("mi_section_affected_markets_title"), t("mi_section_affected_markets_subtitle"))
+
+if affected_markets:
+    market_cols = st.columns(len(affected_markets))
+    for col, market in zip(market_cols, affected_markets):
+        with col:
+            st.markdown(
+                market_impact_card(
+                    market["market"], t("mi_impact_level_caption"),
+                    star_rating_html(market["stars"]), market["impact_label"],
+                    t("mi_affected_by_caption"), market["affected_by"],
+                ),
+                unsafe_allow_html=True,
+            )
+else:
+    empty_state(t("mi_no_news_available"), t("mi_section_affected_markets_subtitle"), icon="layers")
 
 # ── Section 2: Breaking Market News ──────────────────────────────────────────
 section_header(t("mi_section_news_title"), t("mi_section_news_subtitle"))

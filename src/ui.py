@@ -292,6 +292,34 @@ def star_rating_html(stars: int, max_stars: int = 5) -> str:
     return f'<span class="star-rating">{filled}{empty}</span>'
 
 
+# ── Market Impact Card (Affected Markets, Market Intelligence) ──────────────────
+def market_impact_card(market: str, impact_level_caption: str, stars_html: str, impact_label: str,
+                        affected_by_caption: str = None, affected_by: list = None) -> str:
+    """
+    Render an "Affected Markets" card: market name, an "Impact Level"
+    caption, a star rating, a plain-text impact label (e.g. "High Impact"
+    -- never just bare stars), and an optional "Affected by:" list of the
+    headlines driving that rating. Built as a single-line HTML string for
+    the same blank-line-safety reason as chart_card()/news_card().
+    """
+    affected_html = ""
+    if affected_by:
+        items = "".join(f'<div class="affected-by-item">{title}</div>' for title in affected_by)
+        affected_html = (
+            f'<div class="affected-by-caption">{affected_by_caption}</div>'
+            f'<div class="affected-by-list">{items}</div>'
+        )
+    return (
+        '<div class="status-card market-impact-card">'
+        f'<div class="status-card-ticker">{market}</div>'
+        f'<div class="status-card-sector">{impact_level_caption}</div>'
+        f'<div class="status-card-stars">{stars_html}</div>'
+        f'<div class="market-impact-label">{impact_label}</div>'
+        f'{affected_html}'
+        '</div>'
+    )
+
+
 # ── Empty / Error States ─────────────────────────────────────────────────────────
 def empty_state(title: str, description: str, icon: str = "layers") -> None:
     st.markdown(f"""

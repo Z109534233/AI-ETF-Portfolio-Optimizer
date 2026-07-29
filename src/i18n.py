@@ -838,6 +838,18 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "目前沒有與你持股直接相關的重大新聞。",
 
         "mi_disclaimer": "本頁僅供教學使用。新聞分析不應被解讀為投資建議。",
+
+        # ── Affected Markets (Market Impact Level card redesign) ────────────
+        "mi_impact_stars_0": "無資料",
+        "mi_impact_stars_1": "極低影響",
+        "mi_impact_stars_2": "低度影響",
+        "mi_impact_stars_3": "中度影響",
+        "mi_impact_stars_4": "高度影響",
+        "mi_impact_stars_5": "極高影響",
+        "mi_section_affected_markets_title": "受影響市場",
+        "mi_section_affected_markets_subtitle": "此評等代表目前全球事件預期對各市場的影響程度，並非預測市場漲跌方向。",
+        "mi_impact_level_caption": "影響程度",
+        "mi_affected_by_caption": "受影響原因：",
     },
     "en": {
         # ── App / Brand ─────────────────────────────────────────────────
@@ -1652,6 +1664,18 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "There is no major news directly related to your current holdings today.",
 
         "mi_disclaimer": "This page is designed for educational purposes only. News analysis should not be interpreted as investment advice.",
+
+        # ── Affected Markets (Market Impact Level card redesign) ────────────
+        "mi_impact_stars_0": "No Data",
+        "mi_impact_stars_1": "Very Low Impact",
+        "mi_impact_stars_2": "Low Impact",
+        "mi_impact_stars_3": "Moderate Impact",
+        "mi_impact_stars_4": "High Impact",
+        "mi_impact_stars_5": "Very High Impact",
+        "mi_section_affected_markets_title": "Affected Markets",
+        "mi_section_affected_markets_subtitle": "The rating indicates how strongly current global events are expected to influence each market. It does not predict market direction.",
+        "mi_impact_level_caption": "Impact Level",
+        "mi_affected_by_caption": "Affected by:",
     },
 }
 

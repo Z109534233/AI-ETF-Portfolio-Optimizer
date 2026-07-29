@@ -250,6 +250,20 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .star-filled { color: var(--warning); }
 .star-empty { color: var(--border-strong); }
 
+/* ── Market Impact Card (Affected Markets) ───────────────────────────────────── */
+.market-impact-card { min-height: 0; }
+.market-impact-label { color: var(--text); font-weight: 700; font-size: 13.5px; margin-top: -2px; }
+.affected-by-caption {
+    color: var(--text-muted); font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-top: 6px;
+}
+.affected-by-list { display: flex; flex-direction: column; gap: 3px; }
+.affected-by-item {
+    color: var(--text-secondary); font-size: 12px; line-height: 1.4;
+    padding-left: 10px; position: relative;
+}
+.affected-by-item::before { content: "•"; position: absolute; left: 0; color: var(--text-muted); }
+
 /* ── Empty / Error State Cards ────────────────────────────────────────────── */
 .state-card {
     background: var(--surface);
