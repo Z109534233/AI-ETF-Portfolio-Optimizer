@@ -9,16 +9,7 @@ import contextlib
 import streamlit as st
 
 from src.theme import COLORS, icon_svg
-from src.i18n import t, t_country, language_selector
-from src.etf_database import get_countries, get_tickers_by_country
-
-# Shared st.session_state key for the Region selector: giving every page's
-# selectbox the SAME key makes Streamlit remember and restore the choice
-# automatically across page navigation (session_state is global to the
-# whole multipage app), so switching to "Taiwan" on one page carries over
-# to every other page that calls region_selector().
-REGION_STATE_KEY = "global_selected_region"
-ALL_REGIONS_VALUE = "__ALL__"
+from src.i18n import t, language_selector
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 NAV_ITEMS = [
@@ -65,48 +56,6 @@ def render_sidebar_footer() -> None:
         <div class="sidebar-footer-text">{t("sidebar_footer_text")}</div>
     </div>
     """, unsafe_allow_html=True)
-
-
-# ── Region Selector (Global ETF Support, shared across every page) ─────────────
-def region_selector() -> tuple:
-    """
-    Render the shared Region -> Country selector. Uses a single, page-
-    independent st.session_state key (REGION_STATE_KEY) so a selection made
-    on any page (ETF Analysis, Portfolio Optimizer, Risk Analytics, Machine
-    Learning, AI Advisor, ...) is remembered on every other page -- the
-    user never has to re-pick their region when navigating between pages.
-
-    Returns (selected_region, etf_options):
-      - selected_region: a country name (e.g. "Taiwan") or ALL_REGIONS_VALUE
-      - etf_options: the ticker list appropriate for that selection
-    """
-    countries = get_countries()
-    region_options = [ALL_REGIONS_VALUE] + countries
-    # Pre-resolve labels once (within a valid script context) rather than
-    # passing a format_func that reads st.session_state on every invocation.
-    region_labels = {c: t_country(c) for c in countries}
-    region_labels[ALL_REGIONS_VALUE] = t("field_all_regions")
-
-    # Compute the initial index explicitly from whatever is already
-    # persisted in session_state (defaulting to "United States" the very
-    # first time), rather than relying on key-only persistence -- each page
-    # is a separate script, and explicitly resolving the index this way is
-    # what makes the choice reliably carry over from page to page.
-    persisted = st.session_state.get(REGION_STATE_KEY)
-    default_index = region_options.index(persisted) if persisted in region_options else 1
-
-    selected_region = st.selectbox(
-        t("field_select_region"), region_options, index=default_index,
-        format_func=lambda x: region_labels.get(x, x),
-        key=REGION_STATE_KEY,
-    )
-
-    if selected_region == ALL_REGIONS_VALUE:
-        etf_options = [tk for c in countries for tk in get_tickers_by_country(c)]
-    else:
-        etf_options = get_tickers_by_country(selected_region)
-
-    return selected_region, etf_options
 
 
 # ── Hero Section (Home page) ───────────────────────────────────────────────────
@@ -341,54 +290,6 @@ def star_rating_html(stars: int, max_stars: int = 5) -> str:
     filled = f'<span class="star-filled">{"★" * stars}</span>' if stars else ""
     empty = f'<span class="star-empty">{"☆" * (max_stars - stars)}</span>' if stars < max_stars else ""
     return f'<span class="star-rating">{filled}{empty}</span>'
-
-
-# ── Market Impact Card (Affected Markets, Market Intelligence) ──────────────────
-def market_impact_card(market: str, impact_level_caption: str, stars_html: str, impact_label: str,
-                        affected_by_caption: str = None, affected_by: list = None) -> str:
-    """
-    Render an "Affected Markets" card: market name, an "Impact Level"
-    caption, a star rating, a plain-text impact label (e.g. "High Impact"
-    -- never just bare stars), and an optional "Affected by:" list of the
-    headlines driving that rating. Built as a single-line HTML string for
-    the same blank-line-safety reason as chart_card()/news_card().
-    """
-    affected_html = ""
-    if affected_by:
-        items = "".join(f'<div class="affected-by-item">{title}</div>' for title in affected_by)
-        affected_html = (
-            f'<div class="affected-by-caption">{affected_by_caption}</div>'
-            f'<div class="affected-by-list">{items}</div>'
-        )
-    return (
-        '<div class="status-card market-impact-card">'
-        f'<div class="status-card-ticker">{market}</div>'
-        f'<div class="status-card-sector">{impact_level_caption}</div>'
-        f'<div class="status-card-stars">{stars_html}</div>'
-        f'<div class="market-impact-label">{impact_label}</div>'
-        f'{affected_html}'
-        '</div>'
-    )
-
-
-# ── AI Global Market Impact Score (hero card, Market Intelligence) ──────────────
-def impact_score_hero_card(score: int, stars_html: str, label: str, summary: str) -> str:
-    """
-    Render the "AI Global Market Impact Score" hero card: a large 0-100
-    score, a gradient label badge, a star rating, and a one-sentence
-    summary. The single biggest visual highlight of the Market
-    Intelligence page.
-    """
-    return (
-        '<div class="impact-score-card glass-card">'
-        '<div class="impact-score-top">'
-        f'<div class="impact-score-value">{score}<span class="impact-score-max">/100</span></div>'
-        f'<span class="gradient-badge">{label}</span>'
-        '</div>'
-        f'<div class="impact-score-stars">{stars_html}</div>'
-        f'<div class="impact-score-desc">{summary}</div>'
-        '</div>'
-    )
 
 
 # ── Empty / Error States ─────────────────────────────────────────────────────────

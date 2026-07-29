@@ -203,19 +203,6 @@ def to_yahoo_symbol(ticker: str) -> str:
     return record.yahoo_symbol if record else ticker
 
 
-def etf_display_label(ticker: str) -> str:
-    """
-    'TICKER — Full Fund Name' for use as a selector's format_func, so users
-    see what an ETF actually is (e.g. '0050 — Yuanta/P-shares Taiwan Top 50
-    ETF') instead of a bare, unfamiliar ticker. The underlying selected
-    value stays the raw ticker; only the displayed label changes. Falls
-    back to the bare ticker for anything not in the database (e.g. a
-    free-text custom ticker).
-    """
-    record = get_etf(ticker)
-    return f"{ticker} — {record.name}" if record else ticker
-
-
 def rename_yahoo_columns(df):
     """
     Rename a downloaded-price DataFrame's columns from Yahoo Finance symbols

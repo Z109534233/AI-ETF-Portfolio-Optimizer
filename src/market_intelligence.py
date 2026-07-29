@@ -129,95 +129,6 @@ def _stars_for_impact(impact: str) -> int:
     return 4 if impact in ("Positive", "Negative") else 2
 
 
-def score_to_stars(score: int) -> int:
-    """Map a 0-100 impact score to a 0-5 star rating."""
-    if score <= 0:
-        return 0
-    if score >= 90:
-        return 5
-    if score >= 70:
-        return 4
-    if score >= 50:
-        return 3
-    if score >= 30:
-        return 2
-    return 1
-
-
-def stars_to_impact_label(stars: int) -> str:
-    """Translate a 0-5 star rating to its display label, e.g. 'High Impact'."""
-    return t(f"mi_impact_stars_{stars}")
-
-
-# country -> headline keywords used to detect relevance to that market.
-# Keyed by the same country names registered in src/etf_database.py, so
-# adding a new market there (and a matching entry here) is all it takes to
-# extend Affected Markets coverage -- nothing else needs to change.
-MARKET_KEYWORDS = {
-    "United States": ["fed", "u.s.", "united states", "nasdaq", "dow", "s&p",
-                       "white house", "tariff", "washington", "cpi", "treasury"],
-    "Taiwan": ["taiwan", "tsmc", "semiconductor", "chip", "supply chain"],
-    "United Kingdom": ["uk", "britain", "bank of england", "london", "ftse"],
-}
-
-
-def calculate_affected_markets(news_items: list) -> list:
-    """
-    Determine how strongly today's headlines may be affecting each
-    supported country (via MARKET_KEYWORDS, keyed by the same country names
-    as src/etf_database.py -- not hardcoded to any fixed score table).
-    Always returns every supported country so the section renders
-    consistently, sorted by impact descending.
-
-    Returns a list of dicts: market (translated country name), stars (0-5),
-    impact_label (translated, e.g. "High Impact"), affected_by (up to 2
-    matching headline titles explaining WHY, not just a bare star count).
-    """
-    results = []
-    for country in get_countries():
-        keywords = MARKET_KEYWORDS.get(country, [])
-        matches = [n for n in news_items if any(kw in n["title"].lower() for kw in keywords)]
-        score = min(100, 20 + len(matches) * 20) if matches else 20
-        stars = score_to_stars(score)
-        results.append({
-            "market": t_country(country),
-            "stars": stars,
-            "impact_label": stars_to_impact_label(stars),
-            "affected_by": [m["title"] for m in matches[:2]],
-        })
-    results.sort(key=lambda m: m["stars"], reverse=True)
-    return results
-
-
-def calculate_market_impact_score(news_items: list) -> dict:
-    """
-    AI Global Market Impact Score -- the headline metric of the Market
-    Intelligence page: a single 0-100 score, star rating, label, and a
-    one-sentence summary of how much market-moving activity is happening
-    today. Based on the volume of Breaking Events (bullish/bearish
-    headlines only -- Market Updates are informational and don't count).
-    This measures how much is happening, NOT which direction prices will
-    move, and is not investment advice.
-    """
-    if not news_items:
-        return {"score": 0, "stars": 0, "label": t("mi_impact_stars_0"),
-                "summary": t("mi_impact_score_no_data")}
-
-    directional = [n for n in news_items if n.get("bucket") in ("bullish", "bearish")]
-    score = min(100, 30 + len(directional) * 8)
-    stars = score_to_stars(score)
-    label = stars_to_impact_label(stars)
-
-    if stars >= 4:
-        summary = t("mi_impact_score_summary_high")
-    elif stars == 3:
-        summary = t("mi_impact_score_summary_moderate")
-    else:
-        summary = t("mi_impact_score_summary_low")
-
-    return {"score": score, "stars": stars, "label": label, "summary": summary}
-
-
 def get_affected_etfs(news_items: list, tickers: list = None) -> list:
     """
     Heuristically determine which watch-list ETFs today's headlines might
@@ -248,11 +159,6 @@ def get_affected_etfs(news_items: list, tickers: list = None) -> list:
         else:
             impact = "Neutral"
 
-        # A 0-100 companion to the star rating (reserved for a future
-        # per-ETF model) -- derived transparently from match volume, same
-        # heuristic family as calculate_market_impact_score().
-        impact_score = min(100, 40 + len(matches) * 15) if matches else 20
-
         results.append({
             "ticker": ticker,
             "sector": t_sector(sector_raw) if sector_raw else t("mi_sector_other"),
@@ -260,7 +166,6 @@ def get_affected_etfs(news_items: list, tickers: list = None) -> list:
             "impact": impact,
             "impact_label": impact_label(impact),
             "stars": _stars_for_impact(impact),
-            "impact_score": impact_score,
         })
     return results
 

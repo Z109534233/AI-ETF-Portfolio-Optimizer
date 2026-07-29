@@ -82,22 +82,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# "Remember Last Market" -- if the user has already picked a Region on any
-# page (shared via the same st.session_state key region_selector() uses),
-# show it here so they don't have to re-select it.
-_CURRENT_MARKET_KEYS = {
-    "United States": "home_market_us", "Taiwan": "home_market_taiwan", "United Kingdom": "home_market_uk",
-}
-_last_region = st.session_state.get("global_selected_region")
-if _last_region in _CURRENT_MARKET_KEYS:
-    st.markdown(
-        f'<div style="margin:-4px 0 8px 0;">'
-        f'<span class="caption-text">{t("home_current_market_label")}:</span> '
-        f'{badge(t(_CURRENT_MARKET_KEYS[_last_region]), "neutral")}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
 # ── Why Choose This Platform ─────────────────────────────────────────────────
 section_header(t("home_why_choose_title"), t("home_why_choose_subtitle"))
 why_choose = [

@@ -838,41 +838,6 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "目前沒有與你持股直接相關的重大新聞。",
 
         "mi_disclaimer": "本頁僅供教學使用。新聞分析不應被解讀為投資建議。",
-
-        # ── Impact Level Labels (0-5 stars) ───────────────────────────────
-        "mi_impact_stars_0": "無資料",
-        "mi_impact_stars_1": "極低影響",
-        "mi_impact_stars_2": "低度影響",
-        "mi_impact_stars_3": "中度影響",
-        "mi_impact_stars_4": "高度影響",
-        "mi_impact_stars_5": "極高影響",
-
-        # ── AI Global Market Impact Score ──────────────────────────────────
-        "mi_section_impact_score_title": "AI 全球市場影響分數",
-        "mi_impact_score_no_data": "目前沒有足夠的新聞資料可計算市場影響分數。",
-        "mi_impact_score_summary_high": "今日全球市場預期將因多項總體經濟事件而出現較高的波動。",
-        "mi_impact_score_summary_moderate": "今日市場受到部分事件影響，預期呈現中度波動。",
-        "mi_impact_score_summary_low": "今日市場事件相對平靜，預期波動程度較低。",
-        "mi_impact_score_label": "影響分數",
-
-        # ── Affected Markets ────────────────────────────────────────────────
-        "mi_section_affected_markets_title": "受影響市場",
-        "mi_section_affected_markets_subtitle": "依今日新聞動態評估各市場的影響程度",
-        "mi_impact_level_caption": "影響程度",
-        "mi_affected_by_caption": "受影響原因：",
-
-        # ── Market Updates ──────────────────────────────────────────────────
-        "mi_section_market_updates_title": "市場動態",
-        "mi_section_market_updates_subtitle": "非方向性的市場資訊，例如會議、公告與交易時段",
-
-        # ── News Filter ──────────────────────────────────────────────────────
-        "mi_news_filter_label": "新聞篩選",
-        "mi_news_filter_all": "全部",
-        "mi_news_filter_bullish": "看漲",
-        "mi_news_filter_bearish": "看跌",
-
-        # ── Homepage: Remember Last Market ──────────────────────────────────
-        "home_current_market_label": "目前市場",
     },
     "en": {
         # ── App / Brand ─────────────────────────────────────────────────
@@ -1687,41 +1652,6 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "There is no major news directly related to your current holdings today.",
 
         "mi_disclaimer": "This page is designed for educational purposes only. News analysis should not be interpreted as investment advice.",
-
-        # ── Impact Level Labels (0-5 stars) ───────────────────────────────
-        "mi_impact_stars_0": "No Data",
-        "mi_impact_stars_1": "Very Low Impact",
-        "mi_impact_stars_2": "Low Impact",
-        "mi_impact_stars_3": "Moderate Impact",
-        "mi_impact_stars_4": "High Impact",
-        "mi_impact_stars_5": "Very High Impact",
-
-        # ── AI Global Market Impact Score ──────────────────────────────────
-        "mi_section_impact_score_title": "AI Global Market Impact Score",
-        "mi_impact_score_no_data": "Not enough news data is currently available to calculate a market impact score.",
-        "mi_impact_score_summary_high": "Today's global markets are expected to experience elevated volatility due to multiple macroeconomic events.",
-        "mi_impact_score_summary_moderate": "Markets are experiencing moderate volatility today, driven by a handful of notable events.",
-        "mi_impact_score_summary_low": "Today's market events are relatively quiet, with lower expected volatility.",
-        "mi_impact_score_label": "Impact Score",
-
-        # ── Affected Markets ────────────────────────────────────────────────
-        "mi_section_affected_markets_title": "Affected Markets",
-        "mi_section_affected_markets_subtitle": "Impact levels assessed from today's news across each market",
-        "mi_impact_level_caption": "Impact Level",
-        "mi_affected_by_caption": "Affected by:",
-
-        # ── Market Updates ──────────────────────────────────────────────────
-        "mi_section_market_updates_title": "Market Updates",
-        "mi_section_market_updates_subtitle": "Non-directional market information such as meetings, announcements, and trading sessions",
-
-        # ── News Filter ──────────────────────────────────────────────────────
-        "mi_news_filter_label": "News Filter",
-        "mi_news_filter_all": "All",
-        "mi_news_filter_bullish": "Bullish",
-        "mi_news_filter_bearish": "Bearish",
-
-        # ── Homepage: Remember Last Market ──────────────────────────────────
-        "home_current_market_label": "Current Market",
     },
 }
 
