@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.data_loader import download_etf_data, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data
+from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import (
     annualized_return, annualized_volatility, sharpe_ratio, sortino_ratio,
     maximum_drawdown, calmar_ratio, beta, alpha, value_at_risk, conditional_var,
@@ -31,7 +32,7 @@ from src.ui import (
     chart_card, render_footer, error_state, style_signed_columns
 )
 from src.theme import COLORS
-from src.i18n import t
+from src.i18n import t, t_country
 
 st.set_page_config(
     page_title="Risk Analytics | AI ETF Portfolio Optimizer",
@@ -48,11 +49,33 @@ with st.sidebar:
     render_sidebar_nav()
     st.markdown(f"### {t('risk_sidebar_settings')}")
 
+    # ── Region Selector (Global ETF Support) ─────────────────────────────
+    # "United States" preserves the exact original ETF list (DEFAULT_ETFS)
+    # so existing behavior is unchanged unless the user explicitly picks a
+    # different region.
+    ALL_REGIONS_LABEL = t("field_all_regions")
+    region_options = [ALL_REGIONS_LABEL] + get_countries()
+    # Pre-resolve labels once (within a valid script context) rather than
+    # passing a format_func that reads st.session_state on every invocation.
+    _region_labels = {c: t_country(c) for c in get_countries()}
+    selected_region = st.selectbox(
+        t("field_select_region"), region_options, index=1,
+        format_func=lambda x: ALL_REGIONS_LABEL if x == ALL_REGIONS_LABEL else _region_labels.get(x, x),
+    )
+
+    if selected_region == ALL_REGIONS_LABEL:
+        etf_options = DEFAULT_ETFS + [tk for c in get_countries() for tk in get_tickers_by_country(c) if tk not in DEFAULT_ETFS]
+    elif selected_region == "United States":
+        etf_options = DEFAULT_ETFS
+    else:
+        etf_options = get_tickers_by_country(selected_region)
+
     selected_etfs = st.multiselect(
         t("field_select_etfs"),
-        options=DEFAULT_ETFS,
-        default=["VOO", "QQQ", "BND", "GLD"],
-        help=t("risk_select_etfs_help")
+        options=etf_options,
+        default=etf_options[:4],
+        help=t("risk_select_etfs_help"),
+        key=f"risk_multiselect_{selected_region}",
     )
 
     custom_ticker = st.text_input(t("field_add_custom_ticker"), placeholder="e.g. ARKK").upper().strip()
@@ -90,13 +113,18 @@ if not selected_etfs:
 # ── Data Loading ──────────────────────────────────────────────────────────────
 with st.spinner(t("msg_downloading_market_data")):
     all_tickers = list(set(selected_etfs + [benchmark]))
-    raw_prices = download_etf_data(all_tickers, str(start_date), str(end_date))
+    # Map each display ticker to its actual Yahoo Finance-fetchable symbol
+    # (e.g. "0050" -> "0050.TW"). Tickers not in the ETF database (including
+    # the US-only benchmark) pass through unchanged.
+    yahoo_tickers = [to_yahoo_symbol(tk) for tk in all_tickers]
+    raw_prices = download_etf_data(yahoo_tickers, str(start_date), str(end_date))
 
 if raw_prices.empty:
     error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
     st.stop()
 
 prices = clean_price_data(raw_prices)
+prices = rename_yahoo_columns(prices)
 etf_prices = prices[[tk for tk in selected_etfs if tk in prices.columns]]
 bench_prices = prices[benchmark].dropna() if benchmark in prices.columns else None
 

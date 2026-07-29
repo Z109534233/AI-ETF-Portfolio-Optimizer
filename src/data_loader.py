@@ -10,12 +10,14 @@ import streamlit as st
 from datetime import datetime, timedelta
 import os
 
+from src.etf_database import get_tickers_by_country
 
-DEFAULT_ETFS = [
-    "VOO", "QQQ", "SPY", "VTI", "VT",
-    "VXUS", "SCHD", "BND", "TLT", "GLD",
-    "IWM", "XLK", "XLF", "XLV", "VNQ"
-]
+# Sourced from src/etf_database.py (the single source of truth for every
+# ETF the platform knows about) rather than a separate hardcoded list, so
+# this always stays in sync with the "United States" entries registered
+# there. Non-US pages read other countries via get_tickers_by_country()
+# directly instead of this US-only constant.
+DEFAULT_ETFS = get_tickers_by_country("United States")
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

@@ -62,26 +62,17 @@ with st.sidebar:
         format_func=lambda x: ALL_REGIONS_LABEL if x == ALL_REGIONS_LABEL else _region_labels.get(x, x),
     )
 
-    REGION_DEFAULT_TICKERS = {
-        "United States": ["VOO", "QQQ", "SPY"],
-        "Taiwan": ["0050", "0056"],
-        "United Kingdom": ["VUSA", "EQQQ"],
-    }
-
     if selected_region == ALL_REGIONS_LABEL:
         etf_options = DEFAULT_ETFS + [tk for c in get_countries() for tk in get_tickers_by_country(c) if tk not in DEFAULT_ETFS]
-        region_default = REGION_DEFAULT_TICKERS["United States"]
     elif selected_region == "United States":
         etf_options = DEFAULT_ETFS
-        region_default = REGION_DEFAULT_TICKERS["United States"]
     else:
         etf_options = get_tickers_by_country(selected_region)
-        region_default = REGION_DEFAULT_TICKERS.get(selected_region, etf_options[:2])
 
     selected_etfs = st.multiselect(
         t("field_select_etfs"),
         options=etf_options,
-        default=[tk for tk in region_default if tk in etf_options],
+        default=etf_options[:3],
         help=t("etf_select_etfs_help"),
         key=f"etf_analysis_multiselect_{selected_region}",
     )

@@ -58,7 +58,7 @@ with st.sidebar:
     demo_etfs = st.multiselect(
         t("home_dashboard_etfs_label"),
         DEFAULT_ETFS,
-        default=["VOO", "QQQ", "BND", "GLD"],
+        default=DEFAULT_ETFS[:4],
         help=t("home_dashboard_etfs_help"),
     )
 
@@ -128,7 +128,7 @@ st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
 # ── Load Dashboard Data ───────────────────────────────────────────────────────
 if not demo_etfs:
-    demo_etfs = ["VOO", "QQQ", "BND", "GLD"]
+    demo_etfs = DEFAULT_ETFS[:4]
 
 with st.spinner(t("home_loading_market_data")):
     raw_prices = download_etf_data(demo_etfs, str(start_date), str(end_date))

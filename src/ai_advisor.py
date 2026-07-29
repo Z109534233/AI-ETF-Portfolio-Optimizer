@@ -5,6 +5,7 @@ Generates educational portfolio explanations using OpenAI API or rule-based fall
 
 import streamlit as st
 
+from src.etf_database import get_etf
 from src.i18n import t, get_language
 
 
@@ -120,14 +121,18 @@ def generate_rule_based_analysis(
     top_weight = max(weights)
     n_holdings = len(tickers)
 
-    # Classify portfolio type
-    equity_etfs = {"VOO", "QQQ", "SPY", "VTI", "VT", "VXUS", "SCHD", "IWM", "XLK", "XLF", "XLV", "VNQ"}
-    bond_etfs = {"BND", "TLT"}
-    commodity_etfs = {"GLD"}
+    # Classify portfolio type using src/etf_database.py's category field --
+    # covers every registered ETF (US/Taiwan/UK and any future market)
+    # instead of a hardcoded per-ticker set. Tickers not in the database
+    # (e.g. a free-text custom ticker) are excluded from every bucket, same
+    # as the previous hardcoded-set behavior.
+    def _category(ticker: str):
+        record = get_etf(ticker)
+        return record.category if record else None
 
-    equity_weight = sum(w for t, w in portfolio_weights.items() if t in equity_etfs)
-    bond_weight = sum(w for t, w in portfolio_weights.items() if t in bond_etfs)
-    commodity_weight = sum(w for t, w in portfolio_weights.items() if t in commodity_etfs)
+    equity_weight = sum(w for tk, w in portfolio_weights.items() if _category(tk) == "Equity")
+    bond_weight = sum(w for tk, w in portfolio_weights.items() if _category(tk) == "Fixed Income")
+    commodity_weight = sum(w for tk, w in portfolio_weights.items() if _category(tk) == "Commodity")
 
     # Extract metrics
     exp_return = metrics.get("Expected Annual Return", metrics.get("Annualized Return", "N/A"))

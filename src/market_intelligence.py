@@ -37,6 +37,10 @@ SECTOR_KEYWORDS = {
     "Gold": ["gold", "bullion", "precious metal"],
     "Bond": ["bond", "treasury", "yield", "rate", "fed", "interest rate"],
     "Dividend": ["dividend", "income", "payout"],
+    "Financials": ["bank", "financial", "rate hike"],
+    "Healthcare": ["health", "pharma", "biotech"],
+    "Real Estate": ["real estate", "housing", "reit"],
+    "Small Cap": ["small cap", "russell"],
 }
 
 

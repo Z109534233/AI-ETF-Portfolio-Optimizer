@@ -1756,6 +1756,10 @@ SECTOR_KEYS = {
     "Gold": "mi_sector_gold",
     "Bond": "mi_sector_bond",
     "Dividend": "mi_sector_dividend",
+    "Financials": "mi_sector_financials",
+    "Healthcare": "mi_sector_healthcare",
+    "Real Estate": "mi_sector_real_estate",
+    "Small Cap": "mi_sector_small_cap",
 }
 
 
