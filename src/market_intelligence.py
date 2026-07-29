@@ -26,6 +26,22 @@ INDEX_TICKERS = {
     "vix": ("mi_vix", "^VIX"),
 }
 
+# sector (as stored on ETFRecord.sector, via src/etf_database.py) -> headline
+# keywords used to match it. Keyed by *sector*, not by ticker, so any ETF
+# added to etf_database.py -- in any country -- is automatically covered
+# here as long as its sector matches one of these; unmapped sectors just
+# default to "Neutral" (no crash, no hardcoded per-ticker/per-country list).
+SECTOR_KEYWORDS = {
+    "Technology": ["tech", "technology", "nasdaq", "chip", "semiconductor", "ai "],
+    "Broad Market": ["s&p", "wall street", "stocks", "market"],
+    "Gold": ["gold", "bullion", "precious metal"],
+    "Bond": ["bond", "treasury", "yield", "rate", "fed", "interest rate"],
+    "Dividend": ["dividend", "income", "payout"],
+    "Financials": ["bank", "financial", "rate hike"],
+    "Healthcare": ["health", "pharma", "biotech"],
+    "Real Estate": ["real estate", "housing", "reit"],
+    "Small Cap": ["small cap", "russell"],
+}
 
 
 def _default_global_watchlist() -> list:
@@ -103,6 +119,16 @@ def impact_label(impact: str) -> str:
     return t(f"mi_impact_{impact.lower()}_label")
 
 
+def _stars_for_impact(impact: str) -> int:
+    """
+    A simple, transparent star rating derived from an ETF's headline impact:
+    Positive/Negative both indicate the ETF is topically relevant to today's
+    news (4 stars); Neutral (no matching headline) is the baseline (2 stars).
+    Not a predictive score -- purely a visual indicator of relevance.
+    """
+    return 4 if impact in ("Positive", "Negative") else 2
+
+
 def stars_to_impact_label(stars: int) -> str:
     """Translate a 0-5 star rating to its display label, e.g. 'High Impact'
     (never just a bare star count)."""
@@ -129,8 +155,6 @@ EVENT_TYPE_KEYWORDS = {
     "geopolitical": ["geopolitical", "conflict", "war", "sanctions", "invasion"],
     "earnings": ["earnings", "quarterly results", "eps", "revenue beat", "profit report",
                  "beats estimates", "misses estimates", "beats expectations", "misses expectations"],
-    "ai_boom": ["artificial intelligence", "ai boom", "ai stocks", "ai demand", "ai chip",
-                "generative ai", "nvidia"],
 }
 
 # event type -> how much weight a single headline of that type carries in
@@ -149,7 +173,6 @@ EVENT_IMPORTANCE = {
     "oil": 3,
     "earnings": 3,
     "pmi": 3,
-    "ai_boom": 4,
 }
 # Headlines that don't match any known event type (generic company/market
 # chatter) get this baseline weight instead.
@@ -301,95 +324,20 @@ def calculate_affected_markets(news_items: list) -> list:
     return results
 
 
-# event type -> {ETF sector (as stored on ETFRecord.sector): impact weight,
-# 1 (Low) - 5 (Very High)}. This is the "Asset Class / Sector Exposure"
-# layer of the ETF Impact Analysis pipeline: Event -> Asset Class -> Sector
-# Exposure -> ETF Impact. It is deliberately its own mapping, separate from
-# EVENT_MARKET_IMPACT (which is Event -> Country, used only by Affected
-# Markets) -- an event's effect on "which sector of the economy" is a
-# different question from its effect on "which country". Some real-world
-# asset classes the user may expect (e.g. "Energy", "Transportation") have
-# no ETF registered in etf_database.py yet, so they're simply omitted here;
-# adding such an ETF later just means adding its sector to the relevant
-# rows below.
-EVENT_ASSET_CLASS_IMPACT = {
-    "interest_rate": {"Bond": 5, "Real Estate": 4, "Technology": 4, "Financials": 4,
-                       "Broad Market": 3, "Dividend": 2},
-    "tariff": {"Technology": 5, "Broad Market": 4, "Small Cap": 3, "Bond": 1},
-    "semiconductor": {"Technology": 5, "Broad Market": 3, "Small Cap": 2},
-    "ai_boom": {"Technology": 5, "Broad Market": 3, "Small Cap": 2},
-    "oil": {"Financials": 2, "Broad Market": 2, "Bond": 1},
-    "inflation": {"Bond": 5, "Dividend": 4, "Real Estate": 3, "Broad Market": 3},
-    "employment": {"Financials": 3, "Small Cap": 3, "Broad Market": 3},
-    "gdp": {"Small Cap": 4, "Financials": 3, "Broad Market": 3},
-    "pmi": {"Technology": 3, "Small Cap": 3, "Broad Market": 2},
-    "geopolitical": {"Gold": 5, "Bond": 3, "Broad Market": 2, "Technology": 2},
-    "earnings": {"Technology": 4, "Healthcare": 2, "Broad Market": 2},
-}
-
-# ticker -> {event type: impact weight}. This is what differentiates ETFs
-# that share the same sector (VOO / 0050 / VUSA are all "Broad Market") --
-# it captures a fund's *Top Holdings* concentration, not its broad category.
-# E.g. 0050 is heavily weighted in TSMC, so a semiconductor or AI headline
-# matters far more to it than to a generic large-cap fund, even though
-# 0050's own listed sector is "Broad Market" and has no direct semiconductor
-# entry in EVENT_ASSET_CLASS_IMPACT above. Only funds with a genuinely
-# concentrated, well-known tilt are listed; every other ETF is scored purely
-# on its sector exposure (no artificial boost).
-ETF_HOLDINGS_EXPOSURE = {
-    "0050": {"semiconductor": 5, "ai_boom": 5, "tariff": 4},       # TSMC-heavy
-    "006208": {"semiconductor": 5, "ai_boom": 5, "tariff": 4},      # also tracks Taiwan 50 (TSMC-heavy)
-    "QQQ": {"semiconductor": 4, "ai_boom": 5, "earnings": 5},       # NVIDIA / Microsoft / Apple-heavy
-    "EQQQ": {"semiconductor": 4, "ai_boom": 5, "earnings": 5},      # Nasdaq-100 UCITS, same tilt as QQQ
-    "XLK": {"semiconductor": 5, "ai_boom": 5, "tariff": 4},         # pure-play US technology sector fund
-}
-
-# event type -> i18n key for its "Impact Reason" tag (e.g. "Semiconductor
-# Exposure"). Falls back to "mi_reason_other" for any event type without a
-# specific tag, so this never crashes even if EVENT_TYPE_KEYWORDS grows.
-EVENT_REASON_KEY = {
-    "tariff": "mi_reason_tariff",
-    "interest_rate": "mi_reason_interest_rate",
-    "semiconductor": "mi_reason_semiconductor",
-    "ai_boom": "mi_reason_ai_boom",
-    "oil": "mi_reason_oil",
-    "inflation": "mi_reason_inflation",
-    "employment": "mi_reason_employment",
-    "gdp": "mi_reason_gdp",
-    "pmi": "mi_reason_pmi",
-    "geopolitical": "mi_reason_geopolitical",
-    "earnings": "mi_reason_earnings",
-}
-
-
-def calculate_etf_impact(news_items: list, tickers: list = None) -> list:
+def get_affected_etfs(news_items: list, tickers: list = None) -> list:
     """
-    ETF Impact Analysis: Event -> Asset Class -> Sector Exposure -> ETF
-    Impact. This deliberately answers "which ETFs deserve attention today,
-    and why" rather than "did the news mention this ticker's sector name" --
-    it is NOT the same pipeline as calculate_affected_markets() (Event ->
-    Country) reused verbatim for ETFs. For every headline:
-      1. Classify its event type(s) (classify_event_types) -- Fed decisions,
-         tariffs, semiconductors, AI-related news, oil, inflation, ...
-      2. Look up how strongly that event type affects the ETF's *sector*
-         (EVENT_ASSET_CLASS_IMPACT) -- e.g. a Fed headline hits Bond funds
-         hardest, a tariff headline hits Technology hardest.
-      3. Layer on the ETF's specific Top Holdings Exposure
-         (ETF_HOLDINGS_EXPOSURE), if any, taking whichever of the two
-         (sector-based or holdings-based) is stronger. This is what keeps
-         same-sector ETFs from always tying: 0050's heavy TSMC weighting
-         makes it react to a semiconductor headline more than VOO/VUSA do,
-         even though all three share the "Broad Market" sector.
-    A single ETF's overall impact_score is driven by the single strongest
-    event weight it's exposed to today (not an average), so one major macro
-    headline is enough to flag an ETF as high-impact.
+    Heuristically determine which watch-list ETFs today's headlines might
+    affect, by matching each ETF's sector keywords (SECTOR_KEYWORDS, keyed by
+    the ETF's sector from src/etf_database.py) against headline titles. A
+    matched ETF's impact is the majority vote of classify_headline_sentiment()
+    across its matching headlines; ETFs with no matching headline default to
+    "Neutral". This is a transparent keyword heuristic, not a prediction, and
+    works for any country registered in etf_database.py -- nothing here is
+    hardcoded to a specific market.
 
-    Returns a list of dicts: ticker, sector/country (translated), impact
-    (raw Positive/Negative/Neutral majority-vote direction, for logic),
-    impact_label (translated), impact_score (0-100 -- a topical-relevance
-    score, NOT a price prediction), impact_level_label (translated, e.g.
-    "High Impact"), reasons (up to 2 translated tags explaining the score,
-    e.g. "Semiconductor Exposure").
+    Returns a list of dicts: ticker, sector (translated), country (translated),
+    impact (raw Positive/Negative/Neutral, for logic), impact_label
+    (translated), stars (0-5, for display only).
     """
     tickers = tickers or DEFAULT_WATCHLIST
     results = []
@@ -397,35 +345,14 @@ def calculate_etf_impact(news_items: list, tickers: list = None) -> list:
         record = get_etf(ticker)
         sector_raw = record.sector if record else None
         country_raw = record.country if record else None
-        holdings = ETF_HOLDINGS_EXPOSURE.get(ticker, {})
+        keywords = SECTOR_KEYWORDS.get(sector_raw, [])
 
-        best_weight = 0
-        event_weights = {}
-        matched_items = []
-
-        for item in news_items:
-            for event_type in classify_event_types(item["title"]):
-                weight = max(
-                    EVENT_ASSET_CLASS_IMPACT.get(event_type, {}).get(sector_raw, 0),
-                    holdings.get(event_type, 0),
-                )
-                if weight <= 0:
-                    continue
-                event_weights[event_type] = max(event_weights.get(event_type, 0), weight)
-                best_weight = max(best_weight, weight)
-                if item not in matched_items:
-                    matched_items.append(item)
-
-        impact = "Neutral"
-        if matched_items:
-            counts = Counter(i["impact"] for i in matched_items)
+        matches = [n for n in news_items if any(kw in n["title"].lower() for kw in keywords)]
+        if matches:
+            counts = Counter(n["impact"] for n in matches)
             impact = counts.most_common(1)[0][0]
-
-        impact_score = min(100, 20 + best_weight * 16) if best_weight else 20
-        level_stars = best_weight or 1  # baseline: no classified event today -> Very Low Impact
-
-        ranked_events = sorted(event_weights.items(), key=lambda kv: kv[1], reverse=True)
-        reasons = [t(EVENT_REASON_KEY.get(ev, "mi_reason_other")) for ev, _ in ranked_events[:2]]
+        else:
+            impact = "Neutral"
 
         results.append({
             "ticker": ticker,
@@ -433,9 +360,7 @@ def calculate_etf_impact(news_items: list, tickers: list = None) -> list:
             "country": t_country(country_raw) if country_raw else t("hist_region_unknown"),
             "impact": impact,
             "impact_label": impact_label(impact),
-            "impact_score": impact_score,
-            "impact_level_label": stars_to_impact_label(level_stars),
-            "reasons": reasons,
+            "stars": _stars_for_impact(impact),
         })
     return results
 
@@ -443,8 +368,7 @@ def calculate_etf_impact(news_items: list, tickers: list = None) -> list:
 def calculate_market_sentiment(news_items: list) -> dict:
     """
     Aggregate Bullish/Neutral/Bearish percentages across today's headlines
-    using each headline's precomputed "impact" field (src/news.py's keyword
-    classifier). Returns
+    using the same keyword classifier as get_affected_etfs(). Returns
     "available": False (with all percentages at 0) when there is no news to
     analyze, so the page can show a clean empty state instead of a fake split.
     """
@@ -564,7 +488,7 @@ def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etf
 def analyze_portfolio_impact(holdings: dict, affected_etfs: list) -> str:
     """
     Given a saved portfolio's holdings ({ticker: weight}) and the output of
-    calculate_etf_impact(), produce a short rule-based narrative describing the
+    get_affected_etfs(), produce a short rule-based narrative describing the
     portfolio's dominant sector exposure and which held tickers today's news
     may be relevant to. This analyzes possible relevance only -- it never
     predicts prices or returns.

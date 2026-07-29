@@ -271,12 +271,6 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .ai-sentiment-confidence-value { color: var(--text); font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
 .ai-sentiment-updated { color: var(--text-muted); font-size: 10.5px; margin-top: 4px; }
 
-/* ── ETF Impact Card (ETF Impact Analysis) ────────────────────────────────────── */
-.etf-impact-card { min-height: 0; gap: 4px; }
-.etf-impact-score-value { color: var(--text); font-weight: 800; font-size: 26px; letter-spacing: -0.01em; margin-top: 2px; }
-.etf-impact-score-max { color: var(--text-muted); font-weight: 600; font-size: 13px; }
-.etf-impact-level { color: var(--text-secondary); font-weight: 700; font-size: 12.5px; }
-
 /* ── Empty / Error State Cards ────────────────────────────────────────────── */
 .state-card {
     background: var(--surface);
