@@ -250,6 +250,45 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .star-filled { color: var(--warning); }
 .star-empty { color: var(--border-strong); }
 
+/* ── Market Impact Card (Affected Markets) ───────────────────────────────────── */
+.market-impact-card { min-height: 0; }
+.market-impact-label { color: var(--text); font-weight: 700; font-size: 13.5px; margin-top: -2px; }
+.affected-by-caption {
+    color: var(--text-muted); font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-top: 6px;
+}
+.affected-by-list { display: flex; flex-direction: column; gap: 3px; }
+.affected-by-item {
+    color: var(--text-secondary); font-size: 12px; line-height: 1.4;
+    padding-left: 10px; position: relative;
+}
+.affected-by-item::before { content: "•"; position: absolute; left: 0; color: var(--text-muted); }
+
+/* ── Glass Card / Gradient Badge (AI Global Market Impact Score) ─────────────── */
+.glass-card {
+    background: linear-gradient(160deg, rgba(59,130,246,0.10), rgba(19,27,46,0.55));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(59,130,246,0.28) !important;
+    box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.gradient-badge {
+    display: inline-flex; align-items: center; padding: 5px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.02em; color: #fff; white-space: nowrap;
+    background: linear-gradient(135deg, var(--primary), #A78BFA);
+    box-shadow: 0 4px 14px rgba(59,130,246,0.35);
+}
+.impact-score-card { border-radius: var(--radius-xl); padding: 28px 32px; margin: 6px 0 18px 0; }
+.impact-score-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.impact-score-value { color: var(--text); font-size: 44px; font-weight: 800; letter-spacing: -0.02em; }
+.impact-score-max { color: var(--text-muted); font-size: 20px; font-weight: 600; margin-left: 2px; }
+.impact-score-stars { margin: 10px 0 14px 0; font-size: 18px; }
+.impact-score-desc { color: var(--text-secondary); font-size: 14px; line-height: 1.6; max-width: 760px; }
+@media (max-width: 768px) {
+    .impact-score-card { padding: 20px 20px; }
+    .impact-score-value { font-size: 34px; }
+}
+
 /* ── Empty / Error State Cards ────────────────────────────────────────────── */
 .state-card {
     background: var(--surface);
