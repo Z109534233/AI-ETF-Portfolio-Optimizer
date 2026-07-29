@@ -26,7 +26,8 @@ from src.theme import COLORS
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, news_card, status_card, empty_state, error_state,
+    chart_card, render_footer, news_card, status_card, star_rating_html,
+    empty_state, error_state,
 )
 from src.i18n import t
 
@@ -123,20 +124,21 @@ ai_client = get_openai_client()
 with chart_card(t("mi_section_summary_title"), tag=t("ai_tag_generated") if ai_client else t("ai_tag_rule_based")):
     st.markdown(summary_text)
 
-# ── Section 4: Affected ETFs ─────────────────────────────────────────────────
-section_header(t("mi_section_affected_title"), t("mi_section_affected_subtitle"))
+# ── Section 4: Global ETFs (Affected ETFs across US / Taiwan / UK) ───────────
+section_header(t("mi_section_global_etfs_title"), t("mi_section_global_etfs_subtitle"))
 
 if affected_etfs:
     etf_cols = st.columns(len(affected_etfs))
     for col, etf in zip(etf_cols, affected_etfs):
         with col:
             st.markdown(
-                status_card(etf["ticker"], etf["sector"], etf["impact_label"],
-                            IMPACT_VARIANT.get(etf["impact"], "neutral")),
+                status_card(etf["ticker"], etf["country"], etf["impact_label"],
+                            IMPACT_VARIANT.get(etf["impact"], "neutral"),
+                            star_rating_html(etf["stars"])),
                 unsafe_allow_html=True,
             )
 else:
-    empty_state(t("mi_no_news_available"), t("mi_section_affected_subtitle"), icon="layers")
+    empty_state(t("mi_no_news_available"), t("mi_section_global_etfs_subtitle"), icon="layers")
 
 # ── Section 5: Market Sentiment ──────────────────────────────────────────────
 section_header(t("mi_section_sentiment_title"))

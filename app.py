@@ -27,7 +27,7 @@ from src.utils import load_css, disclaimer_box, metric_card_html, ensure_directo
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, hero_section,
     section_header, chart_card, feature_card, render_footer,
-    process_flow, question_grid
+    process_flow, question_grid, badge
 )
 from src.theme import COLORS
 from src.i18n import t
@@ -70,6 +70,17 @@ with st.sidebar:
 
 # ── Hero ──────────────────────────────────────────────────────────────────────
 hero_section()
+
+# ── Supported Markets (Global ETF Support) ───────────────────────────────────
+section_header(t("home_supported_markets_title"), t("home_supported_markets_subtitle"))
+st.markdown(
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">'
+    + badge(t("home_market_us"), "blue")
+    + badge(t("home_market_taiwan"), "green")
+    + badge(t("home_market_uk"), "amber")
+    + '</div>',
+    unsafe_allow_html=True,
+)
 
 # ── Why Choose This Platform ─────────────────────────────────────────────────
 section_header(t("home_why_choose_title"), t("home_why_choose_subtitle"))

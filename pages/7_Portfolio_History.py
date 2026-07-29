@@ -13,13 +13,14 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import load_all_portfolios, delete_portfolio, init_database
+from src.etf_database import get_country
 from src.charts import allocation_donut_chart, apply_dark_theme, CHART_COLORS
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, empty_state
 )
-from src.i18n import t, t_opt_method
+from src.i18n import t, t_opt_method, t_country
 
 st.set_page_config(
     page_title="Portfolio History | AI ETF Portfolio Optimizer",
@@ -104,7 +105,9 @@ if selected_portfolio:
             # Holdings table
             if selected_portfolio["holdings"]:
                 holdings_df = pd.DataFrame([
-                    {t("hist_col_ticker"): tk, t("hist_col_weight"): f"{w:.2%}",
+                    {t("hist_col_ticker"): tk,
+                     t("hist_col_region"): t_country(get_country(tk)) if get_country(tk) else t("hist_region_unknown"),
+                     t("hist_col_weight"): f"{w:.2%}",
                      t("hist_col_amount"): f"${w * selected_portfolio['investment_amount']:,.2f}"}
                     for tk, w in sorted(selected_portfolio["holdings"].items(), key=lambda x: x[1], reverse=True)
                 ])
