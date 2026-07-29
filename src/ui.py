@@ -320,6 +320,38 @@ def market_impact_card(market: str, impact_level_caption: str, stars_html: str, 
     )
 
 
+# ── AI Market Sentiment Card (Market Intelligence) ───────────────────────────────
+def ai_sentiment_card(mood_emoji: str, mood_label: str, mood_variant: str,
+                       confidence_label: str, confidence: int,
+                       drivers_label: str, drivers: list,
+                       updated_label: str, updated_at: str) -> str:
+    """
+    Render the "AI Market Sentiment" card: a mood badge (emoji + Bullish/
+    Neutral/Bearish), a confidence percentage, a "Top Drivers" list
+    explaining what drove the assessment, and a last-updated timestamp.
+    Built as a single-line HTML string for the same blank-line-safety
+    reason as chart_card()/news_card().
+    """
+    drivers_html = ""
+    if drivers:
+        items = "".join(f'<div class="affected-by-item">{title}</div>' for title in drivers)
+        drivers_html = (
+            f'<div class="affected-by-caption">{drivers_label}</div>'
+            f'<div class="affected-by-list">{items}</div>'
+        )
+    return (
+        '<div class="status-card ai-sentiment-card">'
+        f'<span class="badge badge-{mood_variant} ai-sentiment-mood">{mood_emoji} {mood_label}</span>'
+        '<div class="ai-sentiment-confidence-row">'
+        f'<span class="status-card-sector">{confidence_label}</span>'
+        f'<span class="ai-sentiment-confidence-value">{confidence}%</span>'
+        '</div>'
+        f'{drivers_html}'
+        f'<div class="ai-sentiment-updated">{updated_label}: {updated_at}</div>'
+        '</div>'
+    )
+
+
 # ── Empty / Error States ─────────────────────────────────────────────────────────
 def empty_state(title: str, description: str, icon: str = "layers") -> None:
     st.markdown(f"""

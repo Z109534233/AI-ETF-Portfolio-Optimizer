@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -17,7 +18,7 @@ from src.database import load_all_portfolios, init_database
 from src.news import fetch_market_news
 from src.market_intelligence import (
     fetch_market_indices, fetch_fear_greed_index, get_affected_etfs,
-    calculate_market_sentiment, get_economic_calendar,
+    calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets,
 )
@@ -28,7 +29,7 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, news_card, status_card, star_rating_html,
-    market_impact_card, empty_state, error_state,
+    market_impact_card, ai_sentiment_card, empty_state, error_state,
 )
 from src.i18n import t
 
@@ -58,12 +59,14 @@ try:
     fear_greed = fetch_fear_greed_index()
     affected_etfs = get_affected_etfs(news_items)
     sentiment = calculate_market_sentiment(news_items)
+    ai_sentiment = calculate_ai_market_sentiment(news_items)
     calendar_events = get_economic_calendar()
     affected_markets = calculate_affected_markets(news_items)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
     affected_etfs, sentiment, calendar_events = [], calculate_market_sentiment([]), []
+    ai_sentiment = calculate_ai_market_sentiment([])
     affected_markets = []
     data_load_failed = True
 
@@ -161,8 +164,25 @@ if affected_etfs:
 else:
     empty_state(t("mi_no_news_available"), t("mi_section_global_etfs_subtitle"), icon="layers")
 
-# ── Section 5: Market Sentiment ──────────────────────────────────────────────
-section_header(t("mi_section_sentiment_title"))
+# ── Section 4b: AI Market Sentiment (rule-based engine, not a headline count) ─
+section_header(t("mi_section_ai_sentiment_title"), t("mi_section_ai_sentiment_subtitle"))
+
+if news_items:
+    mood_emoji = {"Bullish": "🟢", "Neutral": "⚪", "Bearish": "🔴"}.get(ai_sentiment["mood"], "⚪")
+    st.markdown(
+        ai_sentiment_card(
+            mood_emoji, ai_sentiment["label"], ai_sentiment["variant"],
+            t("mi_ai_sentiment_confidence_label"), ai_sentiment["confidence"],
+            t("mi_ai_sentiment_drivers_label"), ai_sentiment["drivers"],
+            t("mi_ai_sentiment_updated_label"), datetime.now().strftime("%H:%M"),
+        ),
+        unsafe_allow_html=True,
+    )
+else:
+    empty_state(t("mi_no_news_available"), t("mi_ai_sentiment_no_data"), icon="activity")
+
+# ── Section 5: News Sentiment Analysis ───────────────────────────────────────
+section_header(t("mi_section_sentiment_title"), t("mi_section_sentiment_subtitle"))
 
 with chart_card(t("mi_section_sentiment_title")):
     if sentiment["available"]:

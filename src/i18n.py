@@ -770,7 +770,8 @@ TRANSLATIONS = {
         "mi_country_united_states": "美國",
         "mi_country_taiwan": "台灣",
         "mi_country_united_kingdom": "英國",
-        "mi_section_sentiment_title": "市場情緒",
+        "mi_section_sentiment_title": "新聞情緒分析",
+        "mi_section_sentiment_subtitle": "根據新聞標題分類，統計今日新聞情緒分布。",
         "mi_section_calendar_title": "經濟行事曆",
         "mi_section_calendar_subtitle": "本表為範例資料，尚未串接即時 API",
         "mi_section_portfolio_impact_title": "投資組合影響分析",
@@ -838,6 +839,17 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "目前沒有與你持股直接相關的重大新聞。",
 
         "mi_disclaimer": "本頁僅供教學使用。新聞分析不應被解讀為投資建議。",
+
+        # ── AI Market Sentiment (rule-based engine) ──────────────────────────
+        "mi_section_ai_sentiment_title": "AI 市場情緒",
+        "mi_section_ai_sentiment_subtitle": "綜合重大事件類型、事件權重與市場影響範圍的規則式 AI 市場情緒判斷，並非漲跌預測。",
+        "mi_mood_bullish": "看漲",
+        "mi_mood_neutral": "中性",
+        "mi_mood_bearish": "看跌",
+        "mi_ai_sentiment_confidence_label": "信心指數",
+        "mi_ai_sentiment_drivers_label": "主要驅動因素",
+        "mi_ai_sentiment_updated_label": "最後更新",
+        "mi_ai_sentiment_no_data": "目前沒有足夠的事件資料可進行 AI 市場情緒判斷。",
 
         # ── Affected Markets (Market Impact Level card redesign) ────────────
         "mi_impact_stars_0": "無資料",
@@ -1596,7 +1608,8 @@ TRANSLATIONS = {
         "mi_country_united_states": "United States",
         "mi_country_taiwan": "Taiwan",
         "mi_country_united_kingdom": "United Kingdom",
-        "mi_section_sentiment_title": "Market Sentiment",
+        "mi_section_sentiment_title": "News Sentiment Analysis",
+        "mi_section_sentiment_subtitle": "Distribution of today's news sentiment based on headline classification.",
         "mi_section_calendar_title": "Economic Calendar",
         "mi_section_calendar_subtitle": "Example data shown -- not yet connected to a live API",
         "mi_section_portfolio_impact_title": "Portfolio Impact",
@@ -1664,6 +1677,17 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "There is no major news directly related to your current holdings today.",
 
         "mi_disclaimer": "This page is designed for educational purposes only. News analysis should not be interpreted as investment advice.",
+
+        # ── AI Market Sentiment (rule-based engine) ──────────────────────────
+        "mi_section_ai_sentiment_title": "AI Market Sentiment",
+        "mi_section_ai_sentiment_subtitle": "A rule-based AI assessment combining major event types, event weighting, and market impact scope -- not a price prediction.",
+        "mi_mood_bullish": "Bullish",
+        "mi_mood_neutral": "Neutral",
+        "mi_mood_bearish": "Bearish",
+        "mi_ai_sentiment_confidence_label": "Confidence",
+        "mi_ai_sentiment_drivers_label": "Top Drivers",
+        "mi_ai_sentiment_updated_label": "Last Updated",
+        "mi_ai_sentiment_no_data": "Not enough event data is currently available for AI market sentiment analysis.",
 
         # ── Affected Markets (Market Impact Level card redesign) ────────────
         "mi_impact_stars_0": "No Data",

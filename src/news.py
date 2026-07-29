@@ -13,15 +13,39 @@ import yfinance as yf
 # of "what's moving markets today" without needing a paid news API.
 NEWS_SOURCE_TICKERS = ["SPY", "QQQ", "DIA", "^GSPC"]
 
+# Deliberately broad: real headlines rarely use textbook words like
+# "bullish"/"bearish" outright, so the list leans on the concrete,
+# recurring vocabulary of financial reporting (rate decisions, earnings,
+# trade policy, inflation prints, geopolitical events, ...) rather than a
+# handful of generic adjectives -- this is what keeps most real headlines
+# out of a meaningless default "Neutral" bucket.
 POSITIVE_KEYWORDS = [
     "surge", "rally", "soar", "jump", "gain", "record high", "rebound",
-    "climb", "bullish", "upgrade", "outperform", "beat", "optimis", "recovery",
-    "boost", "rises", "rose", "strong demand",
+    "climb", "bullish", "upgrade", "outperform", "beat", "beats", "optimis",
+    "recovery", "boost", "rises", "rose", "strong demand", "rate cut",
+    "cuts rate", "cuts rates", "cut rates", "lowers rate", "lower rates",
+    "cuts interest rate", "cut interest rate", "lowers interest rate",
+    "strong earnings", "earnings beat", "beat estimates", "beats estimates",
+    "beat expectations", "beats expectations", "record profit", "record earnings",
+    "expands", "accelerates", "stronger than expected", "tops estimates",
+    "raises guidance", "raises forecast", "buyback", "stimulus", "easing",
+    "cools", "cooling inflation", "eases", "trade deal", "deal reached",
+    "ceasefire", "cease-fire", "peace talks",
 ]
 NEGATIVE_KEYWORDS = [
     "plunge", "crash", "drop", "sell-off", "selloff", "tumble", "slump",
-    "fear", "recession", "downgrade", "miss", "bearish", "warns", "slide",
-    "losses", "volatility spikes", "falls", "fell", "sinks", "worries", "concern",
+    "fear", "recession", "downgrade", "miss", "misses", "bearish", "warns",
+    "slide", "losses", "volatility spikes", "falls", "fell", "sinks",
+    "worries", "concern", "tariff", "tariffs", "inflation higher",
+    "inflation rises", "inflation surges", "inflation jumps",
+    "hotter than expected", "geopolitical", "conflict", "war", "sanctions",
+    "invasion", "attack", "shortage", "layoffs", "job cuts", "cuts jobs",
+    "default", "bankruptcy", "lawsuit", "investigation", "probe",
+    "widens deficit", "misses estimates", "misses expectations",
+    "weaker than expected", "cuts guidance", "cuts forecast", "rate hike",
+    "hikes rate", "hikes rates", "raises rates", "escalates", "strike",
+    "hikes interest rate", "raises interest rate", "rising yields",
+    "yields rise", "yields climb", "caution", "cautious",
 ]
 
 

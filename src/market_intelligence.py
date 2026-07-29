@@ -153,7 +153,30 @@ EVENT_TYPE_KEYWORDS = {
     "gdp": ["gdp", "economic growth", "recession", "economic output"],
     "pmi": ["pmi", "manufacturing index", "purchasing managers"],
     "geopolitical": ["geopolitical", "conflict", "war", "sanctions", "invasion"],
+    "earnings": ["earnings", "quarterly results", "eps", "revenue beat", "profit report",
+                 "beats estimates", "misses estimates", "beats expectations", "misses expectations"],
 }
+
+# event type -> how much weight a single headline of that type carries in
+# the AI Market Sentiment engine below. Major macro events (Fed, tariffs,
+# geopolitics, ...) are deliberately weighted far above routine company
+# news, so one Fed headline can outweigh several minor stories instead of
+# every headline just being counted equally.
+EVENT_IMPORTANCE = {
+    "interest_rate": 5,   # Fed / central bank decisions
+    "tariff": 5,
+    "geopolitical": 5,
+    "inflation": 4,
+    "gdp": 4,
+    "employment": 4,
+    "semiconductor": 4,
+    "oil": 3,
+    "earnings": 3,
+    "pmi": 3,
+}
+# Headlines that don't match any known event type (generic company/market
+# chatter) get this baseline weight instead.
+DEFAULT_EVENT_WEIGHT = 1
 
 # event type -> {market: impact weight, 1 (Very Low) - 5 (Very High)}. This
 # is the actual "Event -> Impact Mapping": a market's rating comes from
@@ -185,6 +208,77 @@ def classify_event_types(title: str) -> list:
         return []
     low = title.lower()
     return [event for event, keywords in EVENT_TYPE_KEYWORDS.items() if any(kw in low for kw in keywords)]
+
+
+_MOOD_KEY = {"Bullish": "mi_mood_bullish", "Neutral": "mi_mood_neutral", "Bearish": "mi_mood_bearish"}
+_MOOD_VARIANT = {"Bullish": "green", "Neutral": "neutral", "Bearish": "red"}
+
+
+def calculate_ai_market_sentiment(news_items: list) -> dict:
+    """
+    AI Market Sentiment -- a Rule-based Market Sentiment Engine, distinct
+    from calculate_market_sentiment() (which stays untouched and simply
+    counts headline keyword hits for the "News Sentiment Analysis" chart).
+    This does NOT just count how many headlines are positive/negative. It
+    combines three things for every headline:
+      1. Event type (classify_event_types) -- Fed/rate decisions, tariffs,
+         inflation, GDP, employment, geopolitics, oil, semiconductors,
+         earnings, ...
+      2. Event importance (EVENT_IMPORTANCE) -- a Fed decision or tariff
+         headline counts far more than a routine company story
+         (DEFAULT_EVENT_WEIGHT for anything unclassified)
+      3. Each headline's directional read (its precomputed "impact" field,
+         Positive/Negative/Neutral from src/news.py's keyword classifier)
+    A single major macro headline can therefore outweigh several minor
+    ones, unlike a flat headline count. Still a transparent heuristic, not
+    a real ML/NLP model or a price prediction -- reserved as the entry
+    point for a future LLM-based version.
+
+    Returns: mood ("Bullish"/"Neutral"/"Bearish", raw), label (translated),
+    variant (badge color), confidence (0-100), drivers (up to 3 headline
+    titles that most influenced the result, highest-weight first).
+    """
+    if not news_items:
+        return {"mood": "Neutral", "label": t("mi_mood_neutral"), "variant": "neutral",
+                "confidence": 0, "drivers": []}
+
+    weighted_sum = 0.0
+    total_weight = 0.0
+    drivers = []
+
+    for item in news_items:
+        event_types = classify_event_types(item["title"])
+        weight = max((EVENT_IMPORTANCE.get(et, DEFAULT_EVENT_WEIGHT) for et in event_types),
+                     default=DEFAULT_EVENT_WEIGHT)
+        signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
+        weighted_sum += signed * weight
+        total_weight += weight
+        if event_types:
+            drivers.append((item["title"], weight))
+
+    avg = weighted_sum / total_weight if total_weight else 0.0
+
+    if avg > 0.15:
+        mood = "Bullish"
+    elif avg < -0.15:
+        mood = "Bearish"
+    else:
+        mood = "Neutral"
+
+    # Confidence blends how one-sided the weighted signal is (abs(avg),
+    # 0-1) into a 30-95% display range -- never a fake 0% or 100%.
+    confidence = int(max(30, min(95, round(50 + abs(avg) * 50))))
+
+    drivers.sort(key=lambda d: d[1], reverse=True)
+    top_drivers = [d[0] for d in drivers[:3]]
+
+    return {
+        "mood": mood,
+        "label": t(_MOOD_KEY[mood]),
+        "variant": _MOOD_VARIANT[mood],
+        "confidence": confidence,
+        "drivers": top_drivers,
+    }
 
 
 def calculate_affected_markets(news_items: list) -> list:
