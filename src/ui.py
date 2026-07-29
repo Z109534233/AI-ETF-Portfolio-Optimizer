@@ -263,14 +263,11 @@ def news_card(title: str, time_str: str, source: str, impact_label: str,
 
 
 # ── Status Card (Affected ETFs / Market Intelligence) ───────────────────────────
-def status_card(ticker: str, sector: str, status_label: str, status_variant: str = "neutral",
-                 stars_html: str = None) -> str:
-    """Render a compact status card: a ticker, its sector/category, an
-    impact badge (e.g. Positive/Negative/Neutral), and an optional star
-    rating. Built as a single-line HTML string for the same blank-line-
-    safety reason as news_card().
+def status_card(ticker: str, sector: str, status_label: str, status_variant: str = "neutral") -> str:
+    """Render a compact status card: a ticker, its sector/category, and an
+    impact badge (e.g. Positive/Negative/Neutral). Built as a single-line
+    HTML string for the same blank-line-safety reason as news_card().
     """
-    stars_block = f'<div class="status-card-stars">{stars_html}</div>' if stars_html else ""
     return (
         '<div class="status-card">'
         '<div class="status-card-top">'
@@ -278,18 +275,8 @@ def status_card(ticker: str, sector: str, status_label: str, status_variant: str
         f'<span class="badge badge-{status_variant}">{status_label}</span>'
         '</div>'
         f'<div class="status-card-sector">{sector}</div>'
-        f'{stars_block}'
         '</div>'
     )
-
-
-# ── Star Rating ───────────────────────────────────────────────────────────────
-def star_rating_html(stars: int, max_stars: int = 5) -> str:
-    """Render a colored star rating (filled amber stars + muted empty stars)."""
-    stars = max(0, min(stars, max_stars))
-    filled = f'<span class="star-filled">{"★" * stars}</span>' if stars else ""
-    empty = f'<span class="star-empty">{"☆" * (max_stars - stars)}</span>' if stars < max_stars else ""
-    return f'<span class="star-rating">{filled}{empty}</span>'
 
 
 # ── Empty / Error States ─────────────────────────────────────────────────────────

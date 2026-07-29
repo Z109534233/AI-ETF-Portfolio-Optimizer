@@ -13,7 +13,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.data_loader import download_etf_data, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data
-from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
     compute_efficient_frontier
@@ -37,7 +36,7 @@ from src.ui import (
     chart_card, render_footer, error_state
 )
 from src.theme import COLORS
-from src.i18n import t, t_opt_method, t_country, OPTIMIZATION_METHOD_KEYS
+from src.i18n import t, t_opt_method, OPTIMIZATION_METHOD_KEYS
 
 st.set_page_config(
     page_title="Portfolio Optimizer | AI ETF Portfolio Optimizer",
@@ -55,42 +54,11 @@ with st.sidebar:
     render_sidebar_nav()
     st.markdown(f"### {t('opt_sidebar_settings')}")
 
-    # ── Region Selector (Global ETF Support) ─────────────────────────────
-    # "United States" preserves the exact original ETF list (DEFAULT_ETFS)
-    # so existing behavior is unchanged unless the user explicitly picks a
-    # different region.
-    ALL_REGIONS_LABEL = t("field_all_regions")
-    region_options = [ALL_REGIONS_LABEL] + get_countries()
-    # Pre-resolve labels once (within a valid script context) rather than
-    # passing a format_func that reads st.session_state on every invocation.
-    _region_labels = {c: t_country(c) for c in get_countries()}
-    selected_region = st.selectbox(
-        t("field_select_region"), region_options, index=1,
-        format_func=lambda x: ALL_REGIONS_LABEL if x == ALL_REGIONS_LABEL else _region_labels.get(x, x),
-    )
-
-    REGION_DEFAULT_TICKERS = {
-        "United States": ["VOO", "QQQ", "BND", "GLD", "VNQ"],
-        "Taiwan": ["0050", "0056", "00878"],
-        "United Kingdom": ["VUSA", "EQQQ", "FUSD"],
-    }
-
-    if selected_region == ALL_REGIONS_LABEL:
-        etf_options = DEFAULT_ETFS + [tk for c in get_countries() for tk in get_tickers_by_country(c) if tk not in DEFAULT_ETFS]
-        region_default = REGION_DEFAULT_TICKERS["United States"]
-    elif selected_region == "United States":
-        etf_options = DEFAULT_ETFS
-        region_default = REGION_DEFAULT_TICKERS["United States"]
-    else:
-        etf_options = get_tickers_by_country(selected_region)
-        region_default = REGION_DEFAULT_TICKERS.get(selected_region, etf_options[:3])
-
     selected_etfs = st.multiselect(
         t("field_select_etfs"),
-        options=etf_options,
-        default=[tk for tk in region_default if tk in etf_options],
-        help=t("opt_select_etfs_help"),
-        key=f"opt_multiselect_{selected_region}",
+        options=DEFAULT_ETFS,
+        default=["VOO", "QQQ", "BND", "GLD", "VNQ"],
+        help=t("opt_select_etfs_help")
     )
 
     custom_ticker = st.text_input(t("field_add_custom_ticker"), placeholder="e.g. ARKK").upper().strip()
@@ -166,17 +134,12 @@ inputs_changed = run_inputs != st.session_state.opt_run_inputs
 
 if run_btn or inputs_changed or st.session_state.opt_result is None:
     with st.spinner(t("msg_running_optimization")):
-        # Map display tickers to their actual Yahoo Finance-fetchable symbols
-        # (e.g. "0050" -> "0050.TW"); tickers not in the ETF database pass
-        # through unchanged, so this has no effect on existing US tickers.
-        yahoo_tickers = [to_yahoo_symbol(tk) for tk in selected_etfs]
-        raw_prices = download_etf_data(yahoo_tickers, str(start_date), str(end_date))
+        raw_prices = download_etf_data(selected_etfs, str(start_date), str(end_date))
         if raw_prices.empty:
             error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
             st.stop()
 
         prices_df = clean_price_data(raw_prices)
-        prices_df = rename_yahoo_columns(prices_df)
         prices_df = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
 
         # ── Validate prices_df ──────────────────────────────────────────

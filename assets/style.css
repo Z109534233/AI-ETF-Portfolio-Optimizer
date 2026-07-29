@@ -243,12 +243,6 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .status-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .status-card-ticker { color: var(--text); font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
 .status-card-sector { color: var(--text-secondary); font-size: 12.5px; }
-.status-card-stars { margin-top: 2px; }
-
-/* ── Star Rating ───────────────────────────────────────────────────────────── */
-.star-rating { font-size: 14px; letter-spacing: 1px; }
-.star-filled { color: var(--warning); }
-.star-empty { color: var(--border-strong); }
 
 /* ── Empty / Error State Cards ────────────────────────────────────────────── */
 .state-card {
