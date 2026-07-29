@@ -262,19 +262,53 @@ def news_card(title: str, time_str: str, source: str, impact_label: str,
     )
 
 
-# ── Status Card (Affected ETFs / Market Intelligence) ───────────────────────────
-def status_card(ticker: str, sector: str, status_label: str, status_variant: str = "neutral") -> str:
-    """Render a compact status card: a ticker, its sector/category, and an
-    impact badge (e.g. Positive/Negative/Neutral). Built as a single-line
-    HTML string for the same blank-line-safety reason as news_card().
+# ── Status Card (Affected Markets / Affected ETFs / Market Intelligence) ───────
+def status_card(ticker: str, subtitle: str, status_label: str, status_variant: str = "neutral",
+                 stars_html: str = None) -> str:
+    """Render a compact status card: a name/ticker, an optional subtitle
+    (e.g. country/sector), an impact badge, and an optional star rating.
+    Built as a single-line HTML string for the same blank-line-safety
+    reason as news_card(). Reused for both the "Affected Markets" (country +
+    star rating) and "Affected ETFs" (ticker + country/sector + star rating)
+    sections of the Market Intelligence page.
     """
+    subtitle_html = f'<div class="status-card-sector">{subtitle}</div>' if subtitle else ""
+    stars_block = f'<div class="status-card-stars">{stars_html}</div>' if stars_html else ""
     return (
         '<div class="status-card">'
         '<div class="status-card-top">'
         f'<div class="status-card-ticker">{ticker}</div>'
         f'<span class="badge badge-{status_variant}">{status_label}</span>'
         '</div>'
-        f'<div class="status-card-sector">{sector}</div>'
+        f'{subtitle_html}'
+        f'{stars_block}'
+        '</div>'
+    )
+
+
+# ── Star Rating ───────────────────────────────────────────────────────────────
+def star_rating_html(stars: int, max_stars: int = 5) -> str:
+    """Render a colored star rating (filled amber stars + muted empty stars)."""
+    stars = max(0, min(stars, max_stars))
+    filled = f'<span class="star-filled">{"★" * stars}</span>' if stars else ""
+    empty = f'<span class="star-empty">{"☆" * (max_stars - stars)}</span>' if stars < max_stars else ""
+    return f'<span class="star-rating">{filled}{empty}</span>'
+
+
+# ── AI Global Market Impact Score Card ──────────────────────────────────────────
+def impact_score_card(score: int, stars: int, label: str, explanation: str) -> str:
+    """Render the hero "AI Global Market Impact Score" card: a large 0-100
+    score, a gradient label badge, a star rating, and a short explanation.
+    The single biggest visual highlight of the Market Intelligence page.
+    """
+    return (
+        '<div class="impact-score-card glass-card">'
+        '<div class="impact-score-top">'
+        f'<div class="impact-score-value">{score}<span class="impact-score-max">/100</span></div>'
+        f'<span class="gradient-badge">{label}</span>'
+        '</div>'
+        f'<div class="impact-score-stars">{star_rating_html(stars)}</div>'
+        f'<div class="impact-score-desc">{explanation}</div>'
         '</div>'
     )
 

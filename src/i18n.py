@@ -746,9 +746,9 @@ TRANSLATIONS = {
         "chart_allocation_comparison_pct": "配置比較（%）",
 
         # ── Market Intelligence Page ─────────────────────────────────────
-        "nav_market_intelligence": "市場情報中心",
-        "mi_title": "AI 市場情報中心",
-        "mi_subtitle": "掌握今日市場動態、相關新聞，以及你的投資組合可能受到的影響。",
+        "nav_market_intelligence": "AI 市場情報中心",
+        "mi_title": "AI 全球市場情報中心",
+        "mi_subtitle": "AI 即時分析全球重大事件、判斷市場影響程度，並協助你了解投資組合可能受到的影響 — 僅供決策支援，不做股價預測或買賣建議。",
 
         "mi_section_overview_title": "今日市場總覽",
         "mi_section_news_title": "市場焦點新聞",
@@ -814,6 +814,7 @@ TRANSLATIONS = {
         "mi_cal_col_when": "時間",
         "mi_cal_col_importance": "重要性",
 
+        "mi_portfolio_exposure_title": "投資組合曝險分布",
         "mi_portfolio_no_data": "尚未建立任何已儲存的投資組合。請先至「投資組合最佳化」頁面建立並儲存投資組合，即可查看今日新聞對你投資組合的可能影響。",
         "mi_portfolio_using": "以下分析基於你最近儲存的投資組合：{name}",
         "mi_portfolio_exposure": "你的投資組合對「{sector}」的曝險比例相對較高，約佔 {weight}。",
@@ -823,6 +824,78 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "目前沒有與你持股直接相關的重大新聞。",
 
         "mi_disclaimer": "本頁僅供教學使用。新聞分析不應被解讀為投資建議。",
+        "mi_no_market_data": "沒有可用的市場資料。",
+
+        # ── Section Headers (Global Market Intelligence layout) ──────────
+        "mi_section_today_market_title": "今日市場",
+        "mi_section_breaking_events_title": "重大市場事件",
+        "mi_section_breaking_events_subtitle": "近期重大市場事件，最多顯示 10 則",
+        "mi_section_impact_score_title": "AI 全球市場影響分數",
+        "mi_section_affected_markets_title": "受影響市場",
+        "mi_section_affected_markets_subtitle": "依今日事件動態評估的市場影響程度",
+        "mi_section_affected_etfs_title": "受影響 ETF",
+        "mi_section_affected_etfs_subtitle": "涵蓋美國、台灣與英國 UCITS ETF 的全球觀察清單",
+        "mi_section_why_matters_title": "AI 影響原因解析",
+        "mi_section_market_summary_title": "AI 市場摘要",
+        "mi_section_mood_label": "整體市場氛圍",
+
+        # ── Region Group Headers (Global ETF Coverage) ────────────────────
+        "mi_region_us": "美國 ETF",
+        "mi_region_taiwan": "台灣 ETF",
+        "mi_region_uk": "英國 UCITS ETF",
+
+        # ── Market Names (Affected Markets) ───────────────────────────────
+        "mi_market_united_states": "美國",
+        "mi_market_taiwan": "台灣",
+        "mi_market_united_kingdom": "英國",
+        "mi_market_japan": "日本",
+        "mi_market_europe": "歐洲",
+        "mi_market_china": "中國",
+
+        # ── Impact Star Ratings (0-5) ──────────────────────────────────────
+        "mi_impact_stars_0": "無資料",
+        "mi_impact_stars_1": "非常低",
+        "mi_impact_stars_2": "低",
+        "mi_impact_stars_3": "中等",
+        "mi_impact_stars_4": "高",
+        "mi_impact_stars_5": "非常高",
+        "mi_impact_no_events": "目前沒有足夠的事件資料可計算市場影響分數。",
+        "mi_impact_score_explanation": "今天市場正經歷{level}波動，主要受到 {count} 起重大事件影響，包括：{categories}。",
+
+        # ── Event Categories ───────────────────────────────────────────────
+        "mi_category_monetary_policy": "貨幣政策",
+        "mi_category_trade": "貿易",
+        "mi_category_earnings": "財報",
+        "mi_category_macro_data": "總體經濟數據",
+        "mi_category_commodities": "大宗商品",
+        "mi_category_corporate": "企業動態",
+        "mi_category_general": "一般市場動態",
+
+        # ── AI Why It Matters ──────────────────────────────────────────────
+        "mi_why_monetary_policy": "利率與貨幣政策的變化，會直接影響企業借貸成本與整體市場流動性。",
+        "mi_why_trade": "貿易政策的改變可能直接影響全球供應鏈與跨國企業的營運成本。",
+        "mi_why_earnings": "企業財報表現，反映該產業當前的獲利能力與成長動能。",
+        "mi_why_macro_data": "總體經濟數據是評估經濟成長、通膨與就業狀況的重要指標。",
+        "mi_why_commodities": "大宗商品價格波動，會影響能源與原物料相關產業的成本結構。",
+        "mi_why_corporate": "重大企業事件可能改變該公司乃至整體產業的競爭態勢。",
+        "mi_why_general": "此事件反映了當前市場關注的焦點之一。",
+        "mi_why_market_note": "受影響較明顯的市場包括：{markets}。",
+        "mi_why_etf_note": "相關 ETF 例如 {tickers} 可能因此出現較高的波動。",
+        "mi_why_disclaimer": "以上僅為關聯性分析，並非股價預測或投資建議。",
+
+        # ── Overall Market Mood ────────────────────────────────────────────
+        "mi_mood_bullish": "看漲",
+        "mi_mood_neutral": "中性",
+        "mi_mood_bearish": "看跌",
+
+        # ── Additional Global Indices ──────────────────────────────────────
+        "mi_twii": "台灣加權指數",
+        "mi_ftse": "FTSE 100",
+        "mi_nikkei": "日經 225",
+        "mi_stoxx50": "歐洲 STOXX 50",
+
+        # ── Economic Calendar Grouping ─────────────────────────────────────
+        "mi_cal_today": "今日",
     },
     "en": {
         # ── App / Brand ─────────────────────────────────────────────────
@@ -1545,9 +1618,9 @@ TRANSLATIONS = {
         "chart_allocation_comparison_pct": "Allocation Comparison (%)",
 
         # ── Market Intelligence Page ─────────────────────────────────────
-        "nav_market_intelligence": "Market Intelligence",
-        "mi_title": "AI Market Intelligence Center",
-        "mi_subtitle": "Stay on top of today's market moves, the news driving them, and how your portfolio may be affected.",
+        "nav_market_intelligence": "AI Market Intelligence",
+        "mi_title": "AI Global Market Intelligence Center",
+        "mi_subtitle": "AI-driven analysis of global market events and impact severity, and how they may affect your portfolio -- decision support only, never a price prediction or trade recommendation.",
 
         "mi_section_overview_title": "Today's Market Overview",
         "mi_section_news_title": "Breaking Market News",
@@ -1613,6 +1686,7 @@ TRANSLATIONS = {
         "mi_cal_col_when": "When",
         "mi_cal_col_importance": "Importance",
 
+        "mi_portfolio_exposure_title": "Portfolio Exposure",
         "mi_portfolio_no_data": "You don't have any saved portfolios yet. Build and save one on the Portfolio Optimizer page to see how today's news may affect your holdings.",
         "mi_portfolio_using": "The analysis below is based on your most recently saved portfolio: {name}",
         "mi_portfolio_exposure": "Your portfolio has a relatively high exposure to {sector} (about {weight}).",
@@ -1622,6 +1696,78 @@ TRANSLATIONS = {
         "mi_portfolio_no_relevant_news": "There is no major news directly related to your current holdings today.",
 
         "mi_disclaimer": "This page is designed for educational purposes only. News analysis should not be interpreted as investment advice.",
+        "mi_no_market_data": "No market data available.",
+
+        # ── Section Headers (Global Market Intelligence layout) ──────────
+        "mi_section_today_market_title": "Today's Market",
+        "mi_section_breaking_events_title": "Breaking Market Events",
+        "mi_section_breaking_events_subtitle": "Recent major market events, up to 10 shown",
+        "mi_section_impact_score_title": "AI Global Market Impact Score",
+        "mi_section_affected_markets_title": "Affected Markets",
+        "mi_section_affected_markets_subtitle": "Market impact levels assessed from today's events",
+        "mi_section_affected_etfs_title": "Affected ETFs",
+        "mi_section_affected_etfs_subtitle": "Global watch-list spanning US, Taiwan, and UK UCITS ETFs",
+        "mi_section_why_matters_title": "AI Why It Matters",
+        "mi_section_market_summary_title": "AI Market Summary",
+        "mi_section_mood_label": "Overall Market Mood",
+
+        # ── Region Group Headers (Global ETF Coverage) ────────────────────
+        "mi_region_us": "US ETFs",
+        "mi_region_taiwan": "Taiwan ETFs",
+        "mi_region_uk": "UK UCITS ETFs",
+
+        # ── Market Names (Affected Markets) ───────────────────────────────
+        "mi_market_united_states": "United States",
+        "mi_market_taiwan": "Taiwan",
+        "mi_market_united_kingdom": "United Kingdom",
+        "mi_market_japan": "Japan",
+        "mi_market_europe": "Europe",
+        "mi_market_china": "China",
+
+        # ── Impact Star Ratings (0-5) ──────────────────────────────────────
+        "mi_impact_stars_0": "No Data",
+        "mi_impact_stars_1": "Very Low",
+        "mi_impact_stars_2": "Low",
+        "mi_impact_stars_3": "Moderate",
+        "mi_impact_stars_4": "High",
+        "mi_impact_stars_5": "Very High",
+        "mi_impact_no_events": "Not enough event data is currently available to calculate a market impact score.",
+        "mi_impact_score_explanation": "Today's market is experiencing {level} volatility, driven by {count} major events including {categories}.",
+
+        # ── Event Categories ───────────────────────────────────────────────
+        "mi_category_monetary_policy": "Monetary Policy",
+        "mi_category_trade": "Trade",
+        "mi_category_earnings": "Earnings",
+        "mi_category_macro_data": "Macro Data",
+        "mi_category_commodities": "Commodities",
+        "mi_category_corporate": "Corporate",
+        "mi_category_general": "General",
+
+        # ── AI Why It Matters ──────────────────────────────────────────────
+        "mi_why_monetary_policy": "Changes in interest rates and monetary policy directly affect corporate borrowing costs and overall market liquidity.",
+        "mi_why_trade": "Changes in trade policy can directly affect global supply chains and the operating costs of multinational companies.",
+        "mi_why_earnings": "Corporate earnings results reflect current profitability and growth momentum within that industry.",
+        "mi_why_macro_data": "Macroeconomic data are key indicators of growth, inflation, and employment conditions.",
+        "mi_why_commodities": "Commodity price swings affect the cost structure of energy- and materials-related industries.",
+        "mi_why_corporate": "Major corporate events can shift the competitive landscape for that company and its broader industry.",
+        "mi_why_general": "This event reflects one of the market's current areas of focus.",
+        "mi_why_market_note": "Markets that may be more directly affected include: {markets}.",
+        "mi_why_etf_note": "Related ETFs such as {tickers} may experience higher volatility as a result.",
+        "mi_why_disclaimer": "This is a relevance analysis only -- not a price prediction or investment advice.",
+
+        # ── Overall Market Mood ────────────────────────────────────────────
+        "mi_mood_bullish": "Bullish",
+        "mi_mood_neutral": "Neutral",
+        "mi_mood_bearish": "Bearish",
+
+        # ── Additional Global Indices ──────────────────────────────────────
+        "mi_twii": "Taiwan Weighted Index",
+        "mi_ftse": "FTSE 100",
+        "mi_nikkei": "Nikkei 225",
+        "mi_stoxx50": "Euro Stoxx 50",
+
+        # ── Economic Calendar Grouping ─────────────────────────────────────
+        "mi_cal_today": "Today",
     },
 }
 

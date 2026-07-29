@@ -243,6 +243,39 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .status-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .status-card-ticker { color: var(--text); font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
 .status-card-sector { color: var(--text-secondary); font-size: 12.5px; }
+.status-card-stars { margin-top: 2px; }
+
+/* ── Glass Card / Gradient Badge (AI Global Market Impact Score) ──────────── */
+.glass-card {
+    background: linear-gradient(160deg, rgba(59,130,246,0.10), rgba(19,27,46,0.55));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(59,130,246,0.28) !important;
+    box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.gradient-badge {
+    display: inline-flex; align-items: center; padding: 5px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.02em; color: #fff; white-space: nowrap;
+    background: linear-gradient(135deg, var(--primary), #A78BFA);
+    box-shadow: 0 4px 14px rgba(59,130,246,0.35);
+}
+
+/* ── Star Rating ───────────────────────────────────────────────────────────── */
+.star-rating { font-size: 15px; letter-spacing: 1px; }
+.star-filled { color: var(--warning); }
+.star-empty { color: var(--border-strong); }
+
+/* ── AI Global Market Impact Score ─────────────────────────────────────────── */
+.impact-score-card { border-radius: var(--radius-xl); padding: 28px 32px; margin: 6px 0 18px 0; }
+.impact-score-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.impact-score-value { color: var(--text); font-size: 44px; font-weight: 800; letter-spacing: -0.02em; }
+.impact-score-max { color: var(--text-muted); font-size: 20px; font-weight: 600; margin-left: 2px; }
+.impact-score-stars { margin: 10px 0 14px 0; }
+.impact-score-desc { color: var(--text-secondary); font-size: 14px; line-height: 1.6; max-width: 760px; }
+@media (max-width: 768px) {
+    .impact-score-card { padding: 20px 20px; }
+    .impact-score-value { font-size: 34px; }
+}
 
 /* ── Empty / Error State Cards ────────────────────────────────────────────── */
 .state-card {
