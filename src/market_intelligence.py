@@ -14,7 +14,8 @@ import streamlit as st
 import yfinance as yf
 
 from src.ai_advisor import get_openai_client
-from src.i18n import t, get_language
+from src.etf_database import get_etf, get_countries, get_tickers_by_country
+from src.i18n import t, get_language, t_country, t_sector
 
 # ── Market Indices ───────────────────────────────────────────────────────────
 INDEX_TICKERS = {
@@ -25,24 +26,37 @@ INDEX_TICKERS = {
     "vix": ("mi_vix", "^VIX"),
 }
 
-# ticker -> (sector translation-key suffix, headline keywords used to match it)
-ETF_SECTOR_MAP = {
-    "QQQ": ("technology", ["tech", "technology", "nasdaq", "chip", "semiconductor", "ai "]),
-    "VOO": ("broad_market", ["s&p", "wall street", "stocks", "market"]),
-    "SPY": ("broad_market", ["s&p", "wall street", "stocks", "market"]),
-    "VTI": ("broad_market", ["s&p", "wall street", "stocks", "market"]),
-    "GLD": ("gold", ["gold", "bullion", "precious metal"]),
-    "BND": ("bond", ["bond", "treasury", "yield", "rate", "fed", "interest rate"]),
-    "TLT": ("bond", ["bond", "treasury", "yield", "rate", "fed", "interest rate"]),
-    "XLF": ("financials", ["bank", "financial", "rate hike"]),
-    "XLE": ("energy", ["oil", "energy", "crude"]),
-    "XLV": ("healthcare", ["health", "pharma", "biotech"]),
-    "VNQ": ("real_estate", ["real estate", "housing", "reit"]),
-    "IWM": ("small_cap", ["small cap", "russell"]),
+# sector (as stored on ETFRecord.sector, via src/etf_database.py) -> headline
+# keywords used to match it. Keyed by *sector*, not by ticker, so any ETF
+# added to etf_database.py -- in any country -- is automatically covered
+# here as long as its sector matches one of these; unmapped sectors just
+# default to "Neutral" (no crash, no hardcoded per-ticker/per-country list).
+SECTOR_KEYWORDS = {
+    "Technology": ["tech", "technology", "nasdaq", "chip", "semiconductor", "ai "],
+    "Broad Market": ["s&p", "wall street", "stocks", "market"],
+    "Gold": ["gold", "bullion", "precious metal"],
+    "Bond": ["bond", "treasury", "yield", "rate", "fed", "interest rate"],
+    "Dividend": ["dividend", "income", "payout"],
 }
 
-# Default watch-list shown in the "Affected ETFs" section.
-DEFAULT_WATCHLIST = ["QQQ", "VOO", "GLD", "BND"]
+
+def _default_global_watchlist() -> list:
+    """
+    Pick one representative ticker per supported country (never hardcoded
+    to a specific country name) so the "Global ETFs" watch-list grows
+    automatically as new markets are registered in src/etf_database.py.
+    """
+    watchlist = []
+    for country in get_countries():
+        tickers = get_tickers_by_country(country)
+        if tickers:
+            watchlist.append(tickers[0])
+    return watchlist
+
+
+# Default watch-list shown in the "Global ETFs" section: one ETF per
+# supported country (built dynamically from etf_database.py, see above).
+DEFAULT_WATCHLIST = _default_global_watchlist()
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -101,33 +115,53 @@ def impact_label(impact: str) -> str:
     return t(f"mi_impact_{impact.lower()}_label")
 
 
+def _stars_for_impact(impact: str) -> int:
+    """
+    A simple, transparent star rating derived from an ETF's headline impact:
+    Positive/Negative both indicate the ETF is topically relevant to today's
+    news (4 stars); Neutral (no matching headline) is the baseline (2 stars).
+    Not a predictive score -- purely a visual indicator of relevance.
+    """
+    return 4 if impact in ("Positive", "Negative") else 2
+
+
 def get_affected_etfs(news_items: list, tickers: list = None) -> list:
     """
     Heuristically determine which watch-list ETFs today's headlines might
-    affect, by matching each ETF's sector keywords against headline titles.
-    A matched ETF's impact is the majority vote of classify_headline_sentiment()
+    affect, by matching each ETF's sector keywords (SECTOR_KEYWORDS, keyed by
+    the ETF's sector from src/etf_database.py) against headline titles. A
+    matched ETF's impact is the majority vote of classify_headline_sentiment()
     across its matching headlines; ETFs with no matching headline default to
-    "Neutral". This is a transparent keyword heuristic, not a prediction.
+    "Neutral". This is a transparent keyword heuristic, not a prediction, and
+    works for any country registered in etf_database.py -- nothing here is
+    hardcoded to a specific market.
 
-    Returns a list of dicts: ticker, sector (translated), impact (raw
-    Positive/Negative/Neutral, for logic), impact_label (translated).
+    Returns a list of dicts: ticker, sector (translated), country (translated),
+    impact (raw Positive/Negative/Neutral, for logic), impact_label
+    (translated), stars (0-5, for display only).
     """
     tickers = tickers or DEFAULT_WATCHLIST
     results = []
     for ticker in tickers:
-        sector_key, keywords = ETF_SECTOR_MAP.get(ticker, ("other", []))
+        record = get_etf(ticker)
+        sector_raw = record.sector if record else None
+        country_raw = record.country if record else None
+        keywords = SECTOR_KEYWORDS.get(sector_raw, [])
+
         matches = [n for n in news_items if any(kw in n["title"].lower() for kw in keywords)]
         if matches:
             counts = Counter(n["impact"] for n in matches)
             impact = counts.most_common(1)[0][0]
         else:
             impact = "Neutral"
+
         results.append({
             "ticker": ticker,
-            "sector": sector_label(sector_key),
-            "sector_key": sector_key,
+            "sector": t_sector(sector_raw) if sector_raw else t("mi_sector_other"),
+            "country": t_country(country_raw) if country_raw else t("hist_region_unknown"),
             "impact": impact,
             "impact_label": impact_label(impact),
+            "stars": _stars_for_impact(impact),
         })
     return results
 
@@ -266,8 +300,8 @@ def analyze_portfolio_impact(holdings: dict, affected_etfs: list) -> str:
     impact_by_ticker = {e["ticker"]: e for e in affected_etfs}
     sector_weight = {}
     for ticker, weight in holdings.items():
-        sector_key = ETF_SECTOR_MAP.get(ticker, ("other", []))[0]
-        label = sector_label(sector_key)
+        record = get_etf(ticker)
+        label = t_sector(record.sector) if record else t("mi_sector_other")
         sector_weight[label] = sector_weight.get(label, 0) + weight
 
     if not sector_weight:

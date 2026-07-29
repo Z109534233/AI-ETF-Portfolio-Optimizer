@@ -116,6 +116,11 @@ TRANSLATIONS = {
         "home_chart_growth_sub": "等權重，起始金額 $10,000",
         "home_chart_risk_return_title": "風險與報酬",
         "home_chart_risk_return_sub": "年化波動率與報酬率",
+        "home_supported_markets_title": "支援市場",
+        "home_supported_markets_subtitle": "涵蓋美國、台灣與英國市場的 ETF",
+        "home_market_us": "🇺🇸 美國",
+        "home_market_taiwan": "🇹🇼 台灣",
+        "home_market_uk": "🇬🇧 英國",
         "home_features_title": "平台功能",
         "home_features_subtitle": "涵蓋完整投資組合流程的七大分析模組",
         "home_tech_stack_title": "技術架構",
@@ -213,6 +218,8 @@ TRANSLATIONS = {
 
         # ── Common Form Fields ──────────────────────────────────────────
         "field_select_etfs": "選擇 ETF",
+        "field_select_region": "選擇地區",
+        "field_all_regions": "所有地區",
         "field_add_custom_ticker": "新增自訂代碼",
         "field_start_date": "開始日期",
         "field_end_date": "結束日期",
@@ -642,6 +649,8 @@ TRANSLATIONS = {
         "hist_notes_label": "備註",
         "hist_holdings_label": "持股明細",
         "hist_col_ticker": "代碼",
+        "hist_col_region": "地區",
+        "hist_region_unknown": "未知",
         "hist_col_weight": "權重",
         "hist_col_amount": "金額",
         "hist_col_created": "建立日期",
@@ -756,6 +765,11 @@ TRANSLATIONS = {
         "mi_section_summary_title": "AI 市場摘要",
         "mi_section_affected_title": "可能受影響的 ETF",
         "mi_section_affected_subtitle": "根據今日新聞比對的預設觀察清單",
+        "mi_section_global_etfs_title": "全球 ETF",
+        "mi_section_global_etfs_subtitle": "涵蓋美國、台灣與英國市場的 ETF 觀察清單",
+        "mi_country_united_states": "美國",
+        "mi_country_taiwan": "台灣",
+        "mi_country_united_kingdom": "英國",
         "mi_section_sentiment_title": "市場情緒",
         "mi_section_calendar_title": "經濟行事曆",
         "mi_section_calendar_subtitle": "本表為範例資料，尚未串接即時 API",
@@ -791,6 +805,7 @@ TRANSLATIONS = {
         "mi_sector_broad_market": "大盤市場",
         "mi_sector_gold": "黃金",
         "mi_sector_bond": "債券",
+        "mi_sector_dividend": "股息",
         "mi_sector_financials": "金融",
         "mi_sector_energy": "能源",
         "mi_sector_healthcare": "醫療保健",
@@ -912,6 +927,11 @@ TRANSLATIONS = {
         "home_chart_growth_sub": "Equal weight, starting value $10,000",
         "home_chart_risk_return_title": "Risk vs Return",
         "home_chart_risk_return_sub": "Annualized volatility vs. return",
+        "home_supported_markets_title": "Supported Markets",
+        "home_supported_markets_subtitle": "ETFs spanning United States, Taiwan, and United Kingdom markets",
+        "home_market_us": "🇺🇸 United States",
+        "home_market_taiwan": "🇹🇼 Taiwan",
+        "home_market_uk": "🇬🇧 United Kingdom",
         "home_features_title": "Platform Features",
         "home_features_subtitle": "Seven analytics modules covering the full portfolio workflow",
         "home_tech_stack_title": "Technology Stack",
@@ -1009,6 +1029,8 @@ TRANSLATIONS = {
 
         # ── Common Form Fields ──────────────────────────────────────────
         "field_select_etfs": "Select ETFs",
+        "field_select_region": "Select Region",
+        "field_all_regions": "All Regions",
         "field_add_custom_ticker": "Add Custom Ticker",
         "field_start_date": "Start Date",
         "field_end_date": "End Date",
@@ -1441,6 +1463,8 @@ TRANSLATIONS = {
         "hist_notes_label": "Notes",
         "hist_holdings_label": "Holdings",
         "hist_col_ticker": "Ticker",
+        "hist_col_region": "Region",
+        "hist_region_unknown": "Unknown",
         "hist_col_weight": "Weight",
         "hist_col_amount": "Amount",
         "hist_col_created": "Created",
@@ -1555,6 +1579,11 @@ TRANSLATIONS = {
         "mi_section_summary_title": "AI Market Summary",
         "mi_section_affected_title": "Affected ETFs",
         "mi_section_affected_subtitle": "Default watch-list matched against today's headlines",
+        "mi_section_global_etfs_title": "Global ETFs",
+        "mi_section_global_etfs_subtitle": "Watch-list spanning US, Taiwan, and UK markets",
+        "mi_country_united_states": "United States",
+        "mi_country_taiwan": "Taiwan",
+        "mi_country_united_kingdom": "United Kingdom",
         "mi_section_sentiment_title": "Market Sentiment",
         "mi_section_calendar_title": "Economic Calendar",
         "mi_section_calendar_subtitle": "Example data shown -- not yet connected to a live API",
@@ -1590,6 +1619,7 @@ TRANSLATIONS = {
         "mi_sector_broad_market": "Broad Market",
         "mi_sector_gold": "Gold",
         "mi_sector_bond": "Bond",
+        "mi_sector_dividend": "Dividend",
         "mi_sector_financials": "Financials",
         "mi_sector_energy": "Energy",
         "mi_sector_healthcare": "Healthcare",
@@ -1711,6 +1741,23 @@ MARKET_SCENARIO_KEYS = {
     "Sideways Market": "sim_scenario_sideways",
 }
 
+# src/etf_database.py's ETFRecord.country / .sector are stored as plain
+# English strings (the canonical data); these translate them for display
+# only, in the same spirit as OPTIMIZATION_METHOD_KEYS etc. above.
+COUNTRY_KEYS = {
+    "United States": "mi_country_united_states",
+    "Taiwan": "mi_country_taiwan",
+    "United Kingdom": "mi_country_united_kingdom",
+}
+
+SECTOR_KEYS = {
+    "Technology": "mi_sector_technology",
+    "Broad Market": "mi_sector_broad_market",
+    "Gold": "mi_sector_gold",
+    "Bond": "mi_sector_bond",
+    "Dividend": "mi_sector_dividend",
+}
+
 
 def _translate_option(value: str, mapping: dict) -> str:
     """Translate a raw option value for display; returns the value unchanged
@@ -1737,6 +1784,14 @@ def t_risk_level(value: str) -> str:
 
 def t_market_scenario(value: str) -> str:
     return _translate_option(value, MARKET_SCENARIO_KEYS)
+
+
+def t_country(value: str) -> str:
+    return _translate_option(value, COUNTRY_KEYS)
+
+
+def t_sector(value: str) -> str:
+    return _translate_option(value, SECTOR_KEYS)
 
 
 def language_selector() -> None:
