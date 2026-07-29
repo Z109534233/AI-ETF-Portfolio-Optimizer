@@ -129,62 +129,102 @@ def _stars_for_impact(impact: str) -> int:
     return 4 if impact in ("Positive", "Negative") else 2
 
 
-def score_to_stars(score: int) -> int:
-    """Map a 0-100 impact score to a 0-5 star rating."""
-    if score <= 0:
-        return 0
-    if score >= 90:
-        return 5
-    if score >= 70:
-        return 4
-    if score >= 50:
-        return 3
-    if score >= 30:
-        return 2
-    return 1
-
-
 def stars_to_impact_label(stars: int) -> str:
     """Translate a 0-5 star rating to its display label, e.g. 'High Impact'
     (never just a bare star count)."""
     return t(f"mi_impact_stars_{stars}")
 
 
-# country -> headline keywords used to detect relevance to that market.
-# Keyed by the same country names registered in src/etf_database.py, so
-# adding a new market there (and a matching entry here) is all it takes to
-# extend Affected Markets coverage -- nothing else needs to change.
-MARKET_KEYWORDS = {
-    "United States": ["fed", "u.s.", "united states", "nasdaq", "dow", "s&p",
-                       "white house", "tariff", "washington", "cpi", "treasury"],
-    "Taiwan": ["taiwan", "tsmc", "semiconductor", "chip", "supply chain"],
-    "United Kingdom": ["uk", "britain", "bank of england", "london", "ftse"],
+# event type -> headline keywords used to *classify what kind of event* a
+# headline is (NOT which country it names). This is deliberately separate
+# from "does the headline mention Taiwan" -- a headline never has to name a
+# market for that market to be affected by it (e.g. a US tariff headline
+# that never says "Taiwan" still hits Taiwan hard via its semiconductor
+# supply chain, see EVENT_MARKET_IMPACT below).
+EVENT_TYPE_KEYWORDS = {
+    "tariff": ["tariff", "tariffs", "trade war", "export ban", "import ban", "trade restriction"],
+    "interest_rate": ["interest rate", "rate cut", "rate hike", "fed decision", "fomc",
+                       "rate decision", "central bank", "cuts rate", "raises rate", "hikes rate"],
+    "semiconductor": ["semiconductor", "chip ", "chips", "chipmaker", "foundry", "wafer"],
+    "oil": ["oil", "crude", "opec", "energy price", "energy prices"],
+    "inflation": ["inflation", "cpi", "ppi", "consumer price", "producer price"],
+    "employment": ["jobs report", "unemployment", "payroll", "non-farm", "labor market",
+                    "job cuts", "layoffs"],
+    "gdp": ["gdp", "economic growth", "recession", "economic output"],
+    "pmi": ["pmi", "manufacturing index", "purchasing managers"],
+    "geopolitical": ["geopolitical", "conflict", "war", "sanctions", "invasion"],
 }
+
+# event type -> {market: impact weight, 1 (Very Low) - 5 (Very High)}. This
+# is the actual "Event -> Impact Mapping": a market's rating comes from
+# what KIND of event happened, not whether the headline named that market.
+# E.g. "tariff" events hit Taiwan hard (semiconductor supply chain) even
+# though most tariff headlines only ever mention the US. Markets not listed
+# for an event type simply aren't pushed by that event. Keyed by the same
+# country names registered in src/etf_database.py -- adding a market there
+# plus an entry per relevant event type here is all it takes to extend
+# coverage; nothing else needs to change.
+EVENT_MARKET_IMPACT = {
+    "tariff": {"United States": 5, "Taiwan": 5, "United Kingdom": 2},
+    "interest_rate": {"United States": 5, "United Kingdom": 4, "Taiwan": 3},
+    "semiconductor": {"Taiwan": 5, "United States": 4, "United Kingdom": 1},
+    "oil": {"United States": 4, "United Kingdom": 4, "Taiwan": 2},
+    "inflation": {"United States": 5, "United Kingdom": 4, "Taiwan": 3},
+    "employment": {"United States": 5, "United Kingdom": 2, "Taiwan": 2},
+    "gdp": {"United States": 4, "Taiwan": 3, "United Kingdom": 3},
+    "pmi": {"Taiwan": 4, "United States": 3, "United Kingdom": 2},
+    "geopolitical": {"United States": 4, "Taiwan": 4, "United Kingdom": 3},
+}
+
+
+def classify_event_types(title: str) -> list:
+    """Classify a headline into zero or more event-type keys (a headline
+    can be more than one type at once, e.g. "tariffs on semiconductors" is
+    both "tariff" and "semiconductor")."""
+    if not title:
+        return []
+    low = title.lower()
+    return [event for event, keywords in EVENT_TYPE_KEYWORDS.items() if any(kw in low for kw in keywords)]
 
 
 def calculate_affected_markets(news_items: list) -> list:
     """
     Determine how strongly today's headlines may be affecting each
-    supported country (via MARKET_KEYWORDS, keyed by the same country names
-    as src/etf_database.py -- not a hardcoded score table). Always returns
-    every supported country so the section renders consistently, sorted by
-    impact descending.
+    supported market, via Event Type -> Market Impact (EVENT_MARKET_IMPACT)
+    -- NOT whether the headline literally names that market. A headline is
+    first classified into its event type(s) (classify_event_types), then
+    each event type's mapped impact weight is applied to the markets it's
+    known to affect. A market's rating is the strongest (max) impact weight
+    reached across today's headlines; markets untouched by any classified
+    event default to the "Very Low Impact" baseline so the section always
+    renders consistently. This measures topical relevance/impact severity
+    only -- it does not predict market direction.
 
-    Returns a list of dicts: market (translated country name), stars (0-5),
+    Returns a list of dicts: market (translated country name), stars (1-5),
     impact_label (translated, e.g. "High Impact" -- never bare stars),
-    affected_by (up to 2 matching headline titles explaining WHY).
+    affected_by (up to 2 headline titles whose event type drove the rating).
     """
+    countries = get_countries()
+    market_stars = {c: 0 for c in countries}
+    market_events = {c: [] for c in countries}
+
+    for item in news_items:
+        for event_type in classify_event_types(item["title"]):
+            for market, weight in EVENT_MARKET_IMPACT.get(event_type, {}).items():
+                if market not in market_stars:
+                    continue
+                market_stars[market] = max(market_stars[market], weight)
+                if item["title"] not in market_events[market]:
+                    market_events[market].append(item["title"])
+
     results = []
-    for country in get_countries():
-        keywords = MARKET_KEYWORDS.get(country, [])
-        matches = [n for n in news_items if any(kw in n["title"].lower() for kw in keywords)]
-        score = min(100, 20 + len(matches) * 20) if matches else 20
-        stars = score_to_stars(score)
+    for country in countries:
+        stars = market_stars[country] or 1  # baseline: no classified event today -> Very Low Impact
         results.append({
             "market": t_country(country),
             "stars": stars,
             "impact_label": stars_to_impact_label(stars),
-            "affected_by": [m["title"] for m in matches[:2]],
+            "affected_by": market_events[country][:2],
         })
     results.sort(key=lambda m: m["stars"], reverse=True)
     return results
