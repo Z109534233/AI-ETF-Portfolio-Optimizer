@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.database import load_all_portfolios, init_database
 from src.news import fetch_market_news
 from src.market_intelligence import (
-    fetch_market_indices, fetch_fear_greed_index, get_affected_etfs,
+    fetch_market_indices, fetch_fear_greed_index, calculate_etf_impact,
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets,
@@ -28,8 +28,8 @@ from src.theme import COLORS
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, news_card, status_card, star_rating_html,
-    market_impact_card, ai_sentiment_card, empty_state, error_state,
+    chart_card, render_footer, news_card, star_rating_html,
+    market_impact_card, ai_sentiment_card, etf_impact_card, empty_state, error_state,
 )
 from src.i18n import t
 
@@ -57,7 +57,7 @@ try:
     news_items = fetch_market_news(limit=10)
     indices = fetch_market_indices()
     fear_greed = fetch_fear_greed_index()
-    affected_etfs = get_affected_etfs(news_items)
+    affected_etfs = calculate_etf_impact(news_items)
     sentiment = calculate_market_sentiment(news_items)
     ai_sentiment = calculate_ai_market_sentiment(news_items)
     calendar_events = get_economic_calendar()
@@ -156,9 +156,11 @@ if affected_etfs:
     for col, etf in zip(etf_cols, affected_etfs):
         with col:
             st.markdown(
-                status_card(etf["ticker"], etf["country"], etf["impact_label"],
-                            IMPACT_VARIANT.get(etf["impact"], "neutral"),
-                            star_rating_html(etf["stars"])),
+                etf_impact_card(
+                    etf["ticker"], etf["impact_label"], IMPACT_VARIANT.get(etf["impact"], "neutral"),
+                    t("mi_impact_score_caption"), etf["impact_score"], etf["impact_level_label"],
+                    t("mi_impact_reason_caption"), etf["reasons"],
+                ),
                 unsafe_allow_html=True,
             )
 else:

@@ -352,6 +352,39 @@ def ai_sentiment_card(mood_emoji: str, mood_label: str, mood_variant: str,
     )
 
 
+# ── ETF Impact Card (ETF Impact Analysis, Market Intelligence) ───────────────────
+def etf_impact_card(ticker: str, badge_label: str, badge_variant: str,
+                     score_caption: str, score: int, level_label: str,
+                     reason_caption: str, reasons: list) -> str:
+    """
+    Render an "ETF Impact Analysis" card: ticker + a Positive/Negative/
+    Neutral direction badge, a 0-100 Impact Score with its translated impact
+    level (e.g. "High Impact" -- never a bare number), and a "Reason" list
+    explaining *why* that score was given (e.g. "Semiconductor Exposure",
+    "Interest Rate Sensitive"). Built as a single-line HTML string for the
+    same blank-line-safety reason as chart_card()/news_card().
+    """
+    reasons_html = ""
+    if reasons:
+        items = "".join(f'<div class="affected-by-item">{r}</div>' for r in reasons)
+        reasons_html = (
+            f'<div class="affected-by-caption">{reason_caption}</div>'
+            f'<div class="affected-by-list">{items}</div>'
+        )
+    return (
+        '<div class="status-card etf-impact-card">'
+        '<div class="status-card-top">'
+        f'<div class="status-card-ticker">{ticker}</div>'
+        f'<span class="badge badge-{badge_variant}">{badge_label}</span>'
+        '</div>'
+        f'<div class="status-card-sector">{score_caption}</div>'
+        f'<div class="etf-impact-score-value">{score}<span class="etf-impact-score-max">/100</span></div>'
+        f'<div class="etf-impact-level">▲ {level_label}</div>'
+        f'{reasons_html}'
+        '</div>'
+    )
+
+
 # ── Empty / Error States ─────────────────────────────────────────────────────────
 def empty_state(title: str, description: str, icon: str = "layers") -> None:
     st.markdown(f"""
