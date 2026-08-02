@@ -21,6 +21,7 @@ from src.market_intelligence import (
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
+    get_todays_major_events,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -64,6 +65,7 @@ try:
     affected_markets = calculate_affected_markets(news_items)
     today_ai_summary = generate_today_ai_summary(news_items)
     market_impact = calculate_market_impact(news_items)
+    major_events = get_todays_major_events(news_items, limit=5)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
@@ -72,10 +74,48 @@ except Exception:
     affected_markets = []
     today_ai_summary = generate_today_ai_summary([])
     market_impact = calculate_market_impact([])
+    major_events = []
     data_load_failed = True
 
 if data_load_failed:
     error_state(t("mi_no_news_available"), t("mi_summary_no_news"))
+
+# ── Section -1: Today's Major Events (top 3-5 headlines by Market Impact Score) ─
+_mi_lang = get_language()
+_major_events_title = "今日重大事件" if _mi_lang == "zh-TW" else "Today's Major Events"
+_sentiment_caption = "市場情緒" if _mi_lang == "zh-TW" else "Market Sentiment"
+_markets_caption = "受影響市場" if _mi_lang == "zh-TW" else "Affected Markets"
+_etfs_caption = "受影響 ETF" if _mi_lang == "zh-TW" else "Affected ETFs"
+
+section_header(_major_events_title)
+if major_events:
+    event_cols = st.columns(len(major_events))
+    for col, event in zip(event_cols, major_events):
+        markets_html = "".join(f'<div class="affected-by-item">{m}</div>' for m in event["affected_markets"])
+        markets_block = (
+            f'<div class="affected-by-caption">{_markets_caption}</div><div class="affected-by-list">{markets_html}</div>'
+            if event["affected_markets"] else ""
+        )
+        etfs_html = "".join(f'<div class="affected-by-item">{tk}</div>' for tk in event["affected_etfs"])
+        etfs_block = (
+            f'<div class="affected-by-caption">{_etfs_caption}</div><div class="affected-by-list">{etfs_html}</div>'
+            if event["affected_etfs"] else ""
+        )
+        with col:
+            st.markdown(
+                '<div class="status-card market-impact-card">'
+                f'<div class="status-card-ticker">🔥 {event["headline"]}</div>'
+                f'<div class="status-card-stars">{star_rating_html(event["stars"])}</div>'
+                f'<div class="market-impact-label">{event["category"]}</div>'
+                f'<div class="status-card-sector">{_sentiment_caption}: '
+                f'<span class="badge badge-{event["sentiment_variant"]}">{event["sentiment_label"]}</span></div>'
+                f'{markets_block}'
+                f'{etfs_block}'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+else:
+    empty_state(t("mi_no_news_available"), _major_events_title, icon="activity")
 
 # ── Section 0: Today's AI Summary (template-generated, no LLM call) ─────────
 section_header(today_ai_summary["title"])

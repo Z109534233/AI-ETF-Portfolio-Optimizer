@@ -1116,3 +1116,63 @@ def generate_explanation(news_items: list, ticker: str) -> dict:
         reasons.append("目前沒有足夠的新聞資料可以說明原因。" if lang == "zh-TW" else "Not enough news data is available to explain this rating.")
 
     return {"ticker": ticker, "stars": stars, "star_label": star_label, "reasons": reasons}
+
+
+def get_todays_major_events(news_items: list, limit: int = 5) -> list:
+    """
+    "Today's Major Events": ranks today's individual headlines by their
+    own Market Impact Score and returns the top `limit` (3-5 typically).
+    Each headline is scored by treating it as if it were the day's only
+    headline -- calculate_market_impact([item]), calculate_etf_impact([item]),
+    and calculate_regional_market_sentiment([item]) are each called on a
+    single-headline list, reusing exactly the same pipeline already used
+    for the aggregate "today" versions rather than re-deriving scoring a
+    second, different way. Headlines that classify_event() maps to
+    "Other" (nothing recognizable) are excluded -- they aren't "major
+    events". "Affected Markets" reuses classify_event_types()/
+    EVENT_MARKET_IMPACT (the same data calculate_affected_markets() uses)
+    to find which of our supported countries this headline's event
+    type(s) hit at a "Moderate Impact" (weight >= 3) level or higher.
+    "Affected ETFs" is every DEFAULT_ETF_IMPACT_WATCHLIST ticker whose
+    calculate_etf_impact() rating for this single headline is 4+ stars.
+
+    Returns a list of dicts, sorted by score descending: headline, score
+    (0-100), stars (1-5), star_label (e.g. "★★★★★"), category, sentiment
+    (raw mood), sentiment_label (translated), sentiment_variant (badge
+    color), affected_markets (list of translated country names, may be
+    empty), affected_etfs (list of tickers, may be empty).
+    """
+    events = []
+    for item in news_items:
+        impact = calculate_market_impact([item])
+        category = impact["category"]
+        if not category or category == "Other":
+            continue
+
+        sentiment_rows = calculate_regional_market_sentiment([item])
+        global_row = next((s for s in sentiment_rows if s["market"] == "Global"), None)
+
+        etf_rows = calculate_etf_impact([item], DEFAULT_ETF_IMPACT_WATCHLIST)
+        affected_etfs = [e["ticker"] for e in etf_rows if e["stars"] >= 4]
+
+        event_types = classify_event_types(item["title"])
+        affected_markets = [
+            t_country(m) for m in get_countries()
+            if any(EVENT_MARKET_IMPACT.get(et, {}).get(m, 0) >= 3 for et in event_types)
+        ]
+
+        events.append({
+            "headline": item["title"],
+            "score": impact["score"],
+            "stars": impact["stars"],
+            "star_label": "★" * impact["stars"] + "☆" * (5 - impact["stars"]),
+            "category": category,
+            "sentiment": global_row["mood"] if global_row else "Neutral",
+            "sentiment_label": global_row["label"] if global_row else t(_MOOD_KEY["Neutral"]),
+            "sentiment_variant": global_row["variant"] if global_row else "neutral",
+            "affected_markets": affected_markets,
+            "affected_etfs": affected_etfs,
+        })
+
+    events.sort(key=lambda e: e["score"], reverse=True)
+    return events[:limit]
