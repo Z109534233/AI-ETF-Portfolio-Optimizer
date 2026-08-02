@@ -574,6 +574,91 @@ def calculate_ai_market_sentiment(news_items: list) -> dict:
     }
 
 
+def calculate_regional_market_sentiment(news_items: list) -> list:
+    """
+    Market Sentiment broken down per market (US / Taiwan / UK, via every
+    country registered in src/etf_database.py) plus one "Global" row --
+    each with a Bullish/Neutral/Bearish mood AND a Confidence percentage,
+    not just the mood alone. This is a separate function from
+    calculate_market_sentiment() (the existing headline-count donut chart
+    powering "News Sentiment Analysis", left untouched) and from
+    calculate_ai_market_sentiment() (a single global mood with no
+    Confidence-per-market breakdown, also untouched).
+
+    For each market, only headlines whose classified event type(s)
+    (classify_event_types()) are known to affect that market
+    (EVENT_MARKET_IMPACT) count toward it, weighted by that event type's
+    impact weight on the market; each headline's own directional read
+    (Positive/Negative/Neutral, from src/news.py's keyword classifier)
+    pulls the weighted average toward Bullish or Bearish -- the same
+    weighted-average approach as calculate_ai_market_sentiment(), just
+    scoped per market instead of once globally. "Global" uses the
+    strongest event-type weight found in ANY market per headline, i.e. how
+    big the story is anywhere, not a sum across markets. Confidence blends
+    how one-sided each market's weighted signal is into a 50-95% display
+    range (never a fake 0% or 100%); markets with no relevant headlines
+    today get "Neutral" at 0% confidence.
+
+    Returns a list of dicts (one per market, in src/etf_database.py's
+    registration order, then "Global" last): market (raw country name, or
+    "Global"), market_label (translated), mood ("Bullish"/"Neutral"/
+    "Bearish", raw), label (translated), variant (badge color), confidence
+    (0-100).
+    """
+    markets = get_countries()
+
+    def _weighted_score(weight_lookup):
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for item in news_items:
+            weight = max((weight_lookup(et) for et in classify_event_types(item["title"])), default=0)
+            if weight <= 0:
+                continue
+            signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
+            weighted_sum += signed * weight
+            total_weight += weight
+        return weighted_sum, total_weight
+
+    def _mood_and_confidence(weighted_sum, total_weight):
+        avg = weighted_sum / total_weight if total_weight else 0.0
+        if avg > 0.15:
+            mood = "Bullish"
+        elif avg < -0.15:
+            mood = "Bearish"
+        else:
+            mood = "Neutral"
+        confidence = int(max(30, min(95, round(50 + abs(avg) * 50)))) if total_weight else 0
+        return mood, confidence
+
+    results = []
+    for market in markets:
+        weighted_sum, total_weight = _weighted_score(lambda et, m=market: EVENT_MARKET_IMPACT.get(et, {}).get(m, 0))
+        mood, confidence = _mood_and_confidence(weighted_sum, total_weight)
+        results.append({
+            "market": market,
+            "market_label": t_country(market),
+            "mood": mood,
+            "label": t(_MOOD_KEY[mood]),
+            "variant": _MOOD_VARIANT[mood],
+            "confidence": confidence,
+        })
+
+    weighted_sum, total_weight = _weighted_score(
+        lambda et: max(EVENT_MARKET_IMPACT.get(et, {}).values(), default=0)
+    )
+    mood, confidence = _mood_and_confidence(weighted_sum, total_weight)
+    results.append({
+        "market": "Global",
+        "market_label": "Global",
+        "mood": mood,
+        "label": t(_MOOD_KEY[mood]),
+        "variant": _MOOD_VARIANT[mood],
+        "confidence": confidence,
+    })
+
+    return results
+
+
 def calculate_affected_markets(news_items: list) -> list:
     """
     Determine how strongly today's headlines may be affecting each
