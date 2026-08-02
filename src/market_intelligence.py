@@ -409,6 +409,100 @@ def calculate_market_impact(news_items: list) -> dict:
     }
 
 
+# ── ETF Impact (Event -> Event Type -> ETF Type -> Impact) ──────────────────
+# ticker -> its ETF Type tag(s). An ETF can carry more than one tag (e.g.
+# SOXX is both a Technology fund and a pure-play Semiconductor fund), in
+# which case its rating is the strongest of its tags' ratings for the
+# day's dominant event. VOO (US-domiciled) and VUSA (UCITS/European
+# feeder) both track the S&P 500 but are kept as distinct tags, since a
+# UCITS feeder fund is one step removed from direct US market pricing.
+ETF_TYPE_MAP = {
+    "BND": ["Bond"],
+    "TLT": ["Bond"],
+    "QQQ": ["Technology"],
+    "SOXX": ["Technology", "Semiconductor"],
+    "0050": ["Semiconductor", "Broad Market"],
+    "VOO": ["Broad Market"],
+    "VUSA": ["Broad Market (UCITS)"],
+}
+
+# The default watch-list for calculate_etf_impact() when no tickers list is
+# supplied -- every ticker currently registered in ETF_TYPE_MAP above.
+DEFAULT_ETF_IMPACT_WATCHLIST = list(ETF_TYPE_MAP.keys())
+
+# event category (from classify_event()) -> {ETF type: impact weight, 1
+# (Low) - 5 (Very High)}. ETF types not listed for a category fall back to
+# a 1-star baseline. This is the "ETF Type -> Impact" stage of the
+# pipeline; which ETF types apply to a given ticker comes from
+# ETF_TYPE_MAP above.
+EVENT_TYPE_TO_ETF_TYPE_IMPACT = {
+    "Interest Rate": {"Bond": 5, "Technology": 3, "Semiconductor": 3,
+                       "Broad Market": 3, "Broad Market (UCITS)": 3},
+    "Inflation": {"Bond": 4, "Technology": 3, "Semiconductor": 3,
+                  "Broad Market": 3, "Broad Market (UCITS)": 3},
+    "Trade Policy": {"Semiconductor": 4, "Technology": 4, "Broad Market": 4,
+                      "Broad Market (UCITS)": 3, "Bond": 1},
+    "Technology": {"Technology": 5, "Semiconductor": 4, "Broad Market": 3,
+                   "Broad Market (UCITS)": 2, "Bond": 1},
+    "Semiconductor": {"Semiconductor": 5, "Technology": 4, "Broad Market": 3,
+                       "Broad Market (UCITS)": 2, "Bond": 1},
+    "AI": {"Technology": 5, "Semiconductor": 4, "Broad Market": 3,
+           "Broad Market (UCITS)": 2, "Bond": 1},
+    "Energy": {"Broad Market": 2, "Broad Market (UCITS)": 2, "Bond": 1,
+               "Technology": 1, "Semiconductor": 1},
+    "Geopolitics": {"Bond": 3, "Broad Market": 3, "Broad Market (UCITS)": 3,
+                     "Technology": 2, "Semiconductor": 2},
+    "Economy": {"Broad Market": 3, "Broad Market (UCITS)": 3, "Bond": 2,
+                "Technology": 2, "Semiconductor": 2},
+    "Banking": {"Broad Market": 2, "Broad Market (UCITS)": 2, "Bond": 2,
+                "Technology": 1, "Semiconductor": 1},
+    "Cryptocurrency": {"Technology": 1, "Semiconductor": 1, "Broad Market": 1,
+                        "Broad Market (UCITS)": 1, "Bond": 1},
+    "Other": {},
+}
+
+
+def calculate_etf_impact(news_items: list, tickers: list = None) -> list:
+    """
+    Event -> Event Type -> ETF Type -> Impact pipeline for ETF star
+    ratings. Replaces "did a headline mention this ETF/market by keyword"
+    with a rule-based chain:
+      1. Event -> Event Type: reuse calculate_market_impact()'s dominant
+         category for today's news (classify_event() per headline, then
+         the single most important category present wins) -- the exact
+         same "what actually happened today" logic already used for the
+         Market Impact Score, not a second, different classification.
+      2. Event Type -> ETF Type -> Impact: EVENT_TYPE_TO_ETF_TYPE_IMPACT
+         maps that category to how strongly each ETF TYPE (Bond,
+         Technology, Semiconductor, Broad Market, Broad Market (UCITS)) is
+         affected.
+      3. ETF Type -> ETF: each watch-list ticker's own type tag(s)
+         (ETF_TYPE_MAP) are looked up against that mapping; a ticker with
+         more than one tag (e.g. SOXX = Technology + Semiconductor) takes
+         the strongest applicable rating.
+    A transparent rule-based heuristic, not a prediction.
+
+    Returns a list of dicts: ticker, etf_types (the ticker's type tag(s)),
+    stars (1-5), event_category (the dominant event category driving the
+    rating for today, or None if there was no news to classify).
+    """
+    tickers = tickers or DEFAULT_ETF_IMPACT_WATCHLIST
+    category = calculate_market_impact(news_items)["category"]
+    type_impact = EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {})
+
+    results = []
+    for ticker in tickers:
+        etf_types = ETF_TYPE_MAP.get(ticker, [])
+        stars = max((type_impact.get(t, 1) for t in etf_types), default=1)
+        results.append({
+            "ticker": ticker,
+            "etf_types": etf_types,
+            "stars": stars,
+            "event_category": category,
+        })
+    return results
+
+
 _MOOD_KEY = {"Bullish": "mi_mood_bullish", "Neutral": "mi_mood_neutral", "Bearish": "mi_mood_bearish"}
 _MOOD_VARIANT = {"Bullish": "green", "Neutral": "neutral", "Bearish": "red"}
 
