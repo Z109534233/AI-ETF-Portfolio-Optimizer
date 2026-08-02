@@ -55,6 +55,7 @@ IMPACT_VARIANT = {"Positive": "green", "Negative": "red", "Neutral": "neutral"}
 # page can never crash even on an unexpected error. ─────────────────────────
 try:
     news_items = fetch_market_news(limit=10)
+    indices = fetch_market_indices()
     fear_greed = fetch_fear_greed_index()
     affected_etfs = get_affected_etfs(news_items)
     sentiment = calculate_market_sentiment(news_items)
@@ -63,7 +64,7 @@ try:
     affected_markets = calculate_affected_markets(news_items)
     data_load_failed = False
 except Exception:
-    news_items, fear_greed = [], {"available": False, "label": t("mi_fear_greed")}
+    news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
     affected_etfs, sentiment, calendar_events = [], calculate_market_sentiment([]), []
     ai_sentiment = calculate_ai_market_sentiment([])
     affected_markets = []
@@ -75,70 +76,32 @@ if data_load_failed:
 # ── Section 1: Today's Market Overview ───────────────────────────────────────
 section_header(t("mi_section_overview_title"))
 
-_mi_auto_refresh_options = {
-    t("data_auto_refresh_off"): 0,
-    t("data_auto_refresh_5min"): 300,
-    t("data_auto_refresh_15min"): 900,
-}
-col_refresh, col_auto = st.columns([1, 2])
-with col_refresh:
-    if st.button(t("data_refresh_button"), key="mi_refresh_btn"):
-        st.cache_data.clear()
-        st.rerun()
-with col_auto:
-    _mi_auto_choice = st.selectbox(
-        t("data_auto_refresh_label"), list(_mi_auto_refresh_options.keys()),
-        index=0, key="mi_auto_refresh_select",
+col1, col2, col3, col4, col5, col6 = st.columns(6)
+index_cols = {"sp500": col1, "nasdaq": col2, "dow": col3, "russell": col4, "vix": col5}
+
+for key, col in index_cols.items():
+    info = indices.get(key, {"label": t(f"mi_{key}"), "available": False})
+    with col:
+        if info.get("available"):
+            change_pct = info["change_pct"]
+            delta = f"{'+' if change_pct >= 0 else ''}{change_pct:.2f}%"
+            color = COLORS["warning"] if key == "vix" else COLORS["primary"]
+            st.markdown(
+                metric_card_html(info["label"], f"{info['price']:,.2f}", delta, color=color),
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                metric_card_html(info["label"], t("mi_index_unavailable"), color=COLORS["text_muted"]),
+                unsafe_allow_html=True,
+            )
+
+with col6:
+    st.markdown(
+        metric_card_html(fear_greed["label"], t("mi_placeholder_value"), t("mi_placeholder_note"),
+                          color=COLORS["text_muted"]),
+        unsafe_allow_html=True,
     )
-_mi_auto_refresh_seconds = _mi_auto_refresh_options[_mi_auto_choice]
-
-
-def _render_market_overview():
-    # Fetched fresh on every call (subject to fetch_market_indices()'s own
-    # 300s cache) so a manual refresh or an auto-refresh tick both pick up
-    # new data instead of reusing a single fetch made once at page load.
-    indices = fetch_market_indices()
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    index_cols = {"sp500": col1, "nasdaq": col2, "dow": col3, "russell": col4, "vix": col5}
-
-    for key, col in index_cols.items():
-        info = indices.get(key, {"label": t(f"mi_{key}"), "available": False})
-        with col:
-            if info.get("available"):
-                change_pct = info["change_pct"]
-                delta = f"{'+' if change_pct >= 0 else ''}{change_pct:.2f}%"
-                color = COLORS["warning"] if key == "vix" else COLORS["primary"]
-                st.markdown(
-                    metric_card_html(info["label"], f"{info['price']:,.2f}", delta, color=color),
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    metric_card_html(info["label"], t("mi_index_unavailable"), color=COLORS["text_muted"]),
-                    unsafe_allow_html=True,
-                )
-
-    with col6:
-        st.markdown(
-            metric_card_html(fear_greed["label"], t("mi_placeholder_value"), t("mi_placeholder_note"),
-                              color=COLORS["text_muted"]),
-            unsafe_allow_html=True,
-        )
-
-    meta = indices.get("_meta", {})
-    fetched_at = meta.get("fetched_at")
-    if fetched_at:
-        used_intraday = any(
-            isinstance(v, dict) and v.get("interval") == "5m" for v in indices.values()
-        )
-        interval_note = t("data_interval_intraday_note") if used_intraday else t("data_interval_daily_note")
-        st.caption(f"{t('data_last_updated_label')}: {fetched_at.strftime('%H:%M:%S')} · {interval_note}")
-
-
-if _mi_auto_refresh_seconds:
-    st.fragment(run_every=_mi_auto_refresh_seconds)(_render_market_overview)()
-else:
-    _render_market_overview()
 
 # ── Section 1b: Affected Markets ─────────────────────────────────────────────
 section_header(t("mi_section_affected_markets_title"), t("mi_section_affected_markets_subtitle"))

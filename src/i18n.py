@@ -108,17 +108,6 @@ TRANSLATIONS = {
         "home_dashboard_etfs_help": "選擇要顯示於儀表板預覽的 ETF",
         "home_loading_market_data": "正在載入市場資料……",
         "home_live_data_unavailable": "即時市場資料目前無法取得，儀表板顯示範例資料。",
-
-        # ── Market Data Freshness (refresh button / auto-refresh / last updated) ─
-        "data_refresh_button": "重新整理市場資料",
-        "data_auto_refresh_label": "自動更新",
-        "data_auto_refresh_off": "關閉",
-        "data_auto_refresh_5min": "每 5 分鐘",
-        "data_auto_refresh_15min": "每 15 分鐘",
-        "data_last_updated_label": "最後更新時間",
-        "data_interval_intraday_note": "近期行情（5 分鐘線）",
-        "data_interval_daily_note": "日線資料",
-
         "home_chart_etf_performance_title": "ETF 績效比較",
         "home_chart_etf_performance_sub": "標準化價格，基準 = 100",
         "home_chart_allocation_title": "投資組合配置",
@@ -954,17 +943,6 @@ TRANSLATIONS = {
         "home_dashboard_etfs_help": "Select ETFs for the dashboard preview",
         "home_loading_market_data": "Loading market data for dashboard...",
         "home_live_data_unavailable": "Live market data unavailable. Dashboard is showing sample data.",
-
-        # ── Market Data Freshness (refresh button / auto-refresh / last updated) ─
-        "data_refresh_button": "Refresh Market Data",
-        "data_auto_refresh_label": "Auto-refresh",
-        "data_auto_refresh_off": "Off",
-        "data_auto_refresh_5min": "Every 5 minutes",
-        "data_auto_refresh_15min": "Every 15 minutes",
-        "data_last_updated_label": "Last updated",
-        "data_interval_intraday_note": "Intraday (5-minute)",
-        "data_interval_daily_note": "Daily data",
-
         "home_chart_etf_performance_title": "ETF Performance Comparison",
         "home_chart_etf_performance_sub": "Normalized price, base = 100",
         "home_chart_allocation_title": "Portfolio Allocation",

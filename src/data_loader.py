@@ -20,7 +20,7 @@ from src.etf_database import get_tickers_by_country
 DEFAULT_ETFS = get_tickers_by_country("United States")
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def download_etf_data(tickers: list, start_date: str, end_date: str, price_field: str = "Close") -> pd.DataFrame:
     """
     Download historical price data for a list of ETF tickers.
@@ -213,23 +213,10 @@ def load_sample_csv() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_benchmark_data(benchmark: str, start_date: str, end_date: str) -> pd.Series:
     """Download benchmark ETF data as a Series."""
     df = download_etf_data([benchmark], start_date, end_date)
     if df.empty:
         return pd.Series(dtype=float)
     return df.iloc[:, 0]
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def get_price_data_fetched_at(cache_tag: str) -> datetime:
-    """
-    Returns the real wall-clock time this cache_tag's price data was last
-    (re)fetched -- for the "Last updated" caption shown near a price chart.
-    Shares the same 300s ttl as download_etf_data()/get_benchmark_data(), so
-    calling this right after them (with a tag identifying that call site,
-    e.g. "home_dashboard") invalidates on the same schedule and reports the
-    actual fetch time, never a hardcoded value.
-    """
-    return datetime.now()

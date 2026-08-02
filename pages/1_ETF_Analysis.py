@@ -11,7 +11,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.data_loader import download_etf_data, get_price_data_fetched_at, DEFAULT_ETFS
+from src.data_loader import download_etf_data, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data, compute_returns, normalize_prices
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import (
@@ -119,19 +119,10 @@ with st.spinner(t("msg_downloading_market_data")):
         str(start_date),
         str(end_date)
     )
-    _etf_fetched_at = get_price_data_fetched_at("etf_analysis")
 
 if raw_prices.empty:
     error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
     st.stop()
-
-col_refresh, col_updated = st.columns([1, 3])
-with col_refresh:
-    if st.button(t("data_refresh_button"), key="etf_analysis_refresh_btn"):
-        st.cache_data.clear()
-        st.rerun()
-with col_updated:
-    st.caption(f"{t('data_last_updated_label')}: {_etf_fetched_at.strftime('%H:%M:%S')} · {t('data_interval_daily_note')}")
 
 prices = clean_price_data(raw_prices)
 prices = rename_yahoo_columns(prices)  # e.g. "0050.TW" -> "0050", "VOO" -> "VOO" (no-op)
