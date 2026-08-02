@@ -270,6 +270,145 @@ def classify_event(headline: str) -> str:
     return "Other"
 
 
+# ── Market Impact Score ──────────────────────────────────────────────────────
+# category (from classify_event() above) -> how market-moving that *type*
+# of event generally is, 0-100. This replaces "did the headline mention an
+# ETF/market by name" with "how important is the underlying event" as the
+# basis for the star rating.
+EVENT_IMPORTANCE_SCORE = {
+    "Interest Rate": 100,
+    "Trade Policy": 100,
+    "Geopolitics": 95,
+    "Inflation": 85,
+    "Economy": 80,
+    "Semiconductor": 80,
+    "AI": 65,
+    "Technology": 60,
+    "Energy": 60,
+    "Banking": 55,
+    "Cryptocurrency": 40,
+    "Other": 20,
+}
+
+# category -> {country: impact weight, 1 (Low) - 5 (Very High)}. Component
+# score is the strongest (max) weight among the countries our ETF universe
+# covers, scaled to 0-100 (weight * 20). Categories not listed (e.g.
+# "Other") fall back to a 20-point baseline.
+EVENT_AFFECTED_MARKETS = {
+    "Interest Rate": {"United States": 5, "United Kingdom": 4, "Taiwan": 3},
+    "Trade Policy": {"United States": 5, "Taiwan": 5, "United Kingdom": 2},
+    "Semiconductor": {"Taiwan": 5, "United States": 4, "United Kingdom": 1},
+    "Technology": {"United States": 4, "Taiwan": 2, "United Kingdom": 2},
+    "AI": {"United States": 4, "Taiwan": 3, "United Kingdom": 2},
+    "Energy": {"United States": 4, "United Kingdom": 4, "Taiwan": 2},
+    "Inflation": {"United States": 5, "United Kingdom": 4, "Taiwan": 3},
+    "Geopolitics": {"United States": 4, "Taiwan": 4, "United Kingdom": 3},
+    "Economy": {"United States": 4, "Taiwan": 3, "United Kingdom": 3},
+    "Banking": {"United States": 4, "United Kingdom": 4, "Taiwan": 2},
+    "Cryptocurrency": {"United States": 3, "United Kingdom": 2, "Taiwan": 2},
+}
+
+# category -> how broadly that event type tends to reach across industries
+# / sectors (0-100), e.g. an interest-rate decision touches nearly every
+# sector at once, while a single crypto headline stays fairly contained.
+EVENT_INDUSTRY_BREADTH = {
+    "Interest Rate": 90,
+    "Inflation": 75,
+    "Trade Policy": 80,
+    "Semiconductor": 75,
+    "Economy": 70,
+    "Technology": 70,
+    "AI": 65,
+    "Banking": 60,
+    "Energy": 60,
+    "Geopolitics": 55,
+    "Cryptocurrency": 30,
+    "Other": 15,
+}
+
+
+def _market_impact_score_to_stars(score: int) -> int:
+    """0-100 Market Impact Score -> 1-5 star rating (never 0 stars for a
+    valid score; 0 stars is reserved for "no news to score" below)."""
+    if score >= 90:
+        return 5
+    if score >= 70:
+        return 4
+    if score >= 50:
+        return 3
+    if score >= 30:
+        return 2
+    return 1
+
+
+def calculate_market_impact(news_items: list) -> dict:
+    """
+    Market Impact Score: a 0-100 score for today's news, built from *event
+    importance* rather than "did a headline mention this ETF/market by
+    name". Every headline is classified via classify_event() into one
+    category, the single most important category present today is treated
+    as the day's dominant event (ties broken by how often that category
+    repeats), and the score is a weighted blend of:
+      - Event Importance   (40%) -- EVENT_IMPORTANCE_SCORE for the
+        dominant category
+      - Affected Markets    (25%) -- EVENT_AFFECTED_MARKETS, how strongly
+        that category is known to hit our supported markets
+      - Affected Industry   (20%) -- EVENT_INDUSTRY_BREADTH, how broadly
+        that category tends to reach across industries/sectors
+      - News Frequency      (15%) -- what share of today's headlines are
+        about that same dominant category (a repeated theme signals a
+        bigger, more pervasive story than a single one-off mention)
+    A transparent rule-based heuristic, not a prediction of market
+    direction.
+
+    Returns a dict: score (0-100), stars (0-5; 0 only when there is no
+    news to score), star_label (e.g. "★★★★☆"), category (the dominant
+    event category driving the score, or None), breakdown (dict of the
+    four component scores, each already on a 0-100 scale, for
+    transparency).
+    """
+    empty_breakdown = {"event_importance": 0, "affected_markets": 0, "affected_industry": 0, "news_frequency": 0}
+    if not news_items:
+        return {"score": 0, "stars": 0, "star_label": "☆☆☆☆☆", "category": None, "breakdown": empty_breakdown}
+
+    categories = [classify_event(item["title"]) for item in news_items]
+    category_counts = Counter(categories)
+
+    present = [c for c in category_counts if c != "Other"] or list(category_counts)
+    dominant = max(present, key=lambda c: (EVENT_IMPORTANCE_SCORE.get(c, 20), category_counts[c]))
+
+    event_importance = EVENT_IMPORTANCE_SCORE.get(dominant, 20)
+
+    market_weights = EVENT_AFFECTED_MARKETS.get(dominant, {})
+    affected_markets = max(market_weights.values()) * 20 if market_weights else 20
+
+    affected_industry = EVENT_INDUSTRY_BREADTH.get(dominant, 15)
+
+    news_frequency = min(100, round(category_counts[dominant] / len(news_items) * 100))
+
+    score = round(
+        event_importance * 0.40
+        + affected_markets * 0.25
+        + affected_industry * 0.20
+        + news_frequency * 0.15
+    )
+    score = max(0, min(100, score))
+    stars = _market_impact_score_to_stars(score)
+
+    return {
+        "score": score,
+        "stars": stars,
+        "star_label": "★" * stars + "☆" * (5 - stars),
+        "category": dominant,
+        "breakdown": {
+            "event_importance": event_importance,
+            "affected_markets": affected_markets,
+            "affected_industry": affected_industry,
+            "news_frequency": news_frequency,
+        },
+    }
+
+
 _MOOD_KEY = {"Bullish": "mi_mood_bullish", "Neutral": "mi_mood_neutral", "Bearish": "mi_mood_bearish"}
 _MOOD_VARIANT = {"Bullish": "green", "Neutral": "neutral", "Bearish": "red"}
 
