@@ -11,7 +11,7 @@ import os
 # Ensure src is importable
 sys.path.insert(0, os.path.dirname(__file__))
 
-from src.data_loader import download_etf_data, DEFAULT_ETFS
+from src.data_loader import download_etf_data, get_price_data_fetched_at, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data
 from src.financial_metrics import (
     annualized_return, annualized_volatility, sharpe_ratio,
@@ -130,80 +130,109 @@ st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 if not demo_etfs:
     demo_etfs = DEFAULT_ETFS[:4]
 
-with st.spinner(t("home_loading_market_data")):
-    raw_prices = download_etf_data(demo_etfs, str(start_date), str(end_date))
-
-if raw_prices.empty:
-    st.warning(t("home_live_data_unavailable"))
-    from src.data_loader import _generate_sample_data
-    raw_prices = _generate_sample_data(demo_etfs, str(start_date), str(end_date))
-
-prices = clean_price_data(raw_prices)
-etf_prices = prices[[t for t in demo_etfs if t in prices.columns]]
-
-# Compute portfolio metrics (equal weight)
-if not etf_prices.empty:
-    n = len(etf_prices.columns)
-    weights_arr = np.array([1.0 / n] * n)
-    returns_df = etf_prices.pct_change().dropna()
-    port_returns = (returns_df * weights_arr).sum(axis=1)
-    port_prices = (1 + port_returns).cumprod() * 10000
-
-    ann_ret = annualized_return(port_prices)
-    ann_vol = annualized_volatility(port_prices)
-    sr = sharpe_ratio(port_prices, 0.05)
-    mdd = maximum_drawdown(port_prices)
-    port_value = port_prices.iloc[-1]
-    cov = covariance_matrix(etf_prices).values.copy()
-    cov += np.eye(n) * 1e-8
-    div_r = diversification_ratio(weights_arr, cov)
-else:
-    ann_ret, ann_vol, sr, mdd, port_value, div_r = 0.10, 0.15, 0.67, -0.12, 10800, 1.25
-
-# ── KPI Cards ─────────────────────────────────────────────────────────────────
+# ── KPI Cards + Main Charts (re-executed on manual refresh / auto-refresh) ────
 section_header(t("home_dashboard_title"), t("home_dashboard_subtitle"))
-col1, col2, col3, col4, col5, col6 = st.columns(6)
-with col1:
-    st.markdown(metric_card_html(t("metric_portfolio_value"), f"${port_value:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
-with col2:
-    st.markdown(metric_card_html(t("metric_annualized_return"), f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
-with col3:
-    st.markdown(metric_card_html(t("metric_annualized_volatility"), f"{ann_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
-with col4:
-    st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
-with col5:
-    st.markdown(metric_card_html(t("metric_maximum_drawdown"), f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
-with col6:
-    st.markdown(metric_card_html(t("metric_diversification_score"), f"{div_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 
-# ── Main Charts ───────────────────────────────────────────────────────────────
-col_left, col_right = st.columns([3, 2])
+_home_auto_refresh_options = {
+    t("data_auto_refresh_off"): 0,
+    t("data_auto_refresh_5min"): 300,
+    t("data_auto_refresh_15min"): 900,
+}
+col_refresh, col_auto = st.columns([1, 2])
+with col_refresh:
+    if st.button(t("data_refresh_button"), key="home_refresh_btn"):
+        st.cache_data.clear()
+        st.rerun()
+with col_auto:
+    _home_auto_choice = st.selectbox(
+        t("data_auto_refresh_label"), list(_home_auto_refresh_options.keys()),
+        index=0, key="home_auto_refresh_select",
+    )
+_home_auto_refresh_seconds = _home_auto_refresh_options[_home_auto_choice]
 
-with col_left:
-    with chart_card(t("home_chart_etf_performance_title"), t("home_chart_etf_performance_sub")):
-        if not etf_prices.empty:
-            fig_norm = normalized_price_chart(etf_prices)
-            st.plotly_chart(fig_norm, use_container_width=True, key="home_normalized_price")
 
-with col_right:
-    with chart_card(t("home_chart_allocation_title"), t("home_chart_allocation_sub")):
-        weights_dict = {tk: 1.0 / len(etf_prices.columns) for tk in etf_prices.columns}
-        fig_donut = allocation_donut_chart(weights_dict, "")
-        st.plotly_chart(fig_donut, use_container_width=True, key="home_allocation_donut")
+def _render_dashboard():
+    with st.spinner(t("home_loading_market_data")):
+        raw_prices = download_etf_data(demo_etfs, str(start_date), str(end_date))
+    fetched_at = get_price_data_fetched_at("home_dashboard")
 
-col_left2, col_right2 = st.columns([3, 2])
+    if raw_prices.empty:
+        st.warning(t("home_live_data_unavailable"))
+        from src.data_loader import _generate_sample_data
+        raw_prices = _generate_sample_data(demo_etfs, str(start_date), str(end_date))
 
-with col_left2:
-    with chart_card(t("home_chart_growth_title"), t("home_chart_growth_sub")):
-        if not etf_prices.empty:
-            fig_cum = cumulative_return_chart(etf_prices)
-            st.plotly_chart(fig_cum, use_container_width=True, key="home_cumulative_return")
+    prices = clean_price_data(raw_prices)
+    etf_prices = prices[[tk for tk in demo_etfs if tk in prices.columns]]
 
-with col_right2:
-    with chart_card(t("home_chart_risk_return_title"), t("home_chart_risk_return_sub")):
-        if not etf_prices.empty:
-            fig_rr = risk_return_scatter(etf_prices)
-            st.plotly_chart(fig_rr, use_container_width=True, key="home_risk_return")
+    # Compute portfolio metrics (equal weight)
+    if not etf_prices.empty:
+        n = len(etf_prices.columns)
+        weights_arr = np.array([1.0 / n] * n)
+        returns_df = etf_prices.pct_change().dropna()
+        port_returns = (returns_df * weights_arr).sum(axis=1)
+        port_prices = (1 + port_returns).cumprod() * 10000
+
+        ann_ret = annualized_return(port_prices)
+        ann_vol = annualized_volatility(port_prices)
+        sr = sharpe_ratio(port_prices, 0.05)
+        mdd = maximum_drawdown(port_prices)
+        port_value = port_prices.iloc[-1]
+        cov = covariance_matrix(etf_prices).values.copy()
+        cov += np.eye(n) * 1e-8
+        div_r = diversification_ratio(weights_arr, cov)
+    else:
+        ann_ret, ann_vol, sr, mdd, port_value, div_r = 0.10, 0.15, 0.67, -0.12, 10800, 1.25
+
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    with col1:
+        st.markdown(metric_card_html(t("metric_portfolio_value"), f"${port_value:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    with col2:
+        st.markdown(metric_card_html(t("metric_annualized_return"), f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
+    with col3:
+        st.markdown(metric_card_html(t("metric_annualized_volatility"), f"{ann_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    with col4:
+        st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    with col5:
+        st.markdown(metric_card_html(t("metric_maximum_drawdown"), f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    with col6:
+        st.markdown(metric_card_html(t("metric_diversification_score"), f"{div_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
+
+    st.caption(f"{t('data_last_updated_label')}: {fetched_at.strftime('%H:%M:%S')} · {t('data_interval_daily_note')}")
+
+    # ── Main Charts ───────────────────────────────────────────────────────────
+    col_left, col_right = st.columns([3, 2])
+
+    with col_left:
+        with chart_card(t("home_chart_etf_performance_title"), t("home_chart_etf_performance_sub")):
+            if not etf_prices.empty:
+                fig_norm = normalized_price_chart(etf_prices)
+                st.plotly_chart(fig_norm, use_container_width=True, key="home_normalized_price")
+
+    with col_right:
+        with chart_card(t("home_chart_allocation_title"), t("home_chart_allocation_sub")):
+            weights_dict = {tk: 1.0 / len(etf_prices.columns) for tk in etf_prices.columns}
+            fig_donut = allocation_donut_chart(weights_dict, "")
+            st.plotly_chart(fig_donut, use_container_width=True, key="home_allocation_donut")
+
+    col_left2, col_right2 = st.columns([3, 2])
+
+    with col_left2:
+        with chart_card(t("home_chart_growth_title"), t("home_chart_growth_sub")):
+            if not etf_prices.empty:
+                fig_cum = cumulative_return_chart(etf_prices)
+                st.plotly_chart(fig_cum, use_container_width=True, key="home_cumulative_return")
+
+    with col_right2:
+        with chart_card(t("home_chart_risk_return_title"), t("home_chart_risk_return_sub")):
+            if not etf_prices.empty:
+                fig_rr = risk_return_scatter(etf_prices)
+                st.plotly_chart(fig_rr, use_container_width=True, key="home_risk_return")
+
+
+if _home_auto_refresh_seconds:
+    st.fragment(run_every=_home_auto_refresh_seconds)(_render_dashboard)()
+else:
+    _render_dashboard()
 
 # ── Feature Overview ──────────────────────────────────────────────────────────
 section_header(t("home_features_title"), t("home_features_subtitle"))

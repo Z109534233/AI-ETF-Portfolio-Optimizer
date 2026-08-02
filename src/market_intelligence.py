@@ -8,6 +8,7 @@ raising, so the page can never crash.
 """
 
 from collections import Counter
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -63,26 +64,53 @@ def _default_global_watchlist() -> list:
 DEFAULT_WATCHLIST = _default_global_watchlist()
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+def _download_index_history(symbol: str):
+    """
+    Try an intraday interval first (period="5d", interval="5m") so "today's"
+    index price actually reflects the current trading session instead of
+    yesterday's daily close sitting unchanged all day. Falls back to daily
+    bars (period="1mo", interval="1d") when intraday data isn't available
+    (e.g. market closed with no recent 5m bars yet, or yfinance rejects the
+    interval for that symbol). Returns (closes: pd.Series, interval_used: str).
+    """
+    for period, interval in (("5d", "5m"), ("1mo", "1d")):
+        try:
+            hist = yf.download(symbol, period=period, interval=interval,
+                                progress=False, auto_adjust=True, threads=False)
+        except Exception:
+            continue
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = hist.columns.get_level_values(0)
+        closes = hist["Close"].dropna() if "Close" in hist.columns else pd.Series(dtype=float)
+        if len(closes) >= 2:
+            return closes, interval
+    return pd.Series(dtype=float), "1d"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_market_indices() -> dict:
     """
-    Fetch the latest price and day-over-day change for the major indices
-    (S&P 500, NASDAQ, Dow Jones, Russell 2000, VIX) via yfinance.
+    Fetch the latest price and change for the major indices (S&P 500,
+    NASDAQ, Dow Jones, Russell 2000, VIX) via yfinance, using a short
+    (5-minute) intraday interval so the displayed price reflects the
+    current trading session rather than a daily bar that only updates once
+    the market closes -- see _download_index_history(). Falls back to daily
+    bars only when intraday data is unavailable. This is real/intraday
+    quote data; it is never used to stand in for daily-adjusted-close
+    historical performance (that stays in src/data_loader.py).
 
     Returns a dict keyed by index id, each value a dict with "label",
     "available" (bool), and -- when available -- "price", "change",
-    "change_pct". A per-index failure is isolated: one bad ticker never
-    prevents the others from rendering.
+    "change_pct", "interval" ("5m" or "1d", whichever was actually used). A
+    per-index failure is isolated: one bad ticker never prevents the others
+    from rendering. Also includes a "_meta" key: {"fetched_at": datetime},
+    the real time this (non-cached) fetch executed.
     """
     result = {}
     for key, (label_key, symbol) in INDEX_TICKERS.items():
         label = t(label_key)
         try:
-            hist = yf.download(symbol, period="5d", progress=False, auto_adjust=True, threads=False)
-            if isinstance(hist.columns, pd.MultiIndex):
-                hist.columns = hist.columns.get_level_values(0)
-            closes = hist["Close"].dropna() if "Close" in hist.columns else pd.Series(dtype=float)
-
+            closes, interval = _download_index_history(symbol)
             if len(closes) < 2:
                 result[key] = {"label": label, "available": False}
                 continue
@@ -93,9 +121,11 @@ def fetch_market_indices() -> dict:
             result[key] = {
                 "label": label, "available": True,
                 "price": last, "change": change, "change_pct": change_pct,
+                "interval": interval,
             }
         except Exception:
             result[key] = {"label": label, "available": False}
+    result["_meta"] = {"fetched_at": datetime.now()}
     return result
 
 
