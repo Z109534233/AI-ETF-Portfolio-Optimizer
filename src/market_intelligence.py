@@ -991,3 +991,128 @@ def generate_today_ai_summary(news_items: list) -> dict:
         sentences.append("This is a rule-based summary for educational purposes only -- not investment advice or a price prediction.")
 
     return {"title": title, "summary": " ".join(sentences)}
+
+
+# ETF Type (from ETF_TYPE_MAP) -> a "why this matters to this ETF" phrase
+# per language, used only by generate_explanation() below. Kept local
+# here (not added to src/i18n.py) since these are narrative fragments for
+# one specific explanation sentence, not general app UI copy.
+_ETF_TYPE_IMPACT_PHRASE_EN = {
+    "Bond": "bond ETFs are expected to see notable price movement.",
+    "Technology": "technology ETFs may experience increased volatility.",
+    "Semiconductor": "semiconductor ETFs are expected to face higher pressure.",
+    "Broad Market": "broad market ETFs may see moderate, portfolio-wide impact.",
+    "Broad Market (UCITS)": "UCITS broad-market ETFs may see a smaller, delayed reaction.",
+}
+_ETF_TYPE_IMPACT_PHRASE_ZH = {
+    "Bond": "債券型 ETF 預期會有明顯的價格波動。",
+    "Technology": "科技型 ETF 可能出現較大的波動。",
+    "Semiconductor": "半導體 ETF 預期將面臨較高的壓力。",
+    "Broad Market": "大盤型 ETF 可能受到中度、全面性的影響。",
+    "Broad Market (UCITS)": "UCITS 大盤型 ETF 反應可能較小、較延遲。",
+}
+
+# event category (from classify_event()) -> a broader "ripple effect"
+# phrase per language, used only by generate_explanation() below.
+_CATEGORY_RIPPLE_EN = {
+    "Interest Rate": "Rate-sensitive sectors across the board may see notable price swings.",
+    "Inflation": "Consumer-facing and rate-sensitive sectors may see added pressure.",
+    "Trade Policy": "Technology stocks may experience increased volatility.",
+    "Semiconductor": "Technology stocks may experience increased volatility.",
+    "Technology": "Broader tech-sector sentiment may shift alongside this news.",
+    "AI": "AI-related stocks across sectors may see heightened trading activity.",
+    "Energy": "Energy-sensitive sectors and transportation stocks may see cost pressure.",
+    "Geopolitics": "Risk-off sentiment may spread across global equities.",
+    "Economy": "Broad market sentiment may shift with the economic outlook.",
+    "Banking": "Financial-sector stocks may see added scrutiny.",
+    "Cryptocurrency": "Risk-asset sentiment may see a knock-on effect.",
+    "Other": "Market reaction is likely to stay limited and short-lived.",
+}
+_CATEGORY_RIPPLE_ZH = {
+    "Interest Rate": "所有利率敏感類股都可能出現明顯波動。",
+    "Inflation": "消費相關與利率敏感類股可能承受額外壓力。",
+    "Trade Policy": "科技股可能出現較大的波動。",
+    "Semiconductor": "科技股可能出現較大的波動。",
+    "Technology": "整體科技類股情緒可能隨這則新聞轉變。",
+    "AI": "各產業中與 AI 相關的股票可能出現交易量增加的情況。",
+    "Energy": "能源敏感產業與運輸類股可能面臨成本壓力。",
+    "Geopolitics": "避險情緒可能擴散至全球股市。",
+    "Economy": "整體市場情緒可能隨經濟展望改變。",
+    "Banking": "金融類股可能受到更多關注與檢視。",
+    "Cryptocurrency": "風險性資產的情緒可能受到連帶影響。",
+    "Other": "市場反應預期將維持有限且短暫。",
+}
+
+
+def generate_explanation(news_items: list, ticker: str) -> dict:
+    """
+    "Why?" explanation for a single ETF's calculate_etf_impact() star
+    rating, e.g.:
+        ★★★★★
+        Because:
+        - Trump announced tariffs on semiconductors.
+        - Taiwan semiconductor ETFs are expected to face higher pressure.
+        - Technology stocks may experience increased volatility.
+    Reuses the exact same Event -> Event Type -> ETF Type -> Impact chain
+    as calculate_etf_impact() (does not re-derive the rating a second,
+    different way) -- the star rating, dominant event category, and the
+    ETF's own type tag(s) all come from calculate_etf_impact()/
+    ETF_TYPE_MAP. Up to three reasons are generated:
+      1. What happened -- the actual headline that drove today's dominant
+         event category (the first one found; falls back to a generic
+         line when none is available).
+      2. Why it matters to this specific ETF, phrased around its own ETF
+         Type tag(s) (_ETF_TYPE_IMPACT_PHRASE_EN/ZH), and the ETF's
+         country when it's a known ticker (via get_etf(), e.g. "Taiwan
+         semiconductor ETFs...").
+      3. A broader ripple-effect statement for the event category as a
+         whole (_CATEGORY_RIPPLE_EN/ZH).
+    Template-based only, no LLM call. A transparent rule-based heuristic,
+    not investment advice.
+
+    Returns a dict: ticker, stars, star_label (e.g. "★★★★★"), reasons
+    (list of up to 3 display-safe strings).
+    """
+    lang = get_language()
+    etf_result = calculate_etf_impact(news_items, [ticker])[0]
+    stars = etf_result["stars"]
+    category = etf_result["event_category"]
+    star_label = "★" * stars + "☆" * (5 - stars)
+
+    if not category:
+        no_data = "目前沒有足夠的新聞資料可以說明原因。" if lang == "zh-TW" else "Not enough news data is available to explain this rating."
+        return {"ticker": ticker, "stars": stars, "star_label": star_label, "reasons": [no_data]}
+
+    driving_headline = next(
+        (item["title"] for item in news_items if classify_event(item["title"]) == category), None
+    )
+
+    reasons = []
+    if driving_headline:
+        reasons.append(driving_headline)
+
+    record = get_etf(ticker)
+    country_prefix = ""
+    if record:
+        country_prefix = (t_country(record.country) if lang == "zh-TW" else record.country) + (" " if lang != "zh-TW" else "")
+
+    etf_types = etf_result["etf_types"]
+    if etf_types:
+        phrase_map = _ETF_TYPE_IMPACT_PHRASE_ZH if lang == "zh-TW" else _ETF_TYPE_IMPACT_PHRASE_EN
+        top_type = max(etf_types, key=lambda et: EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {}).get(et, 0))
+        type_phrase = phrase_map.get(top_type)
+        if type_phrase:
+            if lang == "zh-TW":
+                reasons.append(f"{country_prefix}{type_phrase}")
+            else:
+                reasons.append(f"{country_prefix}{type_phrase[0].upper()}{type_phrase[1:]}")
+
+    ripple_map = _CATEGORY_RIPPLE_ZH if lang == "zh-TW" else _CATEGORY_RIPPLE_EN
+    ripple = ripple_map.get(category)
+    if ripple:
+        reasons.append(ripple)
+
+    if not reasons:
+        reasons.append("目前沒有足夠的新聞資料可以說明原因。" if lang == "zh-TW" else "Not enough news data is available to explain this rating.")
+
+    return {"ticker": ticker, "stars": stars, "star_label": star_label, "reasons": reasons}
