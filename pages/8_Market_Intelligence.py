@@ -169,16 +169,26 @@ with col6:
 # ── Section 1b: Affected Markets ─────────────────────────────────────────────
 section_header(t("mi_section_affected_markets_title"), t("mi_section_affected_markets_subtitle"))
 
+_market_flag_emoji = {"United States": "🇺🇸", "Taiwan": "🇹🇼", "United Kingdom": "🇬🇧"}
+_reasons_caption = "原因" if _mi_lang == "zh-TW" else "Reasons"
+
 if affected_markets:
     market_cols = st.columns(len(affected_markets))
     for col, market in zip(market_cols, affected_markets):
+        flag = _market_flag_emoji.get(market["country"], "🌐")
+        reasons_html = "".join(f'<span class="badge badge-neutral">{r}</span> ' for r in market["reasons"])
+        reasons_block = (
+            f'<div class="affected-by-caption">{_reasons_caption}</div><div>{reasons_html}</div>'
+            if market["reasons"] else ""
+        )
         with col:
             st.markdown(
-                market_impact_card(
-                    market["market"], t("mi_impact_level_caption"),
-                    star_rating_html(market["stars"]), market["impact_label"],
-                    t("mi_affected_by_caption"), market["affected_by"],
-                ),
+                '<div class="status-card market-impact-card">'
+                f'<div class="status-card-ticker">{flag} {market["market"]}</div>'
+                f'<div class="status-card-stars">{star_rating_html(market["stars"])}</div>'
+                f'<div class="market-impact-label">{market["impact_label"]}</div>'
+                f'{reasons_block}'
+                '</div>',
                 unsafe_allow_html=True,
             )
 else:

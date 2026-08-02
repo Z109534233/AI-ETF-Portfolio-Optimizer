@@ -672,9 +672,14 @@ def calculate_affected_markets(news_items: list) -> list:
     renders consistently. This measures topical relevance/impact severity
     only -- it does not predict market direction.
 
-    Returns a list of dicts: market (translated country name), stars (1-5),
-    impact_label (translated, e.g. "High Impact" -- never bare stars),
-    affected_by (up to 2 headline titles whose event type drove the rating).
+    Returns a list of dicts: market (translated country name), country (raw
+    country key, e.g. for a flag-emoji lookup), stars (1-5), impact_label
+    (translated, e.g. "High Impact" -- never bare stars), affected_by (up
+    to 2 headline titles whose event type drove the rating), reasons (up
+    to 3 short display tags -- classify_event() run on each of this
+    market's driving headlines, deduplicated, "Other" excluded -- for a
+    "Reasons" tag display distinct from the full-headline affected_by
+    list; does not change stars/impact_label, purely additive).
     """
     countries = get_countries()
     market_stars = {c: 0 for c in countries}
@@ -692,11 +697,19 @@ def calculate_affected_markets(news_items: list) -> list:
     results = []
     for country in countries:
         stars = market_stars[country] or 1  # baseline: no classified event today -> Very Low Impact
+        driving_headlines = market_events[country]
+        reasons = []
+        for title in driving_headlines:
+            tag = classify_event(title)
+            if tag != "Other" and tag not in reasons:
+                reasons.append(tag)
         results.append({
             "market": t_country(country),
+            "country": country,
             "stars": stars,
             "impact_label": stars_to_impact_label(stars),
-            "affected_by": market_events[country][:2],
+            "affected_by": driving_headlines[:2],
+            "reasons": reasons[:3],
         })
     results.sort(key=lambda m: m["stars"], reverse=True)
     return results
