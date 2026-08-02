@@ -899,3 +899,95 @@ def analyze_portfolio_impact(holdings: dict, affected_etfs: list) -> str:
         lines.append(t("mi_portfolio_no_relevant_news"))
 
     return " ".join(lines)
+
+
+# category (from classify_event()) -> a short display phrase per language,
+# used only by generate_today_ai_summary() below to compose a natural
+# sentence. Kept local to this function's neighborhood (not added to
+# src/i18n.py) since each entry is a short narrative fragment specific to
+# this one summary sentence, not general app UI copy.
+_CATEGORY_PHRASE = {
+    "Interest Rate": ("interest rate", "利率"),
+    "Inflation": ("inflation", "通膨"),
+    "Trade Policy": ("trade policy", "貿易政策"),
+    "Technology": ("technology", "科技"),
+    "Semiconductor": ("semiconductor", "半導體"),
+    "Energy": ("energy", "能源"),
+    "Geopolitics": ("geopolitical", "地緣政治"),
+    "Economy": ("economic", "總體經濟"),
+    "AI": ("AI", "AI"),
+    "Banking": ("banking", "銀行業"),
+    "Cryptocurrency": ("cryptocurrency", "加密貨幣"),
+    "Other": ("general market", "一般市場"),
+}
+_MOOD_PHRASE_EN = {"Bullish": "trending higher", "Bearish": "under pressure", "Neutral": "holding steady"}
+_MOOD_PHRASE_ZH = {"Bullish": "走揚", "Bearish": "承壓", "Neutral": "持穩"}
+
+
+def generate_today_ai_summary(news_items: list) -> dict:
+    """
+    "Today's AI Summary" -- a short template-generated paragraph meant for
+    the very top of the Market Intelligence page (above "Today's Market
+    Overview"), synthesizing:
+      - today's news volume
+      - event classification (classify_event() via calculate_market_impact())
+      - market sentiment (calculate_regional_market_sentiment()'s "Global" row)
+      - ETF impact (calculate_etf_impact(), the most-affected watch-list ticker)
+    into one narrative, e.g. "Markets are under pressure today because...".
+    Template-based only -- no OpenAI/LLM call -- reserved as the entry
+    point for a future LLM-generated version, matching the same
+    "transparent heuristic, not a prediction" philosophy as the rest of
+    this module. This is a separate, independent feature from
+    generate_market_summary() (the existing, untouched "AI Market Summary"
+    section further down the page, which calls OpenAI when configured);
+    neither reuses the other, and generate_market_summary() is unchanged.
+
+    Language-aware (get_language()) without adding new src/i18n.py keys --
+    the sentence needs per-language phrasing throughout, not one swappable
+    word, so both language versions are written out directly here.
+
+    Returns a dict: title (translated section title), summary (a
+    display-safe ~3-4 sentence string). Never raises -- returns a neutral
+    "not enough data" summary when there is no news.
+    """
+    lang = get_language()
+    title = "今日 AI 摘要" if lang == "zh-TW" else "Today's AI Summary"
+
+    if not news_items:
+        no_data = ("目前沒有足夠的新聞資料可產生今日摘要。" if lang == "zh-TW"
+                   else "Not enough news data is available to generate today's summary.")
+        return {"title": title, "summary": no_data}
+
+    impact = calculate_market_impact(news_items)
+    sentiment = calculate_regional_market_sentiment(news_items)
+    global_sentiment = next((s for s in sentiment if s["market"] == "Global"), None)
+    etf_impact = calculate_etf_impact(news_items)
+    top_etf = max(etf_impact, key=lambda e: e["stars"]) if etf_impact else None
+
+    category = impact["category"] or "Other"
+    category_en, category_zh = _CATEGORY_PHRASE.get(category, _CATEGORY_PHRASE["Other"])
+    mood = global_sentiment["mood"] if global_sentiment else "Neutral"
+    confidence = global_sentiment["confidence"] if global_sentiment else 0
+
+    if lang == "zh-TW":
+        sentences = [
+            f"今天市場{_MOOD_PHRASE_ZH.get(mood, '持穩')}，主要受到{category_zh}相關新聞影響，"
+            f"全球情緒判讀為{t(_MOOD_KEY[mood])}（信心指數 {confidence}%）。",
+            f"今日市場影響分數為 {impact['score']}/100（{impact['stars']} 顆星）。",
+        ]
+        if top_etf:
+            etf_type_label = "、".join(top_etf["etf_types"]) or "未分類"
+            sentences.append(f"觀察清單中反應最明顯的是 {top_etf['ticker']}（{etf_type_label}），影響程度 {top_etf['stars']} 顆星。")
+        sentences.append("此摘要為規則式生成，僅供教育用途，不構成投資建議或價格預測。")
+    else:
+        sentences = [
+            f"Markets are {_MOOD_PHRASE_EN.get(mood, 'holding steady')} today because of {category_en} news, "
+            f"with global sentiment reading {t(_MOOD_KEY[mood])} ({confidence}% confidence).",
+            f"Today's Market Impact Score is {impact['score']}/100 ({impact['stars']} stars).",
+        ]
+        if top_etf:
+            etf_type_label = "/".join(top_etf["etf_types"]) or "Unclassified"
+            sentences.append(f"{top_etf['ticker']} ({etf_type_label}) shows the strongest reaction potential today at {top_etf['stars']} stars.")
+        sentences.append("This is a rule-based summary for educational purposes only -- not investment advice or a price prediction.")
+
+    return {"title": title, "summary": " ".join(sentences)}

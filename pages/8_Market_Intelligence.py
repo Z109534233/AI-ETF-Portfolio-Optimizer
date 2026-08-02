@@ -20,7 +20,7 @@ from src.market_intelligence import (
     fetch_market_indices, fetch_fear_greed_index, get_affected_etfs,
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
-    calculate_affected_markets,
+    calculate_affected_markets, generate_today_ai_summary,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -62,16 +62,23 @@ try:
     ai_sentiment = calculate_ai_market_sentiment(news_items)
     calendar_events = get_economic_calendar()
     affected_markets = calculate_affected_markets(news_items)
+    today_ai_summary = generate_today_ai_summary(news_items)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
     affected_etfs, sentiment, calendar_events = [], calculate_market_sentiment([]), []
     ai_sentiment = calculate_ai_market_sentiment([])
     affected_markets = []
+    today_ai_summary = generate_today_ai_summary([])
     data_load_failed = True
 
 if data_load_failed:
     error_state(t("mi_no_news_available"), t("mi_summary_no_news"))
+
+# ── Section 0: Today's AI Summary (template-generated, no LLM call) ─────────
+section_header(today_ai_summary["title"])
+with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
+    st.markdown(today_ai_summary["summary"])
 
 # ── Section 1: Today's Market Overview ───────────────────────────────────────
 section_header(t("mi_section_overview_title"))
