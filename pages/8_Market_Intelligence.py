@@ -21,7 +21,7 @@ from src.market_intelligence import (
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
-    get_todays_major_events,
+    get_todays_major_events, generate_etf_card_data,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -66,6 +66,7 @@ try:
     today_ai_summary = generate_today_ai_summary(news_items)
     market_impact = calculate_market_impact(news_items)
     major_events = get_todays_major_events(news_items, limit=5)
+    etf_cards = generate_etf_card_data(news_items)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
@@ -75,6 +76,7 @@ except Exception:
     today_ai_summary = generate_today_ai_summary([])
     market_impact = calculate_market_impact([])
     major_events = []
+    etf_cards = generate_etf_card_data([])
     data_load_failed = True
 
 if data_load_failed:
@@ -224,14 +226,26 @@ with chart_card(t("mi_section_summary_title"), tag=t("ai_tag_generated") if ai_c
 # ── Section 4: Global ETFs (Affected ETFs across US / Taiwan / UK) ───────────
 section_header(t("mi_section_global_etfs_title"), t("mi_section_global_etfs_subtitle"))
 
-if affected_etfs:
-    etf_cols = st.columns(len(affected_etfs))
-    for col, etf in zip(etf_cols, affected_etfs):
+_etf_market_caption = "市場" if _mi_lang == "zh-TW" else "Market"
+_etf_reasons_caption = "原因" if _mi_lang == "zh-TW" else "Reasons"
+
+if etf_cards:
+    etf_cols = st.columns(len(etf_cards))
+    for col, etf in zip(etf_cols, etf_cards):
+        reasons_html = "".join(f'<span class="badge badge-neutral">{r}</span> ' for r in etf["reasons"])
+        reasons_block = (
+            f'<div class="affected-by-caption">{_etf_reasons_caption}</div><div>{reasons_html}</div>'
+            if etf["reasons"] else ""
+        )
         with col:
             st.markdown(
-                status_card(etf["ticker"], etf["country"], etf["impact_label"],
-                            IMPACT_VARIANT.get(etf["impact"], "neutral"),
-                            star_rating_html(etf["stars"])),
+                '<div class="status-card market-impact-card">'
+                f'<div class="status-card-ticker">{etf["ticker"]}</div>'
+                f'<div class="status-card-stars">{star_rating_html(etf["stars"])}</div>'
+                f'<div class="status-card-sector">{_etf_market_caption}: '
+                f'<span class="badge badge-{etf["sentiment_variant"]}">{etf["sentiment_label"]}</span></div>'
+                f'{reasons_block}'
+                '</div>',
                 unsafe_allow_html=True,
             )
 else:

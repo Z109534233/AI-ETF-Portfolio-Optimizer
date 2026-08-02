@@ -1189,3 +1189,69 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
 
     events.sort(key=lambda e: e["score"], reverse=True)
     return events[:limit]
+
+
+def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
+    """
+    ETF Card data for the redesigned "Global ETFs" display: each ticker's
+    Impact (stars, reusing calculate_etf_impact() exactly -- not
+    recomputed a second, different way), Market (a Bullish/Neutral/Bearish
+    sentiment specific to THIS ETF, not one single day-wide mood), and
+    Reasons (up to 3 short tags), so two ETFs driven by different
+    headlines can show different sentiment even on the same day.
+
+    For each ticker, a headline counts as a "tag" source when its
+    classify_event() category has an EVENT_TYPE_TO_ETF_TYPE_IMPACT weight
+    of 4+ ("High" or "Very High") for at least one of the ticker's own ETF
+    Type tag(s) (ETF_TYPE_MAP) -- a higher bar than calculate_etf_impact()
+    uses for stars, specifically so a ticker isn't "relevant" to nearly
+    everything just because its type (e.g. Broad Market) picks up a
+    moderate weight from most categories; that would make every ETF's
+    Market sentiment converge on the same mood. Among those headlines,
+    the single one with the strongest weight for this ticker drives Market
+    sentiment (its own directional "impact" field, Positive/Negative/
+    Neutral -> Bullish/Bearish/Neutral) -- not a majority vote, so two
+    conflicting headlines don't get diluted into an arbitrary tie-break.
+    Reasons are the distinct classify_event() categories among all of
+    those headlines (deduplicated). A ticker with none today gets Neutral
+    sentiment and an empty reasons list.
+
+    Returns a list of dicts: ticker, stars, star_label, etf_types,
+    sentiment (raw mood), sentiment_label (translated), sentiment_variant
+    (badge color), reasons (list of up to 3 tags).
+    """
+    tickers = tickers or DEFAULT_ETF_IMPACT_WATCHLIST
+    impact_rows = {row["ticker"]: row for row in calculate_etf_impact(news_items, tickers)}
+
+    results = []
+    for ticker in tickers:
+        etf_types = ETF_TYPE_MAP.get(ticker, [])
+        best_weight = 0
+        best_item = None
+        reasons = []
+        for item in news_items:
+            category = classify_event(item["title"])
+            if category == "Other":
+                continue
+            weight = max((EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {}).get(et, 0) for et in etf_types), default=0)
+            if weight >= 4:
+                if category not in reasons:
+                    reasons.append(category)
+                if weight > best_weight:
+                    best_weight = weight
+                    best_item = item
+
+        mood = {"Positive": "Bullish", "Negative": "Bearish"}.get(best_item["impact"], "Neutral") if best_item else "Neutral"
+
+        stars = impact_rows.get(ticker, {}).get("stars", 1)
+        results.append({
+            "ticker": ticker,
+            "stars": stars,
+            "star_label": "★" * stars + "☆" * (5 - stars),
+            "etf_types": etf_types,
+            "sentiment": mood,
+            "sentiment_label": t(_MOOD_KEY[mood]),
+            "sentiment_variant": _MOOD_VARIANT[mood],
+            "reasons": reasons[:3],
+        })
+    return results
