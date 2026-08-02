@@ -20,7 +20,7 @@ from src.market_intelligence import (
     fetch_market_indices, fetch_fear_greed_index, get_affected_etfs,
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
-    calculate_affected_markets, generate_today_ai_summary,
+    calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -31,7 +31,7 @@ from src.ui import (
     chart_card, render_footer, news_card, status_card, star_rating_html,
     market_impact_card, ai_sentiment_card, empty_state, error_state,
 )
-from src.i18n import t
+from src.i18n import t, get_language
 
 st.set_page_config(
     page_title="Market Intelligence | AI ETF Portfolio Optimizer",
@@ -63,6 +63,7 @@ try:
     calendar_events = get_economic_calendar()
     affected_markets = calculate_affected_markets(news_items)
     today_ai_summary = generate_today_ai_summary(news_items)
+    market_impact = calculate_market_impact(news_items)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
@@ -70,6 +71,7 @@ except Exception:
     ai_sentiment = calculate_ai_market_sentiment([])
     affected_markets = []
     today_ai_summary = generate_today_ai_summary([])
+    market_impact = calculate_market_impact([])
     data_load_failed = True
 
 if data_load_failed:
@@ -79,6 +81,20 @@ if data_load_failed:
 section_header(today_ai_summary["title"])
 with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
     st.markdown(today_ai_summary["summary"])
+
+# ── Section 0b: Market Impact Score ──────────────────────────────────────────
+_mi_lang = get_language()
+_mi_score_title = "市場影響分數" if _mi_lang == "zh-TW" else "Market Impact Score"
+_mi_star_label = "★" * market_impact["stars"] + "☆" * (5 - market_impact["stars"])
+_mi_score_color = (
+    COLORS["danger"] if market_impact["stars"] >= 4
+    else COLORS["warning"] if market_impact["stars"] == 3
+    else COLORS["text_muted"]
+)
+st.markdown(
+    metric_card_html(_mi_score_title, f"{market_impact['score']}/100", _mi_star_label, color=_mi_score_color),
+    unsafe_allow_html=True,
+)
 
 # ── Section 1: Today's Market Overview ───────────────────────────────────────
 section_header(t("mi_section_overview_title"))
