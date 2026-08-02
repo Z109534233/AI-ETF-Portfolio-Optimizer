@@ -210,6 +210,66 @@ def classify_event_types(title: str) -> list:
     return [event for event, keywords in EVENT_TYPE_KEYWORDS.items() if any(kw in low for kw in keywords)]
 
 
+# Event Classification: a headline -> exactly one high-level category, for
+# a different purpose than EVENT_TYPE_KEYWORDS/classify_event_types() above
+# (which returns zero or more internal keys used by Affected Markets / AI
+# Market Sentiment). Checked in order below, first match wins -- more
+# specific/company-identifying keywords are listed before broader ones, so
+# e.g. "Nvidia AI chips" resolves to Technology (a named-company keyword)
+# rather than the broader Semiconductor or AI categories, and "TSMC
+# earnings" resolves to Semiconductor via the company name even though the
+# headline never says the word "semiconductor".
+EVENT_CLASSIFICATION_KEYWORDS = [
+    ("Cryptocurrency", ["bitcoin", "ethereum", "crypto", "cryptocurrency", "blockchain",
+                         "btc", "coinbase", "binance"]),
+    ("Semiconductor", ["semiconductor", "tsmc", "chipmaker", "foundry", "wafer", "asml"]),
+    ("Technology", ["nvidia", "apple", "microsoft", "google", "meta", "amazon",
+                     "big tech", "tech stocks", "ai chip", "ai chips", "software"]),
+    ("AI", ["artificial intelligence", "generative ai", "ai regulation", "ai adoption",
+            "ai boom", "chatgpt", "openai"]),
+    ("Interest Rate", ["interest rate", "rate cut", "rate hike", "rate decision",
+                        "fed decision", "fed chair", "federal reserve", "fomc",
+                        "central bank", "cuts rate", "raises rate", "hikes rate"]),
+    ("Inflation", ["inflation", "cpi", "ppi", "consumer price", "producer price"]),
+    ("Trade Policy", ["tariff", "tariffs", "trade war", "trade policy", "export ban",
+                       "import ban", "trade restriction"]),
+    ("Energy", ["oil", "crude", "opec", "energy price", "energy prices", "gas price", "natural gas"]),
+    ("Geopolitics", ["geopolitical", "conflict", "war", "sanctions", "invasion",
+                      "israel", "iran", "ukraine", "russia"]),
+    ("Banking", ["bank", "banking", "lender", "deposit", "loan default"]),
+    ("Economy", ["gdp", "economic growth", "recession", "economic output", "employment",
+                 "jobs report", "unemployment", "payroll", "pmi", "manufacturing index"]),
+]
+
+
+def classify_event(headline: str) -> str:
+    """
+    Classify a single headline into exactly one high-level event category:
+    Interest Rate, Inflation, Trade Policy, Technology, Semiconductor,
+    Energy, Geopolitics, Economy, AI, Banking, Cryptocurrency, or "Other"
+    when nothing matches. Checked in the fixed priority order of
+    EVENT_CLASSIFICATION_KEYWORDS above (first match wins), so a headline
+    that could plausibly fit more than one category resolves consistently.
+
+    Single-word keywords (e.g. "war", "bank", "oil") are matched as whole
+    words only, not as a bare substring -- otherwise a word like "award"
+    would falsely match "war". Multi-word phrases (e.g. "cuts rate",
+    "central bank") are matched as a substring of the full headline, since
+    splitting them into separate words would lose the phrase's meaning.
+    A transparent rule-based heuristic, not a prediction.
+    """
+    if not headline:
+        return "Other"
+    low = headline.lower()
+    words = set(low.replace("-", " ").split())
+    for category, keywords in EVENT_CLASSIFICATION_KEYWORDS:
+        for kw in keywords:
+            matched = (kw in low) if " " in kw else (kw in words)
+            if matched:
+                return category
+    return "Other"
+
+
 _MOOD_KEY = {"Bullish": "mi_mood_bullish", "Neutral": "mi_mood_neutral", "Bearish": "mi_mood_bearish"}
 _MOOD_VARIANT = {"Bullish": "green", "Neutral": "neutral", "Bearish": "red"}
 
