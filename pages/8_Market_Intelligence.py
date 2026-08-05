@@ -22,7 +22,7 @@ from src.market_intelligence import (
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
-    generate_todays_market_action, generate_portfolio_impact_warning,
+    generate_todays_market_action,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -370,18 +370,10 @@ if not portfolios:
 else:
     latest = portfolios[0]
     impact_text = analyze_portfolio_impact(latest["holdings"], affected_etfs)
-    portfolio_warning = generate_portfolio_impact_warning(latest["holdings"], news_items)
     col_text, col_chart = st.columns([2, 1])
     with col_text:
         with chart_card(latest["name"], t("mi_portfolio_using", name=latest["name"])):
             st.markdown(impact_text)
-            if portfolio_warning["available"]:
-                st.markdown(
-                    f'<div class="highlight-card" style="margin-top:12px;">'
-                    f'<div class="highlight-card-item">{portfolio_warning["message"]}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
     with col_chart:
         if latest["holdings"]:
             with chart_card(t("hist_allocation_breakdown_card")):
