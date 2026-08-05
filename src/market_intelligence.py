@@ -1368,25 +1368,3 @@ def get_news_card_metadata(news_items: list) -> list:
             "confidence": confidence,
         })
     return results
-
-
-def get_todays_timeline() -> list:
-    """
-    "Today's Timeline": a static, clearly-labelled placeholder schedule of
-    today's major macro events with specific times, for a Timeline-style
-    display. Same spirit as get_economic_calendar() just above (no live
-    economic-calendar API is wired in yet) but with a specific time
-    attached to each entry instead of a vague "This Week"/"Upcoming"
-    window -- intentionally simple and easy to swap for a live data
-    source later without changing the page that renders it.
-
-    Returns a list of dicts, already in time order: time ("HH:MM", 24h),
-    event (display name).
-    """
-    return [
-        {"time": "08:30", "event": "Japan CPI"},
-        {"time": "10:00", "event": "China PMI"},
-        {"time": "14:00", "event": "UK GDP"},
-        {"time": "20:30", "event": "US CPI"},
-        {"time": "22:00", "event": "Fed Speech"},
-    ]
