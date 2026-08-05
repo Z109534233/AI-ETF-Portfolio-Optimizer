@@ -130,6 +130,33 @@ h4 { font-size: 14px; font-weight: 700; color: var(--text-secondary); text-trans
     color: var(--text-secondary); font-size: 14px; line-height: 1.65;
     margin: 0; max-width: 700px;
 }
+
+/* ── Hero: Apple/Stripe-style redesign (home page only) ───────────────────── */
+.hero-eyebrow {
+    color: var(--text-secondary); font-size: 13px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;
+}
+.hero-tagline {
+    color: var(--text); font-size: 52px; font-weight: 800; margin: 0 0 16px 0;
+    letter-spacing: -0.03em; line-height: 1.08;
+}
+.hero-desc-refined {
+    color: var(--text-secondary); font-size: 16px; line-height: 1.65;
+    max-width: 640px; margin: 0 0 26px 0;
+}
+.hero-cta-row .stButton > button {
+    border-radius: 999px !important; padding: 10px 26px !important; font-weight: 700 !important;
+}
+.hero-cta-secondary-link {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    color: var(--text); font-weight: 700; font-size: 14px;
+    height: 44px; padding: 0 26px; border-radius: 999px; border: 1px solid var(--border-strong);
+    transition: border-color 0.18s ease, background 0.18s ease; cursor: default;
+}
+.hero-cta-secondary-link:hover { border-color: var(--primary); background: var(--primary-soft); }
+@media (max-width: 768px) {
+    .hero-tagline { font-size: 34px; }
+}
 @media (max-width: 768px) {
     .hero { padding: 28px 20px 22px 20px; }
     .hero-title { font-size: 28px; }
