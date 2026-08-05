@@ -274,18 +274,43 @@ for i, feature in enumerate(features):
     with cols[i % 3]:
         st.markdown(feature_card(t(feature["title_key"]), t(feature["desc_key"]), feature["icon"]), unsafe_allow_html=True)
 
-# ── Tech Stack ────────────────────────────────────────────────────────────────
+# ── Technology Stack ──────────────────────────────────────────────────────────
 section_header(t("home_tech_stack_title"))
-tech_cols = st.columns(6)
-tech_stack = ["Python 3.12", "Streamlit", "Pandas / NumPy", "Plotly", "SciPy / Scikit-learn", "SQLite / SQLAlchemy"]
-for i, tech in enumerate(tech_stack):
-    with tech_cols[i]:
+tech_stack = ["Python", "Streamlit", "Plotly", "Pandas", "NumPy", "Machine Learning", "SQLite"]
+tech_cols = st.columns(len(tech_stack))
+for _tech_col, _tech in zip(tech_cols, tech_stack):
+    with _tech_col:
         st.markdown(f"""
         <div class="card" style="text-align:center;padding:12px 8px;">
-            <div style="color:{COLORS['text']};font-size:12px;font-weight:600;">{tech}</div>
+            <div style="color:{COLORS['text']};font-size:12px;font-weight:600;">{_tech}</div>
         </div>
         """, unsafe_allow_html=True)
+
+# ── Final CTA (Apple/Stripe-style closing banner) ────────────────────────────
+_cta_lang = get_language()
+_cta_heading = "準備好最佳化你的投資組合了嗎？" if _cta_lang == "zh-TW" else "Ready to optimize your portfolio?"
+_cta_button = "開始分析" if _cta_lang == "zh-TW" else "Start Analysis"
+st.markdown(
+    '<div class="hero" style="text-align:center;padding:36px 24px;margin-top:24px;">'
+    f'<h2 style="color:var(--text);font-size:26px;font-weight:800;letter-spacing:-0.02em;margin:0;">{_cta_heading}</h2>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+_cta_cols = st.columns([1, 1, 1])
+with _cta_cols[1]:
+    st.markdown('<div class="hero-cta-row">', unsafe_allow_html=True)
+    if st.button(_cta_button, type="primary", use_container_width=True, key="final_cta_start_analysis"):
+        st.switch_page("pages/1_ETF_Analysis.py")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 disclaimer_box()
 render_footer()
+_footer_credit = (
+    "由 Hidey 打造 · NTUB · Version 1.0 · 2026" if _cta_lang == "zh-TW"
+    else "Built by Hidey · NTUB · Version 1.0 · 2026"
+)
+st.markdown(
+    f'<div style="text-align:center;color:var(--text-muted);font-size:11px;margin-top:6px;">{_footer_credit}</div>',
+    unsafe_allow_html=True,
+)
