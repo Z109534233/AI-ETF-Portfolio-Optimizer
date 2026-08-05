@@ -155,6 +155,7 @@ h4 { font-size: 14px; font-weight: 700; color: var(--text-secondary); text-trans
     min-height: 118px;
     display: flex; flex-direction: column; justify-content: space-between;
     transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+    box-shadow: var(--shadow-sm);
 }
 .kpi-card:hover {
     border-color: var(--border-strong);
@@ -221,6 +222,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .news-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
     padding: 14px 16px; margin: 8px 0; transition: border-color 0.18s ease, transform 0.18s ease;
+    box-shadow: var(--shadow-sm);
 }
 .news-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
 .news-card-title { color: var(--text); font-size: 14px; font-weight: 700; line-height: 1.4; margin-bottom: 6px; }
@@ -237,8 +239,8 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 /* ── Status Cards (Affected ETFs / Market Intelligence) ───────────────────── */
 .status-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-    padding: 16px 18px; margin: 6px 0; display: flex; flex-direction: column;
-    gap: 8px; min-height: 92px;
+    padding: 20px 22px; margin: 8px 0; display: flex; flex-direction: column;
+    gap: 10px; min-height: 92px; box-shadow: var(--shadow-sm);
 }
 .status-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .status-card-ticker { color: var(--text); font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
@@ -540,6 +542,49 @@ hr { border-color: var(--border); margin: 18px 0; }
 .app-footer-tagline { color: var(--text-muted); font-size: 11.5px; margin-top: 3px; }
 .app-footer-sub { color: var(--text-muted); font-size: 11px; margin-top: 3px; }
 .app-footer-disclaimer { color: var(--text-muted); font-size: 10.5px; margin-top: 6px; opacity: 0.85; }
+
+/* ── Market Intelligence: UI polish (Today's AI Summary / Market Action /
+   ETF Top Drivers / Watchlist) -- presentational only, no data changes ──── */
+
+/* Today's AI Summary -- Apple/Bloomberg style: quiet typography, a hairline
+   divider between paragraphs instead of loud card chrome, generous
+   line-height. */
+.ai-summary-section { padding: 10px 0; }
+.ai-summary-section + .ai-summary-section { border-top: 1px solid var(--border); margin-top: 4px; }
+.ai-summary-heading {
+    color: var(--text); font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; margin-bottom: 6px;
+}
+.ai-summary-text { color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+
+/* Today's Market Action -- Highlight Card: an accent left-border + subtly
+   tinted surface so it visually reads as "act on this" rather than a plain
+   info panel. */
+.highlight-card {
+    background: linear-gradient(90deg, var(--primary-soft) 0%, var(--surface) 14%);
+    border: 1px solid var(--border); border-left: 3px solid var(--primary);
+    border-radius: var(--radius-lg); padding: 18px 20px; margin: 8px 0 16px 0;
+    box-shadow: var(--shadow-sm);
+}
+.highlight-card-title { color: var(--text); font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.highlight-card-item { color: var(--text-secondary); font-size: 13.5px; line-height: 1.6; margin: 6px 0; }
+
+/* ETF Top Drivers -- a rounded tag distinct from the generic .badge pill
+   (slightly larger radius + dashed inner tone) so it visually reads as a
+   "driver tag" rather than a status label. */
+.tag-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--surface-2); color: var(--text-secondary);
+    border: 1px solid var(--border-strong); border-radius: 999px;
+    padding: 3px 11px; margin: 2px 4px 2px 0; font-size: 11px; font-weight: 600;
+}
+
+/* Today's Watchlist -- icon + consistent row spacing. */
+.watchlist-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; }
+.watchlist-item + .watchlist-item { border-top: 1px solid var(--border); }
+.watchlist-icon { font-size: 14px; line-height: 1.4; flex-shrink: 0; }
+.watchlist-body { flex: 1; }
+.watchlist-headline { color: var(--text); font-size: 13px; line-height: 1.4; margin-bottom: 4px; }
 
 /* ── Process Flow (How It Works) ──────────────────────────────────────────── */
 .process-flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 6px 0; }

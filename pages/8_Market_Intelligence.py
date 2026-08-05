@@ -132,24 +132,38 @@ col_summary, col_watchlist = st.columns([2.5, 1])
 with col_summary:
     with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
         for _section in today_ai_summary["sections"]:
-            st.markdown(f"**{_section['heading']}**")
-            st.markdown(_section["text"])
+            st.markdown(
+                '<div class="ai-summary-section">'
+                f'<div class="ai-summary-heading">{_section["heading"]}</div>'
+                f'<div class="ai-summary-text">{_section["text"]}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
         if today_ai_summary["disclaimer"]:
             st.caption(today_ai_summary["disclaimer"])
 
     # ── Section 0a: Today's Market Action (template-generated, no LLM call) ─
-    with chart_card(todays_market_action["title"], tag=t("ai_tag_rule_based")):
-        for _action_item in todays_market_action["items"]:
-            st.markdown(f"• {_action_item}")
+    st.markdown(
+        '<div class="highlight-card">'
+        f'<div class="highlight-card-title">{todays_market_action["title"]}</div>'
+        + "".join(f'<div class="highlight-card-item">• {_item}</div>' for _item in todays_market_action["items"])
+        + '</div>',
+        unsafe_allow_html=True,
+    )
 with col_watchlist:
     with st.container(border=True):
         st.markdown(f"**{_watchlist_title}**")
         if major_events:
             for _event in major_events:
-                st.markdown(_event["headline"])
                 st.markdown(
+                    '<div class="watchlist-item">'
+                    '<span class="watchlist-icon">📍</span>'
+                    '<div class="watchlist-body">'
+                    f'<div class="watchlist-headline">{_event["headline"]}</div>'
                     f'{star_rating_html(_event["stars"])} '
-                    f'<span class="badge badge-neutral">{_event["category"]}</span>',
+                    f'<span class="tag-pill">{_event["category"]}</span>'
+                    '</div>'
+                    '</div>',
                     unsafe_allow_html=True,
                 )
         else:
@@ -274,7 +288,7 @@ if etf_cards:
             f'<div class="affected-by-caption">{_etf_reasons_caption}</div><div>{reasons_html}</div>'
             if etf["reasons"] else ""
         )
-        drivers_html = "".join(f'<span class="badge badge-neutral">{d}</span> ' for d in etf["top_drivers"])
+        drivers_html = "".join(f'<span class="tag-pill">{d}</span> ' for d in etf["top_drivers"])
         drivers_block = (
             f'<div class="affected-by-caption">{_top_drivers_caption}</div><div>{drivers_html}</div>'
             if etf["top_drivers"] else ""
