@@ -72,24 +72,43 @@ with st.sidebar:
 # ── Hero ──────────────────────────────────────────────────────────────────────
 hero_section()
 
-# ── Platform Statistics (KPI cards; ETF/market/module counts read from the
-# actual registered data instead of being hardcoded -- "Market Intelligence"
-# and "Bilingual" stay as fixed labels, since those describe a capability
-# rather than a count that could be "fetched"). ──────────────────────────────
+# ── Platform Statistics (higher-density KPI cards: value + title + one-
+# sentence description each; ETF/market/module counts read from the
+# actual registered data instead of being hardcoded -- "AI" and the
+# language count's description stay as fixed capability descriptions,
+# since those aren't a "count" that could be fetched). ──────────────────────
 _platform_lang = get_language()
-_stat_values = [str(len(get_all_tickers())), str(len(get_countries())), str(len(NAV_ITEMS)), "AI", "Bilingual"]
 if _platform_lang == "zh-TW":
-    _stat_labels = ["支援 ETF 數", "涵蓋市場", "分析模組", "市場情報", "繁體中文、English"]
     _platform_stats_title = "平台統計"
+    _platform_stats = [
+        (str(len(get_all_tickers())), "支援 ETF 數", "涵蓋美國、台灣、英國市場"),
+        (str(len(get_countries())), "涵蓋市場", "美國、台灣、英國"),
+        (str(len(NAV_ITEMS)), "分析模組", "從 ETF 分析到市場情報"),
+        ("2", "支援語言", "繁體中文、English"),
+        ("AI", "市場情報", "即時分析"),
+    ]
 else:
-    _stat_labels = ["Supported ETFs", "Markets", "Analysis Modules", "Market Intelligence", "Traditional Chinese, English"]
     _platform_stats_title = "Platform Statistics"
+    _platform_stats = [
+        (str(len(get_all_tickers())), "Supported ETFs", "Across US, Taiwan, and UK markets"),
+        (str(len(get_countries())), "Markets", "United States, Taiwan, United Kingdom"),
+        (str(len(NAV_ITEMS)), "Analysis Modules", "From ETF analysis to market intelligence"),
+        ("2", "Languages", "Traditional Chinese, English"),
+        ("AI", "Market Intelligence", "Real-time Analysis"),
+    ]
 
 section_header(_platform_stats_title)
 stat_cols = st.columns(5)
-for _col, _value, _label in zip(stat_cols, _stat_values, _stat_labels):
+for _col, (_value, _title, _desc) in zip(stat_cols, _platform_stats):
     with _col:
-        st.markdown(metric_card_html(_label, _value, color=COLORS["primary"]), unsafe_allow_html=True)
+        st.markdown(
+            '<div class="kpi-card" style="min-height:132px;">'
+            f'<div class="kpi-value" style="margin-bottom:4px;">{_value}</div>'
+            f'<div style="color:var(--text);font-weight:700;font-size:13px;margin-bottom:6px;">{_title}</div>'
+            f'<div style="color:var(--text-secondary);font-size:11.5px;line-height:1.4;">{_desc}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
 # ── Supported Markets (Global ETF Support) ───────────────────────────────────
 section_header(t("home_supported_markets_title"), t("home_supported_markets_subtitle"))
