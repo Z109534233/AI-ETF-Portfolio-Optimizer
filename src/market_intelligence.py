@@ -1582,3 +1582,70 @@ def generate_todays_market_action(news_items: list) -> dict:
     item3 = mood_map.get(mood, mood_map["Neutral"])
 
     return {"title": title, "items": [item1, item2, item3]}
+
+
+# EVENT_TYPE_TO_ETF_TYPE_IMPACT weight (1-5) -> a severity adverb per
+# language, used only by generate_portfolio_impact_warning() below.
+_SEVERITY_EN = {5: "significantly", 4: "moderately", 3: "moderately", 2: "slightly", 1: "minimally"}
+_SEVERITY_ZH = {5: "顯著", 4: "中度", 3: "中度", 2: "輕微", 1: "極小"}
+
+
+def generate_portfolio_impact_warning(holdings: dict, news_items: list) -> dict:
+    """
+    "Your Portfolio -> Today's News -> AI Analysis -> Warning": a
+    template-generated sentence quantifying how exposed a saved
+    portfolio's actual holdings are to today's dominant news event, e.g.
+    "Your portfolio may be moderately affected because 30% of your
+    holdings are semiconductor-related ETFs." Reuses
+    calculate_market_impact() for today's dominant event category,
+    EVENT_TYPE_TO_ETF_TYPE_IMPACT for which ETF Type that category hits
+    hardest, and ETF_TYPE_MAP for each holding's own type tag(s) -- the
+    same building blocks already used by generate_etf_card_data()/
+    generate_todays_market_action(), not a new or different scoring pass.
+    Template-based only -- no OpenAI/LLM call. This is a separate,
+    additional feature from analyze_portfolio_impact() (the existing,
+    untouched narrative further down the page); neither reuses the other.
+
+    Holdings on tickers not registered in ETF_TYPE_MAP (unknown/custom
+    tickers) simply have no type tag and don't count toward the exposed
+    percentage -- they never raise or get dropped from the portfolio.
+
+    Returns a dict: available (bool -- False when there is no portfolio,
+    no news, no classifiable event today, or 0% exposure -- nothing
+    worth warning about), message (the warning sentence, or "" when not
+    available), exposed_pct (0-100, rounded), etf_type (the most-affected
+    ETF Type driving the warning, or None).
+    """
+    lang = get_language()
+    if not holdings or not news_items:
+        return {"available": False, "message": "", "exposed_pct": 0, "etf_type": None}
+
+    category = calculate_market_impact(news_items)["category"]
+    if not category or category == "Other":
+        return {"available": False, "message": "", "exposed_pct": 0, "etf_type": None}
+
+    type_impact = EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {})
+    top_type = max(type_impact, key=lambda et: type_impact[et], default=None)
+    if not top_type:
+        return {"available": False, "message": "", "exposed_pct": 0, "etf_type": None}
+
+    exposed_fraction = sum(
+        weight for ticker, weight in holdings.items()
+        if top_type in ETF_TYPE_MAP.get(ticker, [])
+    )
+    if exposed_fraction <= 0:
+        return {"available": False, "message": "", "exposed_pct": 0, "etf_type": None}
+
+    exposed_pct = round(exposed_fraction * 100)
+    severity_weight = type_impact.get(top_type, 1)
+    sector_word_map = _ETF_TYPE_SECTOR_WORD_ZH if lang == "zh-TW" else _ETF_TYPE_SECTOR_WORD_EN
+    sector_word = sector_word_map.get(top_type, top_type)
+
+    if lang == "zh-TW":
+        severity = _SEVERITY_ZH.get(severity_weight, "中度")
+        message = f"⚠️ 因為你 {exposed_pct}% 的持股是{sector_word}相關 ETF，投資組合可能受到{severity}影響。"
+    else:
+        severity = _SEVERITY_EN.get(severity_weight, "moderately")
+        message = f"⚠️ Your portfolio may be {severity} affected because {exposed_pct}% of your holdings are {sector_word}-related ETFs."
+
+    return {"available": True, "message": message, "exposed_pct": exposed_pct, "etf_type": top_type}
