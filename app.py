@@ -30,7 +30,7 @@ from src.ui import (
     process_flow, question_grid, badge
 )
 from src.theme import COLORS
-from src.i18n import t, get_language
+from src.i18n import t
 
 # ── Page Configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -95,30 +95,15 @@ for i, card in enumerate(why_choose):
     with why_cols[i]:
         st.markdown(feature_card(t(card["title_key"]), t(card["desc_key"]), card["icon"]), unsafe_allow_html=True)
 
-# ── How It Works (vertical flow-card timeline, Apple/Bloomberg style) ────────
+# ── How It Works ──────────────────────────────────────────────────────────────
 section_header(t("home_how_it_works_title"), t("home_how_it_works_subtitle"))
-_how_it_works_steps = (
-    ["① 選擇 ETF", "② 分析績效", "③ 最佳化投資組合", "④ 了解市場", "⑤ 做出更好的決策"]
-    if get_language() == "zh-TW" else
-    ["① Select ETFs", "② Analyze Performance", "③ Optimize Portfolio", "④ Understand Market", "⑤ Make Better Decisions"]
-)
-_flow_rows = []
-for _i, _step in enumerate(_how_it_works_steps):
-    _flow_rows.append(
-        '<div style="display:flex;align-items:center;gap:16px;width:100%;max-width:480px;'
-        'background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-        'padding:16px 22px;box-shadow:var(--shadow-sm);">'
-        f'<div style="color:var(--text);font-weight:700;font-size:15px;letter-spacing:-0.01em;">{_step}</div>'
-        '</div>'
-    )
-    if _i < len(_how_it_works_steps) - 1:
-        _flow_rows.append('<div style="color:var(--text-muted);font-size:20px;line-height:1;">&#8595;</div>')
-st.markdown(
-    '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0 20px 0;">'
-    + "".join(_flow_rows) +
-    '</div>',
-    unsafe_allow_html=True,
-)
+process_flow([
+    t("step_choose_etfs"),
+    t("step_analyze_performance"),
+    t("step_optimize_portfolio"),
+    t("step_simulate_investment"),
+    t("step_ai_insights"),
+])
 
 # ── Who Is This Platform For ─────────────────────────────────────────────────
 section_header(t("home_target_users_title"), t("home_target_users_subtitle"))

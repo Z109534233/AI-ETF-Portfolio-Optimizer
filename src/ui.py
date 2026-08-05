@@ -9,7 +9,7 @@ import contextlib
 import streamlit as st
 
 from src.theme import COLORS, icon_svg
-from src.i18n import t, language_selector, get_language
+from src.i18n import t, language_selector
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 NAV_ITEMS = [
@@ -60,30 +60,6 @@ def render_sidebar_footer() -> None:
 
 # ── Hero Section (Home page) ───────────────────────────────────────────────────
 def hero_section() -> None:
-    """
-    Apple/Stripe-style hero: a small eyebrow label, a large multi-line
-    tagline, a one-sentence description of what the platform actually
-    does, and two CTAs (a real "Start Analysis" button + a styled
-    "Explore Features" link). Bilingual strings are written out directly
-    here (via get_language()) rather than added as new src/i18n.py keys,
-    to keep this change to ui.py + style.css only.
-    """
-    lang = get_language()
-    if lang == "zh-TW":
-        eyebrow = "AI ETF 投資組合最佳化平台"
-        tagline_lines = ["分析。", "最佳化。", "聰明投資。"]
-        desc = "AI 驅動的 ETF 分析、投資組合最佳化、市場情報，以及投資洞察。"
-        btn_primary = "開始分析"
-        btn_secondary = "探索功能"
-    else:
-        eyebrow = "AI ETF Portfolio Optimizer"
-        tagline_lines = ["Analyze.", "Optimize.", "Invest Smarter."]
-        desc = "AI-powered ETF analysis, portfolio optimization, market intelligence, and investment insights."
-        btn_primary = "Start Analysis"
-        btn_secondary = "Explore Features"
-
-    tagline_html = "<br>".join(tagline_lines)
-
     st.markdown(f"""
     <div class="hero">
         <div class="hero-badges">
@@ -91,23 +67,21 @@ def hero_section() -> None:
             <span class="badge badge-green">{t("hero_badge_portfolio_analytics")}</span>
             <span class="badge badge-neutral">{t("hero_badge_educational")}</span>
         </div>
-        <div class="hero-eyebrow">{eyebrow}</div>
-        <h1 class="hero-tagline">{tagline_html}</h1>
-        <p class="hero-desc-refined">{desc}</p>
+        <h1 class="hero-title">{t("hero_title")}</h1>
+        <p class="hero-subtitle">{t("hero_subtitle")}</p>
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2, _ = st.columns([1.3, 1.3, 3.4])
+    col1, col2, col3, _ = st.columns([1.2, 1.2, 1.2, 2.4])
     with col1:
-        st.markdown('<div class="hero-cta-row">', unsafe_allow_html=True)
-        if st.button(btn_primary, type="primary", use_container_width=True, key="hero_start_analysis"):
+        if st.button(t("btn_analyze_etfs"), type="secondary", use_container_width=True):
             st.switch_page("pages/1_ETF_Analysis.py")
-        st.markdown('</div>', unsafe_allow_html=True)
     with col2:
-        st.markdown(
-            f'<div class="hero-cta-secondary-link">{btn_secondary}</div>',
-            unsafe_allow_html=True,
-        )
+        if st.button(t("btn_launch_optimizer"), type="primary", use_container_width=True):
+            st.switch_page("pages/2_Portfolio_Optimizer.py")
+    with col3:
+        if st.button(t("btn_investment_simulator_cta"), type="secondary", use_container_width=True):
+            st.switch_page("pages/3_Investment_Simulator.py")
 
 
 # ── Section / Page Headers ──────────────────────────────────────────────────────
