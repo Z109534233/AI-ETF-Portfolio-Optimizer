@@ -12,6 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from src.data_loader import download_etf_data, DEFAULT_ETFS
+from src.etf_database import get_all_tickers, get_countries
 from src.data_cleaner import clean_price_data
 from src.financial_metrics import (
     annualized_return, annualized_volatility, sharpe_ratio,
@@ -27,7 +28,7 @@ from src.utils import load_css, disclaimer_box, metric_card_html, ensure_directo
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, hero_section,
     section_header, chart_card, feature_card, render_footer,
-    process_flow, question_grid, badge
+    process_flow, question_grid, badge, NAV_ITEMS
 )
 from src.theme import COLORS
 from src.i18n import t, get_language
@@ -70,6 +71,25 @@ with st.sidebar:
 
 # ── Hero ──────────────────────────────────────────────────────────────────────
 hero_section()
+
+# ── Platform Statistics (KPI cards; ETF/market/module counts read from the
+# actual registered data instead of being hardcoded -- "Market Intelligence"
+# and "Bilingual" stay as fixed labels, since those describe a capability
+# rather than a count that could be "fetched"). ──────────────────────────────
+_platform_lang = get_language()
+_stat_values = [str(len(get_all_tickers())), str(len(get_countries())), str(len(NAV_ITEMS)), "AI", "Bilingual"]
+if _platform_lang == "zh-TW":
+    _stat_labels = ["支援 ETF 數", "涵蓋市場", "分析模組", "市場情報", "繁體中文、English"]
+    _platform_stats_title = "平台統計"
+else:
+    _stat_labels = ["Supported ETFs", "Markets", "Analysis Modules", "Market Intelligence", "Traditional Chinese, English"]
+    _platform_stats_title = "Platform Statistics"
+
+section_header(_platform_stats_title)
+stat_cols = st.columns(5)
+for _col, _value, _label in zip(stat_cols, _stat_values, _stat_labels):
+    with _col:
+        st.markdown(metric_card_html(_label, _value, color=COLORS["primary"]), unsafe_allow_html=True)
 
 # ── Supported Markets (Global ETF Support) ───────────────────────────────────
 section_header(t("home_supported_markets_title"), t("home_supported_markets_subtitle"))
