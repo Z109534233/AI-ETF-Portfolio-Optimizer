@@ -1313,3 +1313,42 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
             "reasons": reasons[:3],
         })
     return results
+
+
+def get_news_card_metadata(news_items: list) -> list:
+    """
+    Per-headline metadata for the redesigned "Breaking Market News" cards:
+    Event Type, Impact (stars), and Sentiment. Unlike
+    get_todays_major_events(), nothing is filtered out or limited to a top
+    N -- every entry in news_items gets a corresponding row here, in the
+    same order, since every news card needs to display something.
+
+    Event Type is classify_event(title). Impact reuses
+    calculate_market_impact() on a single-headline list (the same "treat
+    this headline as if it were the day's only news" pattern already used
+    by get_todays_major_events()/generate_explanation(), not a new scoring
+    method). Sentiment is the headline's own precomputed "impact" field
+    (Positive/Negative/Neutral, from src/news.py's keyword classifier)
+    translated to Bullish/Neutral/Bearish via the same _MOOD_KEY/
+    _MOOD_VARIANT labels used everywhere else in this module -- for a
+    single headline, its own directional word choice is a more direct
+    signal than a weighted multi-headline average.
+
+    Returns a list of dicts (same order/length as news_items): category
+    (event type), stars (1-5), star_label, sentiment (raw mood),
+    sentiment_label (translated), sentiment_variant (badge color).
+    """
+    results = []
+    for item in news_items:
+        category = classify_event(item["title"])
+        stars = calculate_market_impact([item])["stars"]
+        mood = {"Positive": "Bullish", "Negative": "Bearish"}.get(item.get("impact"), "Neutral")
+        results.append({
+            "category": category,
+            "stars": stars,
+            "star_label": "★" * stars + "☆" * (5 - stars),
+            "sentiment": mood,
+            "sentiment_label": t(_MOOD_KEY[mood]),
+            "sentiment_variant": _MOOD_VARIANT[mood],
+        })
+    return results

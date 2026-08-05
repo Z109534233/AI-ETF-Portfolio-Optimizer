@@ -21,7 +21,7 @@ from src.market_intelligence import (
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
-    get_todays_major_events, generate_etf_card_data,
+    get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -67,6 +67,7 @@ try:
     market_impact = calculate_market_impact(news_items)
     major_events = get_todays_major_events(news_items, limit=5)
     etf_cards = generate_etf_card_data(news_items)
+    news_card_meta = get_news_card_metadata(news_items)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
@@ -77,6 +78,7 @@ except Exception:
     market_impact = calculate_market_impact([])
     major_events = []
     etf_cards = generate_etf_card_data([])
+    news_card_meta = get_news_card_metadata([])
     data_load_failed = True
 
 if data_load_failed:
@@ -206,18 +208,22 @@ section_header(t("mi_section_news_title"), t("mi_section_news_subtitle"))
 if not news_items:
     empty_state(t("mi_no_news_available"), t("mi_section_news_subtitle"), icon="newspaper")
 else:
-    cards_html = "".join(
-        news_card(
-            title=item["title"],
-            time_str=item["published"].strftime("%Y-%m-%d %H:%M") if item["published"] else "—",
-            source=item["publisher"],
-            impact_label=t(f"mi_impact_{item['impact'].lower()}_label"),
-            impact_variant=IMPACT_VARIANT.get(item["impact"], "neutral"),
-            url=item["link"] or None,
+    _news_cards_html = []
+    for item, meta in zip(news_items, news_card_meta):
+        time_str = item["published"].strftime("%Y-%m-%d %H:%M") if item["published"] else "—"
+        title_html = f'<a href="{item["link"]}" target="_blank" rel="noopener noreferrer">{item["title"]}</a>' if item["link"] else item["title"]
+        _news_cards_html.append(
+            '<div class="news-card">'
+            f'<div class="news-card-title">{title_html}</div>'
+            f'<div class="news-card-meta"><span>{time_str}</span><span>&middot;</span><span>{item["publisher"]}</span></div>'
+            f'<div class="status-card-sector">{meta["category"]}</div>'
+            f'<div class="status-card-stars">{star_rating_html(meta["stars"])}</div>'
+            '<div class="news-card-footer">'
+            f'<span class="badge badge-{meta["sentiment_variant"]}">{meta["sentiment_label"]}</span>'
+            '</div>'
+            '</div>'
         )
-        for item in news_items
-    )
-    st.markdown(cards_html, unsafe_allow_html=True)
+    st.markdown("".join(_news_cards_html), unsafe_allow_html=True)
 
 # ── Section 3: AI Market Summary ─────────────────────────────────────────────
 section_header(t("mi_section_summary_title"))
