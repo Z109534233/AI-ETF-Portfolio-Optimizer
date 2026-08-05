@@ -237,7 +237,7 @@ with chart_card(t("mi_section_summary_title"), tag=t("ai_tag_generated") if ai_c
 section_header(t("mi_section_global_etfs_title"), t("mi_section_global_etfs_subtitle"))
 
 _etf_market_caption = "市場" if _mi_lang == "zh-TW" else "Market"
-_etf_reasons_caption = "原因" if _mi_lang == "zh-TW" else "Reasons"
+_etf_reasons_caption = "為什麼？" if _mi_lang == "zh-TW" else "Why?"
 
 if etf_cards:
     etf_cols = st.columns(len(etf_cards))
