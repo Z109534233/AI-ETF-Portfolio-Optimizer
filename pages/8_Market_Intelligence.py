@@ -22,6 +22,7 @@ from src.market_intelligence import (
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
+    get_todays_timeline,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -122,14 +123,26 @@ if major_events:
 else:
     empty_state(t("mi_no_news_available"), _major_events_title, icon="activity")
 
-# ── Section 0: Today's AI Summary (template-generated, no LLM call) ─────────
+# ── Section 0: Today's AI Summary (left) + Today's Watchlist (right) ────────
 section_header(today_ai_summary["title"])
-with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
-    for _section in today_ai_summary["sections"]:
-        st.markdown(f"**{_section['heading']}**")
-        st.markdown(_section["text"])
-    if today_ai_summary["disclaimer"]:
-        st.caption(today_ai_summary["disclaimer"])
+_watchlist_title = "今日觀察清單" if _mi_lang == "zh-TW" else "Today's Watchlist"
+col_summary, col_watchlist = st.columns([2.5, 1])
+with col_summary:
+    with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
+        for _section in today_ai_summary["sections"]:
+            st.markdown(f"**{_section['heading']}**")
+            st.markdown(_section["text"])
+        if today_ai_summary["disclaimer"]:
+            st.caption(today_ai_summary["disclaimer"])
+with col_watchlist:
+    with st.container(border=True):
+        st.markdown(f"**{_watchlist_title}**")
+        if major_events:
+            for _event in major_events:
+                st.markdown(_event["headline"])
+                st.markdown(star_rating_html(_event["stars"]), unsafe_allow_html=True)
+        else:
+            st.caption(t("mi_no_news_available"))
 
 # ── Section 0b: Market Impact Score ──────────────────────────────────────────
 _mi_lang = get_language()
@@ -315,6 +328,25 @@ with chart_card(t("mi_section_calendar_title")):
         for e in calendar_events
     ])
     st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+
+# ── Section 6b: Today's Timeline ─────────────────────────────────────────────
+_timeline_title = "今日時間軸" if _mi_lang == "zh-TW" else "Today's Timeline"
+section_header(_timeline_title)
+
+with chart_card(_timeline_title):
+    _timeline_rows = []
+    for _entry in get_todays_timeline():
+        _timeline_rows.append(
+            '<div style="position:relative; padding-left:20px; margin-bottom:14px;">'
+            '<div style="position:absolute; left:0; top:4px; width:10px; height:10px; '
+            'border-radius:50%; background:var(--primary);"></div>'
+            '<div style="position:absolute; left:4px; top:14px; bottom:-14px; width:2px; '
+            'background:var(--border);"></div>'
+            f'<div style="font-weight:700; color:var(--text); font-size:13px;">{_entry["time"]}</div>'
+            f'<div style="color:var(--text-secondary); font-size:13px;">{_entry["event"]}</div>'
+            '</div>'
+        )
+    st.markdown('<div style="position:relative;">' + "".join(_timeline_rows) + '</div>', unsafe_allow_html=True)
 
 # ── Section 7: Portfolio Impact ──────────────────────────────────────────────
 section_header(t("mi_section_portfolio_impact_title"))
