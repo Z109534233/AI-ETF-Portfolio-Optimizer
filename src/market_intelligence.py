@@ -1276,7 +1276,10 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
 
     Returns a list of dicts: ticker, stars, star_label, etf_types,
     sentiment (raw mood), sentiment_label (translated), sentiment_variant
-    (badge color), reasons (list of up to 3 tags).
+    (badge color), confidence (0-100, how one-sided the driving headline's
+    signal is -- same 30-95% blended range used by calculate_ai_market_
+    sentiment()/calculate_regional_market_sentiment(), never a fake 0% or
+    100%), reasons (list of up to 3 tags).
     """
     tickers = tickers or DEFAULT_ETF_IMPACT_WATCHLIST
     impact_rows = {row["ticker"]: row for row in calculate_etf_impact(news_items, tickers)}
@@ -1299,7 +1302,14 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
                     best_weight = weight
                     best_item = item
 
-        mood = {"Positive": "Bullish", "Negative": "Bearish"}.get(best_item["impact"], "Neutral") if best_item else "Neutral"
+        if best_item:
+            mood = {"Positive": "Bullish", "Negative": "Bearish"}.get(best_item["impact"], "Neutral")
+            signed = {"Positive": 1, "Negative": -1}.get(best_item["impact"], 0)
+            avg = signed * (best_weight / 5)
+            confidence = int(max(30, min(95, round(50 + abs(avg) * 50))))
+        else:
+            mood = "Neutral"
+            confidence = 30
 
         stars = impact_rows.get(ticker, {}).get("stars", 1)
         results.append({
@@ -1310,6 +1320,7 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
             "sentiment": mood,
             "sentiment_label": t(_MOOD_KEY[mood]),
             "sentiment_variant": _MOOD_VARIANT[mood],
+            "confidence": confidence,
             "reasons": reasons[:3],
         })
     return results
@@ -1336,13 +1347,17 @@ def get_news_card_metadata(news_items: list) -> list:
 
     Returns a list of dicts (same order/length as news_items): category
     (event type), stars (1-5), star_label, sentiment (raw mood),
-    sentiment_label (translated), sentiment_variant (badge color).
+    sentiment_label (translated), sentiment_variant (badge color),
+    confidence (0-100 -- a single headline is either clearly Positive/
+    Negative or Neutral, so this is a fixed 80% for a clear read and 45%
+    for Neutral/ambiguous, rather than a fabricated precise number).
     """
     results = []
     for item in news_items:
         category = classify_event(item["title"])
         stars = calculate_market_impact([item])["stars"]
         mood = {"Positive": "Bullish", "Negative": "Bearish"}.get(item.get("impact"), "Neutral")
+        confidence = 80 if mood != "Neutral" else 45
         results.append({
             "category": category,
             "stars": stars,
@@ -1350,5 +1365,6 @@ def get_news_card_metadata(news_items: list) -> list:
             "sentiment": mood,
             "sentiment_label": t(_MOOD_KEY[mood]),
             "sentiment_variant": _MOOD_VARIANT[mood],
+            "confidence": confidence,
         })
     return results

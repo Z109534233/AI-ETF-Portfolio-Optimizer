@@ -90,6 +90,7 @@ _major_events_title = "今日重大事件" if _mi_lang == "zh-TW" else "Today's 
 _sentiment_caption = "市場情緒" if _mi_lang == "zh-TW" else "Market Sentiment"
 _markets_caption = "受影響市場" if _mi_lang == "zh-TW" else "Affected Markets"
 _etfs_caption = "受影響 ETF" if _mi_lang == "zh-TW" else "Affected ETFs"
+_confidence_caption = "信心指數" if _mi_lang == "zh-TW" else "Confidence"
 
 section_header(_major_events_title)
 if major_events:
@@ -208,11 +209,10 @@ section_header(t("mi_section_news_title"), t("mi_section_news_subtitle"))
 if not news_items:
     empty_state(t("mi_no_news_available"), t("mi_section_news_subtitle"), icon="newspaper")
 else:
-    _news_cards_html = []
     for item, meta in zip(news_items, news_card_meta):
         time_str = item["published"].strftime("%Y-%m-%d %H:%M") if item["published"] else "—"
         title_html = f'<a href="{item["link"]}" target="_blank" rel="noopener noreferrer">{item["title"]}</a>' if item["link"] else item["title"]
-        _news_cards_html.append(
+        st.markdown(
             '<div class="news-card">'
             f'<div class="news-card-title">{title_html}</div>'
             f'<div class="news-card-meta"><span>{time_str}</span><span>&middot;</span><span>{item["publisher"]}</span></div>'
@@ -221,9 +221,11 @@ else:
             '<div class="news-card-footer">'
             f'<span class="badge badge-{meta["sentiment_variant"]}">{meta["sentiment_label"]}</span>'
             '</div>'
-            '</div>'
+            '</div>',
+            unsafe_allow_html=True,
         )
-    st.markdown("".join(_news_cards_html), unsafe_allow_html=True)
+        st.caption(f"{_confidence_caption}: {meta['confidence']}%")
+        st.progress(min(int(meta["confidence"]), 100))
 
 # ── Section 3: AI Market Summary ─────────────────────────────────────────────
 section_header(t("mi_section_summary_title"))
@@ -258,6 +260,8 @@ if etf_cards:
                 '</div>',
                 unsafe_allow_html=True,
             )
+            st.caption(f"{_confidence_caption}: {etf['confidence']}%")
+            st.progress(min(int(etf["confidence"]), 100))
 else:
     empty_state(t("mi_no_news_available"), t("mi_section_global_etfs_subtitle"), icon="layers")
 
@@ -275,6 +279,7 @@ if news_items:
         ),
         unsafe_allow_html=True,
     )
+    st.progress(min(int(ai_sentiment["confidence"]), 100))
 else:
     empty_state(t("mi_no_news_available"), t("mi_ai_sentiment_no_data"), icon="activity")
 
