@@ -937,16 +937,54 @@ _MOOD_PHRASE_EN = {"Bullish": "trending higher", "Bearish": "under pressure", "N
 _MOOD_PHRASE_ZH = {"Bullish": "走揚", "Bearish": "承壓", "Neutral": "持穩"}
 
 
+# ETF Type -> a short "region + type" descriptive phrase per language,
+# used only by generate_today_ai_summary()'s paragraph 2 ("Why markets
+# moved today") to compare the day's most-affected ETF type against the
+# calmer Broad Market baseline, e.g. "Taiwan semiconductor" vs "US broad
+# market". Kept local here, not added to src/i18n.py, for the same reason
+# as the other narrative-fragment dicts above.
+_ETF_TYPE_REGION_EN = {
+    "Bond": "US bond",
+    "Technology": "US technology",
+    "Semiconductor": "Taiwan semiconductor",
+    "Broad Market": "US broad market",
+    "Broad Market (UCITS)": "UCITS broad market",
+}
+_ETF_TYPE_REGION_ZH = {
+    "Bond": "美國債券型",
+    "Technology": "美國科技型",
+    "Semiconductor": "台灣半導體",
+    "Broad Market": "美國大盤型",
+    "Broad Market (UCITS)": "UCITS 大盤型",
+}
+
+# mood -> a forward-looking "Investment Insight" phrase per language, used
+# only by generate_today_ai_summary()'s paragraph 3.
+_INSIGHT_PHRASE_EN = {
+    "Bearish": "Bond ETFs may benefit if investors move towards defensive assets.",
+    "Bullish": "Growth and technology ETFs may continue to benefit if this momentum holds.",
+    "Neutral": "With mixed signals today, diversified broad-market exposure may be the steadier choice.",
+}
+_INSIGHT_PHRASE_ZH = {
+    "Bearish": "若投資人轉向防禦性資產，債券型 ETF 可能因此受惠。",
+    "Bullish": "若這股動能持續，成長型與科技型 ETF 可能持續受惠。",
+    "Neutral": "今天訊號較為分歧，分散配置的大盤型 ETF 可能是相對穩健的選擇。",
+}
+
+
 def generate_today_ai_summary(news_items: list) -> dict:
     """
-    "Today's AI Summary" -- a short template-generated paragraph meant for
-    the very top of the Market Intelligence page (above "Today's Market
-    Overview"), synthesizing:
-      - today's news volume
+    "Today's AI Summary" -- a three-paragraph template-generated summary
+    meant for the very top of the Market Intelligence page (above
+    "Today's Market Overview"), synthesizing:
       - event classification (classify_event() via calculate_market_impact())
       - market sentiment (calculate_regional_market_sentiment()'s "Global" row)
-      - ETF impact (calculate_etf_impact(), the most-affected watch-list ticker)
-    into one narrative, e.g. "Markets are under pressure today because...".
+      - ETF impact (calculate_etf_impact() / EVENT_TYPE_TO_ETF_TYPE_IMPACT,
+        which ETF type reacts most vs. the calmer Broad Market baseline)
+    into three short paragraphs: (1) Today's Market Overview -- the day's
+    overall mood and its cause, (2) Why Markets Moved Today -- which ETF
+    type is expected to react most strongly compared to Broad Market, (3)
+    Investment Insight -- a forward-looking, mood-based rotation note.
     Template-based only -- no OpenAI/LLM call -- reserved as the entry
     point for a future LLM-generated version, matching the same
     "transparent heuristic, not a prediction" philosophy as the rest of
@@ -956,12 +994,15 @@ def generate_today_ai_summary(news_items: list) -> dict:
     neither reuses the other, and generate_market_summary() is unchanged.
 
     Language-aware (get_language()) without adding new src/i18n.py keys --
-    the sentence needs per-language phrasing throughout, not one swappable
-    word, so both language versions are written out directly here.
+    the sentences need per-language phrasing throughout, not one
+    swappable word, so both language versions are written out directly
+    here.
 
-    Returns a dict: title (translated section title), summary (a
-    display-safe ~3-4 sentence string). Never raises -- returns a neutral
-    "not enough data" summary when there is no news.
+    Returns a dict: title (translated section title), sections (a list of
+    3 {"heading", "text"} dicts, in order: Overview / Why / Insight),
+    disclaimer (translated closing note). Never raises -- when there is no
+    news, sections is a single-item list with a neutral "not enough data"
+    message and disclaimer is "".
     """
     lang = get_language()
     title = "今日 AI 摘要" if lang == "zh-TW" else "Today's AI Summary"
@@ -969,41 +1010,58 @@ def generate_today_ai_summary(news_items: list) -> dict:
     if not news_items:
         no_data = ("目前沒有足夠的新聞資料可產生今日摘要。" if lang == "zh-TW"
                    else "Not enough news data is available to generate today's summary.")
-        return {"title": title, "summary": no_data}
+        heading = "今日摘要" if lang == "zh-TW" else "Summary"
+        return {"title": title, "sections": [{"heading": heading, "text": no_data}], "disclaimer": ""}
 
     impact = calculate_market_impact(news_items)
     sentiment = calculate_regional_market_sentiment(news_items)
     global_sentiment = next((s for s in sentiment if s["market"] == "Global"), None)
-    etf_impact = calculate_etf_impact(news_items)
-    top_etf = max(etf_impact, key=lambda e: e["stars"]) if etf_impact else None
 
     category = impact["category"] or "Other"
     category_en, category_zh = _CATEGORY_PHRASE.get(category, _CATEGORY_PHRASE["Other"])
     mood = global_sentiment["mood"] if global_sentiment else "Neutral"
-    confidence = global_sentiment["confidence"] if global_sentiment else 0
+
+    type_impact = EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {})
+    top_type = max(type_impact, key=lambda et: type_impact[et], default=None)
+    if top_type == "Broad Market":
+        top_type = None  # Broad Market is the baseline itself -- nothing to contrast it against
 
     if lang == "zh-TW":
-        sentences = [
-            f"今天市場{_MOOD_PHRASE_ZH.get(mood, '持穩')}，主要受到{category_zh}相關新聞影響，"
-            f"全球情緒判讀為{t(_MOOD_KEY[mood])}（信心指數 {confidence}%）。",
-            f"今日市場影響分數為 {impact['score']}/100（{impact['stars']} 顆星）。",
-        ]
-        if top_etf:
-            etf_type_label = "、".join(top_etf["etf_types"]) or "未分類"
-            sentences.append(f"觀察清單中反應最明顯的是 {top_etf['ticker']}（{etf_type_label}），影響程度 {top_etf['stars']} 顆星。")
-        sentences.append("此摘要為規則式生成，僅供教育用途，不構成投資建議或價格預測。")
+        overview_text = (
+            f"今天市場{_MOOD_PHRASE_ZH.get(mood, '持穩')}，因為投資人對{category_zh}相關發展做出反應。"
+        )
+        if top_type:
+            why_text = (
+                f"{_ETF_TYPE_REGION_ZH.get(top_type, top_type)} ETF 預期將比"
+                f"{_ETF_TYPE_REGION_ZH.get('Broad Market')} ETF 出現更明顯的波動。"
+            )
+        else:
+            why_text = "今天的新聞沒有指向特別集中的產業反應，影響較為全面、分散。"
+        insight_text = _INSIGHT_PHRASE_ZH.get(mood, _INSIGHT_PHRASE_ZH["Neutral"])
+        headings = ("今日市場概況", "今天市場為何波動", "投資洞察")
+        disclaimer = "此摘要為規則式生成，僅供教育用途，不構成投資建議或價格預測。"
     else:
-        sentences = [
-            f"Markets are {_MOOD_PHRASE_EN.get(mood, 'holding steady')} today because of {category_en} news, "
-            f"with global sentiment reading {t(_MOOD_KEY[mood])} ({confidence}% confidence).",
-            f"Today's Market Impact Score is {impact['score']}/100 ({impact['stars']} stars).",
-        ]
-        if top_etf:
-            etf_type_label = "/".join(top_etf["etf_types"]) or "Unclassified"
-            sentences.append(f"{top_etf['ticker']} ({etf_type_label}) shows the strongest reaction potential today at {top_etf['stars']} stars.")
-        sentences.append("This is a rule-based summary for educational purposes only -- not investment advice or a price prediction.")
+        overview_text = (
+            f"Markets are {_MOOD_PHRASE_EN.get(mood, 'holding steady')} today because investors reacted to "
+            f"{category_en} developments."
+        )
+        if top_type:
+            why_text = (
+                f"{_ETF_TYPE_REGION_EN.get(top_type, top_type)} ETFs are expected to experience stronger "
+                f"volatility than {_ETF_TYPE_REGION_EN.get('Broad Market')} ETFs."
+            )
+        else:
+            why_text = "Today's news doesn't point to one clearly dominant sector -- the reaction looks broad and spread out."
+        insight_text = _INSIGHT_PHRASE_EN.get(mood, _INSIGHT_PHRASE_EN["Neutral"])
+        headings = ("Today's Market Overview", "Why Markets Moved Today", "Investment Insight")
+        disclaimer = "This is a rule-based summary for educational purposes only -- not investment advice or a price prediction."
 
-    return {"title": title, "summary": " ".join(sentences)}
+    sections = [
+        {"heading": headings[0], "text": overview_text},
+        {"heading": headings[1], "text": why_text},
+        {"heading": headings[2], "text": insight_text},
+    ]
+    return {"title": title, "sections": sections, "disclaimer": disclaimer}
 
 
 # ETF Type (from ETF_TYPE_MAP) -> a "why this matters to this ETF" phrase

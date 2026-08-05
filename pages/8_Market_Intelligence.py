@@ -122,7 +122,11 @@ else:
 # ── Section 0: Today's AI Summary (template-generated, no LLM call) ─────────
 section_header(today_ai_summary["title"])
 with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
-    st.markdown(today_ai_summary["summary"])
+    for _section in today_ai_summary["sections"]:
+        st.markdown(f"**{_section['heading']}**")
+        st.markdown(_section["text"])
+    if today_ai_summary["disclaimer"]:
+        st.caption(today_ai_summary["disclaimer"])
 
 # ── Section 0b: Market Impact Score ──────────────────────────────────────────
 _mi_lang = get_language()
