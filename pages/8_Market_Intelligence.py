@@ -22,6 +22,7 @@ from src.market_intelligence import (
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
+    generate_todays_market_action,
 )
 from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -68,6 +69,7 @@ try:
     major_events = get_todays_major_events(news_items, limit=5)
     etf_cards = generate_etf_card_data(news_items)
     news_card_meta = get_news_card_metadata(news_items)
+    todays_market_action = generate_todays_market_action(news_items)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
@@ -79,6 +81,7 @@ except Exception:
     major_events = []
     etf_cards = generate_etf_card_data([])
     news_card_meta = get_news_card_metadata([])
+    todays_market_action = generate_todays_market_action([])
     data_load_failed = True
 
 if data_load_failed:
@@ -130,6 +133,11 @@ with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
         st.markdown(_section["text"])
     if today_ai_summary["disclaimer"]:
         st.caption(today_ai_summary["disclaimer"])
+
+# ── Section 0a: Today's Market Action (template-generated, no LLM call) ─────
+with chart_card(todays_market_action["title"], tag=t("ai_tag_rule_based")):
+    for _action_item in todays_market_action["items"]:
+        st.markdown(f"• {_action_item}")
 
 # ── Section 0b: Market Impact Score ──────────────────────────────────────────
 _mi_lang = get_language()
@@ -240,6 +248,7 @@ section_header(t("mi_section_global_etfs_title"), t("mi_section_global_etfs_subt
 
 _etf_market_caption = "市場" if _mi_lang == "zh-TW" else "Market"
 _etf_reasons_caption = "為什麼？" if _mi_lang == "zh-TW" else "Why?"
+_top_drivers_caption = "Top Drivers"
 
 if etf_cards:
     etf_cols = st.columns(len(etf_cards))
@@ -249,6 +258,11 @@ if etf_cards:
             f'<div class="affected-by-caption">{_etf_reasons_caption}</div><div>{reasons_html}</div>'
             if etf["reasons"] else ""
         )
+        drivers_html = "".join(f'<span class="badge badge-neutral">{d}</span> ' for d in etf["top_drivers"])
+        drivers_block = (
+            f'<div class="affected-by-caption">{_top_drivers_caption}</div><div>{drivers_html}</div>'
+            if etf["top_drivers"] else ""
+        )
         with col:
             st.markdown(
                 '<div class="status-card market-impact-card">'
@@ -257,6 +271,7 @@ if etf_cards:
                 f'<div class="status-card-sector">{_etf_market_caption}: '
                 f'<span class="badge badge-{etf["sentiment_variant"]}">{etf["sentiment_label"]}</span></div>'
                 f'{reasons_block}'
+                f'{drivers_block}'
                 '</div>',
                 unsafe_allow_html=True,
             )

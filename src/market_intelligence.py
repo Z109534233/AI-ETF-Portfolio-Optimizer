@@ -1249,14 +1249,52 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
     return events[:limit]
 
 
+# keyword (as it appears in EVENT_CLASSIFICATION_KEYWORDS) -> a clean
+# display form, used only by generate_etf_card_data()'s Top Drivers tags
+# (e.g. "nvidia" -> "NVIDIA", not a bare lowercase word). Keywords not
+# listed here fall back to Title Case.
+_KEYWORD_DISPLAY_NAME = {
+    "nvidia": "NVIDIA", "tsmc": "TSMC", "asml": "ASML", "apple": "Apple",
+    "microsoft": "Microsoft", "google": "Google", "meta": "Meta", "amazon": "Amazon",
+    "fomc": "FOMC", "fed decision": "Fed", "fed chair": "Fed", "federal reserve": "Fed",
+    "central bank": "Central Bank", "chatgpt": "ChatGPT", "openai": "OpenAI",
+    "cpi": "CPI", "ppi": "PPI", "gdp": "GDP", "pmi": "PMI", "opec": "OPEC",
+    "bitcoin": "Bitcoin", "ethereum": "Ethereum", "btc": "BTC",
+}
+
+
+def _matched_keywords(headline: str, category: str) -> list:
+    """Which literal keyword(s) from EVENT_CLASSIFICATION_KEYWORDS[category]
+    actually appear in this headline, formatted for display (e.g. "nvidia"
+    -> "NVIDIA") -- used to surface a specific News-level driver tag
+    instead of just the category name. The keyword that's just the
+    category's own name in disguise (e.g. "semiconductor" for category
+    "Semiconductor") is skipped, since generate_etf_card_data() already
+    adds the category itself as a separate tag -- keeping it here would
+    let a generic word crowd out more specific ones like a company name.
+    Not exported; internal to Top Drivers generation below."""
+    low = headline.lower()
+    words = set(low.replace("-", " ").split())
+    keywords = dict(EVENT_CLASSIFICATION_KEYWORDS).get(category, [])
+    matched = []
+    for kw in keywords:
+        if kw == category.lower():
+            continue
+        hit = (kw in low) if " " in kw else (kw in words)
+        if hit:
+            matched.append(_KEYWORD_DISPLAY_NAME.get(kw, kw.title()))
+    return matched
+
+
 def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
     """
     ETF Card data for the redesigned "Global ETFs" display: each ticker's
     Impact (stars, reusing calculate_etf_impact() exactly -- not
     recomputed a second, different way), Market (a Bullish/Neutral/Bearish
-    sentiment specific to THIS ETF, not one single day-wide mood), and
-    Reasons (up to 3 short tags), so two ETFs driven by different
-    headlines can show different sentiment even on the same day.
+    sentiment specific to THIS ETF, not one single day-wide mood), Reasons
+    (up to 3 short Event Type tags), and Top Drivers (up to 3 tags built
+    from Event Type + ETF Type + News, see below) -- so two ETFs driven by
+    different headlines can show different sentiment even on the same day.
 
     For each ticker, a headline counts as a "tag" source when its
     classify_event() category has an EVENT_TYPE_TO_ETF_TYPE_IMPACT weight
@@ -1274,12 +1312,21 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
     those headlines (deduplicated). A ticker with none today gets Neutral
     sentiment and an empty reasons list.
 
+    Top Drivers pools three tag sources across those same relevant
+    headlines, most specific first: (1) News -- the literal keyword(s)
+    that matched in the headline text (_matched_keywords(), e.g. "NVIDIA",
+    "TSMC", "Fed"), (2) ETF Type -- the ticker's own type tag(s) (e.g.
+    "Technology", "Semiconductor"), (3) Event Type -- the classify_event()
+    category itself (e.g. "AI", "Inflation"). Deduplicated (case-
+    insensitive), capped at 3.
+
     Returns a list of dicts: ticker, stars, star_label, etf_types,
     sentiment (raw mood), sentiment_label (translated), sentiment_variant
     (badge color), confidence (0-100, how one-sided the driving headline's
     signal is -- same 30-95% blended range used by calculate_ai_market_
     sentiment()/calculate_regional_market_sentiment(), never a fake 0% or
-    100%), reasons (list of up to 3 tags).
+    100%), reasons (list of up to 3 Event Type tags), top_drivers (list of
+    up to 3 tags, see above).
     """
     tickers = tickers or DEFAULT_ETF_IMPACT_WATCHLIST
     impact_rows = {row["ticker"]: row for row in calculate_etf_impact(news_items, tickers)}
@@ -1290,6 +1337,15 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
         best_weight = 0
         best_item = None
         reasons = []
+        driver_tags = []
+        driver_seen = set()
+
+        def _add_driver(tag):
+            key = tag.lower()
+            if key not in driver_seen:
+                driver_seen.add(key)
+                driver_tags.append(tag)
+
         for item in news_items:
             category = classify_event(item["title"])
             if category == "Other":
@@ -1298,9 +1354,16 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
             if weight >= 4:
                 if category not in reasons:
                     reasons.append(category)
+                for kw in _matched_keywords(item["title"], category):
+                    _add_driver(kw)
+                _add_driver(category)
                 if weight > best_weight:
                     best_weight = weight
                     best_item = item
+
+        for et in etf_types:
+            _add_driver(et)
+        top_drivers = driver_tags[:3]
 
         if best_item:
             mood = {"Positive": "Bullish", "Negative": "Bearish"}.get(best_item["impact"], "Neutral")
@@ -1322,6 +1385,7 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
             "sentiment_variant": _MOOD_VARIANT[mood],
             "confidence": confidence,
             "reasons": reasons[:3],
+            "top_drivers": top_drivers,
         })
     return results
 
@@ -1368,3 +1432,153 @@ def get_news_card_metadata(news_items: list) -> list:
             "confidence": confidence,
         })
     return results
+
+
+# category -> a short "why to watch" reason phrase per language, used only
+# by generate_todays_market_action() below.
+_ACTION_REASON_EN = {
+    "Interest Rate": "shifting interest rate expectations",
+    "Inflation": "persistent inflation pressure",
+    "Trade Policy": "increasing trade uncertainty",
+    "Technology": "renewed technology sector momentum",
+    "Semiconductor": "increasing trade uncertainty",
+    "Energy": "volatile energy prices",
+    "Geopolitics": "escalating geopolitical tension",
+    "Economy": "shifting economic growth signals",
+    "AI": "accelerating AI-driven demand",
+    "Banking": "renewed scrutiny on the banking sector",
+    "Cryptocurrency": "volatile crypto market conditions",
+    "Other": "today's market developments",
+}
+_ACTION_REASON_ZH = {
+    "Interest Rate": "利率預期出現變化",
+    "Inflation": "通膨壓力持續",
+    "Trade Policy": "貿易不確定性升高",
+    "Technology": "科技類股動能回溫",
+    "Semiconductor": "貿易不確定性升高",
+    "Energy": "能源價格波動",
+    "Geopolitics": "地緣政治緊張升溫",
+    "Economy": "經濟成長訊號轉變",
+    "AI": "AI 需求加速成長",
+    "Banking": "銀行業受到更多關注",
+    "Cryptocurrency": "加密貨幣市場波動",
+    "Other": "今日市場動態",
+}
+
+# category -> an "upcoming catalyst to watch" phrase per language.
+_ACTION_CATALYST_EN = {
+    "Interest Rate": "Investors should watch upcoming Fed announcements.",
+    "Inflation": "Investors should watch upcoming inflation data releases.",
+    "Trade Policy": "Investors should watch upcoming trade policy developments.",
+    "Technology": "Investors should watch upcoming big-tech earnings.",
+    "Semiconductor": "Investors should watch upcoming semiconductor earnings and export data.",
+    "Energy": "Investors should watch upcoming energy supply developments.",
+    "Geopolitics": "Investors should watch how geopolitical tensions develop.",
+    "Economy": "Investors should watch upcoming economic growth data.",
+    "AI": "Investors should watch upcoming AI-industry announcements.",
+    "Banking": "Investors should watch upcoming banking-sector developments.",
+    "Cryptocurrency": "Investors should watch upcoming crypto regulatory news.",
+    "Other": "Investors should stay alert for further market-moving news.",
+}
+_ACTION_CATALYST_ZH = {
+    "Interest Rate": "投資人應留意即將公布的 Fed 決策。",
+    "Inflation": "投資人應留意即將公布的通膨數據。",
+    "Trade Policy": "投資人應留意後續貿易政策發展。",
+    "Technology": "投資人應留意即將公布的大型科技股財報。",
+    "Semiconductor": "投資人應留意半導體財報與出口數據。",
+    "Energy": "投資人應留意能源供給相關發展。",
+    "Geopolitics": "投資人應留意地緣政治情勢後續發展。",
+    "Economy": "投資人應留意即將公布的經濟成長數據。",
+    "AI": "投資人應留意 AI 產業相關公告。",
+    "Banking": "投資人應留意銀行業後續發展。",
+    "Cryptocurrency": "投資人應留意加密貨幣相關監管消息。",
+    "Other": "投資人應留意後續市場動態。",
+}
+
+# mood -> a general portfolio-positioning action phrase per language.
+_ACTION_MOOD_EN = {
+    "Bullish": "Consider maintaining growth exposure while momentum remains positive.",
+    "Bearish": "Maintain diversification while market volatility remains elevated.",
+    "Neutral": "Stay balanced with a diversified allocation amid mixed signals.",
+}
+_ACTION_MOOD_ZH = {
+    "Bullish": "在動能持續之際，可考慮維持成長型資產部位。",
+    "Bearish": "市場波動升高之際，建議維持分散配置。",
+    "Neutral": "訊號較為分歧，建議維持均衡、分散的資產配置。",
+}
+
+# ETF Type -> a short lowercase sector word per language, used only by
+# generate_todays_market_action()'s first bullet (e.g. "semiconductor-
+# related ETFs"). Deliberately without the country/region prefix used by
+# _ETF_TYPE_REGION_EN/ZH elsewhere, since this bullet reads more naturally
+# without it.
+_ETF_TYPE_SECTOR_WORD_EN = {
+    "Bond": "bond", "Technology": "technology", "Semiconductor": "semiconductor",
+    "Broad Market": "broad market", "Broad Market (UCITS)": "broad market",
+}
+_ETF_TYPE_SECTOR_WORD_ZH = {
+    "Bond": "債券", "Technology": "科技", "Semiconductor": "半導體",
+    "Broad Market": "大盤", "Broad Market (UCITS)": "大盤",
+}
+
+
+def generate_todays_market_action(news_items: list) -> dict:
+    """
+    "Today's Market Action" -- template-generated, bullet-point action
+    items meant to sit directly below Today's AI Summary, following the
+    pipeline Today's Major Events -> Market Sentiment -> ETF Impact:
+      1. get_todays_major_events() -- the day's single top event (already
+         ranked by Market Impact Score) drives a "monitor X ETFs" bullet,
+         combining its event category's "why to watch" reason
+         (_ACTION_REASON_EN/ZH) with the ETF type it maps to most
+         strongly (EVENT_TYPE_TO_ETF_TYPE_IMPACT).
+      2. That same top event's category drives an "upcoming catalyst to
+         watch" bullet (_ACTION_CATALYST_EN/ZH).
+      3. calculate_regional_market_sentiment()'s "Global" mood drives a
+         general portfolio-positioning bullet (_ACTION_MOOD_EN/ZH).
+    Template-based only -- no OpenAI/LLM call -- reserved as the entry
+    point for a future LLM-based version. Wording changes with the actual
+    news (never a fixed set of sentences regardless of input), since every
+    phrase is looked up from the day's actual dominant category/mood. This
+    is a separate, independent feature from generate_today_ai_summary()
+    (untouched) -- it reuses get_todays_major_events()/
+    calculate_regional_market_sentiment() exactly as already computed
+    elsewhere on this page, not a second/different scoring pass.
+
+    Returns a dict: title ("📌 Today's Market Action", translated), items
+    (list of up to 3 display-safe bullet strings). When there is no news,
+    items is a single neutral "not enough data" bullet.
+    """
+    lang = get_language()
+    title = "📌 今日市場行動建議" if lang == "zh-TW" else "📌 Today's Market Action"
+
+    if not news_items:
+        no_data = ("目前沒有足夠的新聞資料可產生今日行動建議。" if lang == "zh-TW"
+                   else "Not enough news data is available to generate today's market action.")
+        return {"title": title, "items": [no_data]}
+
+    top_events = get_todays_major_events(news_items, limit=1)
+    category = top_events[0]["category"] if top_events else "Other"
+
+    reason_map = _ACTION_REASON_ZH if lang == "zh-TW" else _ACTION_REASON_EN
+    catalyst_map = _ACTION_CATALYST_ZH if lang == "zh-TW" else _ACTION_CATALYST_EN
+    mood_map = _ACTION_MOOD_ZH if lang == "zh-TW" else _ACTION_MOOD_EN
+    sector_word_map = _ETF_TYPE_SECTOR_WORD_ZH if lang == "zh-TW" else _ETF_TYPE_SECTOR_WORD_EN
+
+    type_impact = EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {})
+    top_type = max(type_impact, key=lambda et: type_impact[et], default=None)
+    sector_word = sector_word_map.get(top_type, ("相關" if lang == "zh-TW" else "related"))
+    reason = reason_map.get(category, reason_map["Other"])
+
+    sentiment_rows = calculate_regional_market_sentiment(news_items)
+    global_row = next((s for s in sentiment_rows if s["market"] == "Global"), None)
+    mood = global_row["mood"] if global_row else "Neutral"
+
+    if lang == "zh-TW":
+        item1 = f"因{reason}，請留意{sector_word}相關 ETF。"
+    else:
+        item1 = f"Monitor {sector_word}-related ETFs due to {reason}."
+    item2 = catalyst_map.get(category, catalyst_map["Other"])
+    item3 = mood_map.get(mood, mood_map["Neutral"])
+
+    return {"title": title, "items": [item1, item2, item3]}
