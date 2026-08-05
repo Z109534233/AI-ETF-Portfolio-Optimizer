@@ -102,18 +102,34 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Why Choose This Platform ─────────────────────────────────────────────────
-section_header(t("home_why_choose_title"), t("home_why_choose_subtitle"))
-why_choose = [
-    {"icon": "search", "title_key": "why_etf_analytics_title", "desc_key": "why_etf_analytics_desc"},
-    {"icon": "target", "title_key": "why_portfolio_optimization_title", "desc_key": "why_portfolio_optimization_desc"},
-    {"icon": "trending-up", "title_key": "why_investment_simulation_title", "desc_key": "why_investment_simulation_desc"},
-    {"icon": "cpu", "title_key": "why_ai_insights_title", "desc_key": "why_ai_insights_desc"},
-]
-why_cols = st.columns(4)
-for i, card in enumerate(why_choose):
-    with why_cols[i]:
-        st.markdown(feature_card(t(card["title_key"]), t(card["desc_key"]), card["icon"]), unsafe_allow_html=True)
+# ── Why Choose This Platform (Icon Cards, Apple style) ───────────────────────
+_why_lang = get_language()
+if _why_lang == "zh-TW":
+    _why_title, _why_subtitle = "為什麼選擇這個平台", "六大核心能力，涵蓋分析到決策的完整流程。"
+    why_choose = [
+        {"icon": "newspaper", "title": "AI 市場情報", "desc": "即時新聞、事件分類，以及 AI 自動生成的市場摘要。"},
+        {"icon": "target", "title": "投資組合最佳化", "desc": "以現代投資組合理論為基礎，最大化風險調整後報酬。"},
+        {"icon": "cpu", "title": "機器學習預測", "desc": "以數據驅動的報酬與價格趨勢預測模型。"},
+        {"icon": "shield", "title": "風險分析", "desc": "VaR、回撤、波動度與相關性分析，涵蓋每個投資組合。"},
+        {"icon": "bar-chart", "title": "跨市場 ETF 分析", "desc": "一站比較美國、台灣、英國市場的 ETF。"},
+        {"icon": "layers", "title": "雙語支援", "desc": "完整支援繁體中文與英文，隨時切換。"},
+    ]
+else:
+    _why_title, _why_subtitle = "Why Choose This Platform", "Six core capabilities spanning the full journey from analysis to decision."
+    why_choose = [
+        {"icon": "newspaper", "title": "AI Market Intelligence", "desc": "Real-time news, event classification, and AI-generated market summaries."},
+        {"icon": "target", "title": "Portfolio Optimization", "desc": "Modern portfolio theory-based allocation to maximize risk-adjusted returns."},
+        {"icon": "cpu", "title": "Machine Learning Forecast", "desc": "Data-driven return and price trend forecasting models."},
+        {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, drawdown, volatility, and correlation analysis for every portfolio."},
+        {"icon": "bar-chart", "title": "Multi-market ETF Analysis", "desc": "Compare ETFs across US, Taiwan, and UK markets in one place."},
+        {"icon": "layers", "title": "Bilingual Support", "desc": "Full Traditional Chinese and English support, switch anytime."},
+    ]
+section_header(_why_title, _why_subtitle)
+for _row_start in (0, 3):
+    _why_cols = st.columns(3)
+    for _col, _card in zip(_why_cols, why_choose[_row_start:_row_start + 3]):
+        with _col:
+            st.markdown(feature_card(_card["title"], _card["desc"], _card["icon"]), unsafe_allow_html=True)
 
 # ── How It Works (vertical flow-card timeline, Apple/Bloomberg style) ────────
 section_header(t("home_how_it_works_title"), t("home_how_it_works_subtitle"))
