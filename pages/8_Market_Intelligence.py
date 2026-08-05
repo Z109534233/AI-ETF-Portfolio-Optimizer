@@ -125,19 +125,35 @@ if major_events:
 else:
     empty_state(t("mi_no_news_available"), _major_events_title, icon="activity")
 
-# ── Section 0: Today's AI Summary (template-generated, no LLM call) ─────────
+# ── Section 0: Today's AI Summary (left) + Today's Watchlist (right) ────────
 section_header(today_ai_summary["title"])
-with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
-    for _section in today_ai_summary["sections"]:
-        st.markdown(f"**{_section['heading']}**")
-        st.markdown(_section["text"])
-    if today_ai_summary["disclaimer"]:
-        st.caption(today_ai_summary["disclaimer"])
+_watchlist_title = "今日觀察清單" if _mi_lang == "zh-TW" else "Today's Watchlist"
+col_summary, col_watchlist = st.columns([2.5, 1])
+with col_summary:
+    with chart_card(today_ai_summary["title"], tag=t("ai_tag_rule_based")):
+        for _section in today_ai_summary["sections"]:
+            st.markdown(f"**{_section['heading']}**")
+            st.markdown(_section["text"])
+        if today_ai_summary["disclaimer"]:
+            st.caption(today_ai_summary["disclaimer"])
 
-# ── Section 0a: Today's Market Action (template-generated, no LLM call) ─────
-with chart_card(todays_market_action["title"], tag=t("ai_tag_rule_based")):
-    for _action_item in todays_market_action["items"]:
-        st.markdown(f"• {_action_item}")
+    # ── Section 0a: Today's Market Action (template-generated, no LLM call) ─
+    with chart_card(todays_market_action["title"], tag=t("ai_tag_rule_based")):
+        for _action_item in todays_market_action["items"]:
+            st.markdown(f"• {_action_item}")
+with col_watchlist:
+    with st.container(border=True):
+        st.markdown(f"**{_watchlist_title}**")
+        if major_events:
+            for _event in major_events:
+                st.markdown(_event["headline"])
+                st.markdown(
+                    f'{star_rating_html(_event["stars"])} '
+                    f'<span class="badge badge-neutral">{_event["category"]}</span>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.caption(t("mi_no_news_available"))
 
 # ── Section 0b: Market Impact Score ──────────────────────────────────────────
 _mi_lang = get_language()
