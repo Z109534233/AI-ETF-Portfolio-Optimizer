@@ -61,53 +61,87 @@ def render_sidebar_footer() -> None:
 # ── Hero Section (Home page) ───────────────────────────────────────────────────
 def hero_section() -> None:
     """
-    Apple/Stripe-style hero: a small eyebrow label, a large multi-line
-    tagline, a one-sentence description of what the platform actually
-    does, and two CTAs (a real "Start Analysis" button + a styled
-    "Explore Features" link). Bilingual strings are written out directly
+    Apple/Stripe/Bloomberg-style hero, two columns: left is a plain-
+    language title + natural product description + two CTAs; right is a
+    static, non-functional "Dashboard Preview" mockup (placeholder numbers,
+    not wired to any real computation) so the hero is never visually
+    empty on one side and communicates what the platform does at a glance.
+    Shorter than the previous single-column version (no more large
+    multi-line tagline, tighter padding) so Platform Statistics can still
+    land in the first viewport. Bilingual strings are written out directly
     here (via get_language()) rather than added as new src/i18n.py keys,
     to keep this change to ui.py + style.css only.
     """
     lang = get_language()
     if lang == "zh-TW":
-        eyebrow = "AI ETF 投資組合最佳化平台"
-        tagline_lines = ["分析。", "最佳化。", "聰明投資。"]
-        desc = "AI 驅動的 ETF 分析、投資組合最佳化、市場情報，以及投資洞察。"
+        title = "AI ETF Portfolio Optimizer"
+        subtitle = "利用 AI 協助投資人分析 ETF、建立最佳投資組合，並掌握最新市場動態。"
         btn_primary = "開始分析"
         btn_secondary = "探索功能"
+        preview_title = "投資組合預覽"
+        preview_metrics = ["預期報酬", "波動度", "夏普比率"]
+        preview_market_label = "市場"
     else:
-        eyebrow = "AI ETF Portfolio Optimizer"
-        tagline_lines = ["Analyze.", "Optimize.", "Invest Smarter."]
-        desc = "AI-powered ETF analysis, portfolio optimization, market intelligence, and investment insights."
+        title = "AI ETF Portfolio Optimizer"
+        subtitle = "We use AI to help investors analyze ETFs, build optimal portfolios, and stay on top of the latest market trends."
         btn_primary = "Start Analysis"
         btn_secondary = "Explore Features"
+        preview_title = "Portfolio Preview"
+        preview_metrics = ["Expected Return", "Volatility", "Sharpe Ratio"]
+        preview_market_label = "Market"
 
-    tagline_html = "<br>".join(tagline_lines)
+    holdings = [("VOO", "40%"), ("QQQ", "35%"), ("0050", "25%")]
+    metric_values = ["12.8%", "14.5%", "1.31"]
+    markets = [("US", "★★★★★"), ("TW", "★★★★☆"), ("UK", "★★★★☆")]
 
-    st.markdown(f"""
-    <div class="hero">
-        <div class="hero-badges">
-            <span class="badge badge-blue">{t("hero_badge_live_data")}</span>
-            <span class="badge badge-green">{t("hero_badge_portfolio_analytics")}</span>
-            <span class="badge badge-neutral">{t("hero_badge_educational")}</span>
-        </div>
-        <div class="hero-eyebrow">{eyebrow}</div>
-        <h1 class="hero-tagline">{tagline_html}</h1>
-        <p class="hero-desc-refined">{desc}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown('<div class="hero-marker"></div>', unsafe_allow_html=True)
+        col_left, col_right = st.columns([1.2, 1], gap="large")
 
-    col1, col2, _ = st.columns([1.3, 1.3, 3.4])
-    with col1:
-        st.markdown('<div class="hero-cta-row">', unsafe_allow_html=True)
-        if st.button(btn_primary, type="primary", use_container_width=True, key="hero_start_analysis"):
-            st.switch_page("pages/1_ETF_Analysis.py")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(
-            f'<div class="hero-cta-secondary-link">{btn_secondary}</div>',
-            unsafe_allow_html=True,
-        )
+        with col_left:
+            st.markdown(
+                f'<h1 class="hero-title-new">{title}</h1>'
+                f'<p class="hero-subtitle-new">{subtitle}</p>',
+                unsafe_allow_html=True,
+            )
+            btn_col1, btn_col2, _ = st.columns([1.2, 1.2, 1])
+            with btn_col1:
+                st.markdown('<div class="hero-cta-row">', unsafe_allow_html=True)
+                if st.button(btn_primary, type="primary", use_container_width=True, key="hero_start_analysis"):
+                    st.switch_page("pages/1_ETF_Analysis.py")
+                st.markdown('</div>', unsafe_allow_html=True)
+            with btn_col2:
+                st.markdown(
+                    f'<div class="hero-cta-secondary-link">{btn_secondary}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        with col_right:
+            holdings_html = "".join(
+                f'<div class="hero-preview-row"><span class="hero-preview-row-label">{ticker}</span>'
+                f'<span class="hero-preview-row-value">{weight}</span></div>'
+                for ticker, weight in holdings
+            )
+            metrics_html = "".join(
+                f'<div class="hero-preview-metric"><div class="hero-preview-metric-label">{label}</div>'
+                f'<div class="hero-preview-metric-value">{value}</div></div>'
+                for label, value in zip(preview_metrics, metric_values)
+            )
+            markets_html = "".join(
+                f'<div class="hero-preview-row"><span class="hero-preview-row-label">{code}</span>'
+                f'<span class="hero-preview-stars">{stars}</span></div>'
+                for code, stars in markets
+            )
+            st.markdown(
+                '<div class="hero-preview-card">'
+                f'<div class="hero-preview-caption">{preview_title}</div>'
+                f'{holdings_html}'
+                '<div class="hero-preview-metrics">' + metrics_html + '</div>'
+                f'<div class="hero-preview-caption">{preview_market_label}</div>'
+                f'{markets_html}'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
 
 # ── Section / Page Headers ──────────────────────────────────────────────────────

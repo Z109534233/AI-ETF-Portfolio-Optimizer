@@ -131,18 +131,31 @@ h4 { font-size: 14px; font-weight: 700; color: var(--text-secondary); text-trans
     margin: 0; max-width: 700px;
 }
 
-/* ── Hero: Apple/Stripe-style redesign (home page only) ───────────────────── */
-.hero-eyebrow {
-    color: var(--text-secondary); font-size: 13px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;
+/* ── Hero: two-column redesign (home page only) ────────────────────────────
+   .hero-marker is an invisible tag rendered as the container's first
+   child purely so :has() below can target the Streamlit
+   st.container(border=True) wrapper and paint it with the hero gradient
+   -- the exact same technique the Chart Card block above uses to style
+   st.container(border=True) via .chart-card-header, just with a
+   different marker class. */
+.hero-marker { display: none; }
+div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div > .hero-marker) {
+    background:
+        radial-gradient(circle at 15% 20%, rgba(59,130,246,0.14), transparent 45%),
+        radial-gradient(circle at 85% 0%, rgba(167,139,250,0.10), transparent 45%),
+        linear-gradient(180deg, var(--surface) 0%, var(--bg-alt) 100%);
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-xl) !important;
+    padding: 8px 10px 14px 10px;
+    margin-bottom: 18px;
 }
-.hero-tagline {
-    color: var(--text); font-size: 52px; font-weight: 800; margin: 0 0 16px 0;
-    letter-spacing: -0.03em; line-height: 1.08;
+.hero-title-new {
+    color: var(--text); font-size: 36px; font-weight: 800; margin: 4px 0 14px 0;
+    letter-spacing: -0.02em; line-height: 1.15;
 }
-.hero-desc-refined {
-    color: var(--text-secondary); font-size: 16px; line-height: 1.65;
-    max-width: 640px; margin: 0 0 26px 0;
+.hero-subtitle-new {
+    color: var(--text-secondary); font-size: 16px; line-height: 1.7;
+    max-width: 480px; margin: 0 0 20px 0;
 }
 .hero-cta-row .stButton > button {
     border-radius: 999px !important; padding: 10px 26px !important; font-weight: 700 !important;
@@ -154,11 +167,34 @@ h4 { font-size: 14px; font-weight: 700; color: var(--text-secondary); text-trans
     transition: border-color 0.18s ease, background 0.18s ease; cursor: default;
 }
 .hero-cta-secondary-link:hover { border-color: var(--primary); background: var(--primary-soft); }
-@media (max-width: 768px) {
-    .hero-tagline { font-size: 34px; }
+
+/* Dashboard Preview (static placeholder mockup, hero right column) */
+.hero-preview-card {
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg); padding: 18px 20px; box-shadow: var(--shadow-md);
 }
+.hero-preview-caption {
+    color: var(--text-muted); font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 8px 0;
+}
+.hero-preview-caption:first-child { margin-top: 0; }
+.hero-preview-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 0; border-bottom: 1px solid var(--border);
+}
+.hero-preview-row:last-of-type { border-bottom: none; }
+.hero-preview-row-label { color: var(--text); font-weight: 700; font-size: 13px; }
+.hero-preview-row-value { color: var(--text-secondary); font-size: 13px; }
+.hero-preview-stars { color: var(--warning); font-size: 12px; letter-spacing: 1px; }
+.hero-preview-metrics {
+    display: flex; justify-content: space-between; text-align: center;
+    padding: 12px 0; margin: 8px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.hero-preview-metric-label { color: var(--text-muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.hero-preview-metric-value { color: var(--text); font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
+
 @media (max-width: 768px) {
-    .hero { padding: 28px 20px 22px 20px; }
+    .hero-title-new { font-size: 26px; }
     .hero-title { font-size: 28px; }
     .hero-subtitle { font-size: 14px; }
     .hero-desc { font-size: 13px; }
