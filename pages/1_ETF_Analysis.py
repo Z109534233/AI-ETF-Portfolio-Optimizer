@@ -210,6 +210,9 @@ def _ai_summary_insights(lang, s_ret_period, s_ret_ann, s_vol, s_sharpe, s_mdd, 
     return result
 
 
+_ai_summary_data = {}  # stashed per ticker below, reused by ETF Ranking so its
+                       # "AI Score" always matches the card shown here exactly.
+
 summary_cols = st.columns(len(etf_prices.columns))
 for i, ticker in enumerate(etf_prices.columns):
     with summary_cols[i]:
@@ -269,6 +272,10 @@ for i, ticker in enumerate(etf_prices.columns):
             _sum_lang, s_ret_period, s_ret_ann, s_vol, s_sharpe, s_mdd,
             s_price, s_ma_short, s_ma_long, s_mom, s_score,
         )
+        _ai_summary_data[ticker] = {
+            "score": s_score, "trend": s_trend, "rec": s_rec,
+            "ret_ann": s_ret_ann, "vol": s_vol, "sharpe": s_sharpe, "mom": s_mom,
+        }
         s_emoji, s_color = _SUM_TREND_META[s_trend]
         s_insights_html = "".join(
             f'<div style="color:var(--text-secondary);font-size:12px;line-height:1.6;">• {ins}</div>'
@@ -285,6 +292,118 @@ for i, ticker in enumerate(etf_prices.columns):
             f'<span>Confidence: {s_confidence}%</span><span>Recommendation: {s_rec}</span></div>'
             '<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">AI Insights</div>'
             f'{s_insights_html}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+# ── ETF Ranking (reuses the exact AI Score/Trend/Recommendation stashed by
+# the AI ETF Summary loop just above, so the numbers always match; adds a
+# Risk Level per ticker and a dynamically-generated "Why #1?" explanation
+# comparing the top-ranked ETF's raw metrics against the rest of the
+# currently selected set). Positioned directly below AI ETF Summary. ────────
+section_header(
+    "ETF Ranking",
+    "依 AI Score 排序目前所有選取的 ETF" if _sum_lang == "zh-TW" else
+    "All currently selected ETFs, ranked by AI Score",
+)
+
+_RANK_MEDALS = ["🥇", "🥈", "🥉"]
+
+_ranked = sorted(_ai_summary_data.items(), key=lambda kv: kv[1]["score"], reverse=True)
+
+if _ranked:
+    _rank_row_html = []
+    for _idx, (_r_ticker, _r_data) in enumerate(_ranked):
+        _r_rank = _RANK_MEDALS[_idx] if _idx < 3 else f"#{_idx + 1}"
+        _r_trend_emoji, _r_trend_color = _SUM_TREND_META[_r_data["trend"]]
+        if _r_data["vol"] < 0.15:
+            _r_risk = "低風險" if _sum_lang == "zh-TW" else "Low Risk"
+        elif _r_data["vol"] < 0.28:
+            _r_risk = "中風險" if _sum_lang == "zh-TW" else "Medium Risk"
+        else:
+            _r_risk = "高風險" if _sum_lang == "zh-TW" else "High Risk"
+        _rank_row_html.append(
+            '<tr>'
+            f'<td style="padding:9px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{_r_rank}</td>'
+            f'<td style="padding:9px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{_r_ticker}</td>'
+            f'<td style="padding:9px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{_r_data["score"]}</td>'
+            f'<td style="padding:9px 12px;color:{_r_trend_color};font-weight:700;border-bottom:1px solid var(--border);">{_r_trend_emoji} {_r_data["trend"]}</td>'
+            f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_data["rec"]}</td>'
+            f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_risk}</td>'
+            '</tr>'
+        )
+
+    _rank_headers = (
+        ["排名", "ETF", "AI Score", "Trend", "Recommendation", "Risk Level"] if _sum_lang == "zh-TW" else
+        ["Rank", "ETF", "AI Score", "Trend", "Recommendation", "Risk Level"]
+    )
+    _rank_header_html = "".join(
+        f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;'
+        f'letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{h}</th>'
+        for h in _rank_headers
+    )
+
+    _rank_col, _why_col = st.columns([3, 2])
+    with _rank_col:
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:4px 8px;overflow-x:auto;box-shadow:var(--shadow-sm);">'
+            '<table style="width:100%;border-collapse:collapse;">'
+            f'<thead><tr>{_rank_header_html}</tr></thead>'
+            f'<tbody>{"".join(_rank_row_html)}</tbody>'
+            '</table>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    with _why_col:
+        _top_ticker, _top_data = _ranked[0]
+        _others = [d for tkr, d in _ranked if tkr != _top_ticker]
+        _why_reasons = []
+        if _others:
+            if _top_data["sharpe"] >= max(o["sharpe"] for o in _others):
+                _why_reasons.append("Sharpe Ratio")
+            if _top_data["mom"] >= max(o["mom"] for o in _others):
+                _why_reasons.append("Momentum")
+            if _top_data["ret_ann"] >= max(o["ret_ann"] for o in _others):
+                _why_reasons.append("長期報酬" if _sum_lang == "zh-TW" else "long-term return")
+            if _top_data["vol"] <= min(o["vol"] for o in _others):
+                _why_reasons.append("波動控制" if _sum_lang == "zh-TW" else "volatility control")
+
+        if not _others:
+            _why_text = (
+                f"僅選取一檔 ETF（{_top_ticker}），暫無其他標的可供排名比較。"
+                if _sum_lang == "zh-TW" else
+                f"Only one ETF ({_top_ticker}) is selected, so there's nothing else to rank it against."
+            )
+        elif _why_reasons:
+            _top3 = _why_reasons[:3]
+
+            def _join_with_last(parts, sep, last_sep):
+                if len(parts) == 1:
+                    return parts[0]
+                return sep.join(parts[:-1]) + last_sep + parts[-1]
+
+            if _sum_lang == "zh-TW":
+                _phrases = [(f"最佳 {r}" if r == "波動控制" else f"最高 {r}") for r in _top3]
+                _joined = _join_with_last(_phrases, "、", " 與")
+                _why_text = f"{_top_ticker} 在目前所有 ETF 中擁有{_joined}，因此目前排名第一。"
+            else:
+                _joined = _join_with_last(_top3, ", ", " and ")
+                _why_text = f"{_top_ticker} has the best {_joined} among all currently selected ETFs, putting it in first place."
+        else:
+            _why_text = (
+                f"{_top_ticker} 並未在單一指標中領先，但整體風險與報酬表現最為均衡，綜合評分因此排名第一。"
+                if _sum_lang == "zh-TW" else
+                f"{_top_ticker} doesn't lead on any single metric, but its overall balance of risk and return gives it the highest combined score."
+            )
+
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:16px 18px;height:100%;box-shadow:var(--shadow-sm);">'
+            '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">'
+            + (f"為什麼 {_top_ticker} 第一？" if _sum_lang == "zh-TW" else f"Why #1: {_top_ticker}?") + '</div>'
+            f'<div style="color:var(--text-secondary);font-size:12.5px;line-height:1.7;">{_why_text}</div>'
             '</div>',
             unsafe_allow_html=True,
         )
