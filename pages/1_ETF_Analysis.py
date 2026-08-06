@@ -241,6 +241,173 @@ if _cmp_rows:
         unsafe_allow_html=True,
     )
 
+# ── Compare Mode (rule-based, no external LLM -- independent from ETF
+# Compare Score above; a head-to-head of exactly two ETFs picked from the
+# currently loaded selection, one metric per row with a per-row Winner,
+# an Overall Winner, and a dynamically-generated AI Explanation). ────────────
+_vs_lang = get_language()
+section_header(
+    "Compare Mode",
+    "選擇兩支 ETF 進行逐項比較" if _vs_lang == "zh-TW" else
+    "Pick two ETFs for a head-to-head comparison",
+)
+
+if len(etf_prices.columns) >= 2:
+    _vs_options = etf_prices.columns.tolist()
+    _vs_c1, _vs_c2 = st.columns(2)
+    with _vs_c1:
+        vs_ticker_a = st.selectbox(
+            "ETF A", _vs_options, index=0, key="compare_mode_ticker_a",
+        )
+    with _vs_c2:
+        vs_ticker_b = st.selectbox(
+            "ETF B", [o for o in _vs_options if o != vs_ticker_a],
+            index=0, key="compare_mode_ticker_b",
+        )
+
+    _vs_pa = etf_prices[vs_ticker_a].dropna()
+    _vs_pb = etf_prices[vs_ticker_b].dropna()
+
+    if len(_vs_pa) > 10 and len(_vs_pb) > 10:
+        _vs_a = {
+            "Return": annualized_return(_vs_pa),
+            "Risk": value_at_risk(_vs_pa),
+            "Sharpe": sharpe_ratio(_vs_pa, risk_free_rate),
+            "Volatility": annualized_volatility(_vs_pa),
+            "Drawdown": maximum_drawdown(_vs_pa),
+            "Momentum": momentum(_vs_pa, 10).iloc[-1],
+        }
+        _vs_b = {
+            "Return": annualized_return(_vs_pb),
+            "Risk": value_at_risk(_vs_pb),
+            "Sharpe": sharpe_ratio(_vs_pb, risk_free_rate),
+            "Volatility": annualized_volatility(_vs_pb),
+            "Drawdown": maximum_drawdown(_vs_pb),
+            "Momentum": momentum(_vs_pb, 10).iloc[-1],
+        }
+        for _k in ("Return", "Risk", "Sharpe", "Volatility", "Drawdown", "Momentum"):
+            if pd.isna(_vs_a[_k]):
+                _vs_a[_k] = 0.0
+            if pd.isna(_vs_b[_k]):
+                _vs_b[_k] = 0.0
+
+        # Higher-is-better rows: Return, Risk (VaR: less negative = safer),
+        # Sharpe, Drawdown (less negative = smaller decline), Momentum.
+        # Lower-is-better rows: Volatility (less dispersion = the "safer" pick).
+        _vs_higher_wins = {"Return", "Risk", "Sharpe", "Drawdown", "Momentum"}
+        _vs_fmt = {
+            "Return": lambda v: f"{v:+.2%}", "Risk": lambda v: f"{v:.2%}",
+            "Sharpe": lambda v: f"{v:.2f}", "Volatility": lambda v: f"{v:.2%}",
+            "Drawdown": lambda v: f"{v:.2%}", "Momentum": lambda v: f"{v:+.2%}",
+        }
+
+        _vs_wins = {vs_ticker_a: [], vs_ticker_b: []}
+        _vs_row_html = []
+        for _metric in ("Return", "Risk", "Sharpe", "Volatility", "Drawdown", "Momentum"):
+            _va, _vb = _vs_a[_metric], _vs_b[_metric]
+            if _metric in _vs_higher_wins:
+                _winner = vs_ticker_a if _va > _vb else (vs_ticker_b if _vb > _va else None)
+            else:
+                _winner = vs_ticker_a if _va < _vb else (vs_ticker_b if _vb < _va else None)
+            if _winner:
+                _vs_wins[_winner].append(_metric)
+            _winner_html = f"🏆 {_winner}" if _winner else ("—")
+            _vs_row_html.append(
+                '<tr>'
+                f'<td style="padding:9px 12px;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border);">{_metric}</td>'
+                f'<td style="padding:9px 12px;color:var(--text);border-bottom:1px solid var(--border);">{_vs_fmt[_metric](_va)}</td>'
+                f'<td style="padding:9px 12px;color:var(--text);border-bottom:1px solid var(--border);">{_vs_fmt[_metric](_vb)}</td>'
+                f'<td style="padding:9px 12px;color:var(--primary);font-weight:700;border-bottom:1px solid var(--border);">{_winner_html}</td>'
+                '</tr>'
+            )
+
+        _vs_header_html = (
+            '<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">Metric</th>'
+            f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{vs_ticker_a}</th>'
+            f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{vs_ticker_b}</th>'
+            '<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">Winner</th>'
+        )
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:4px 8px;overflow-x:auto;box-shadow:var(--shadow-sm);margin-bottom:10px;">'
+            '<table style="width:100%;border-collapse:collapse;">'
+            f'<thead><tr>{_vs_header_html}</tr></thead>'
+            f'<tbody>{"".join(_vs_row_html)}</tbody>'
+            '</table>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        _vs_wins_a, _vs_wins_b = len(_vs_wins[vs_ticker_a]), len(_vs_wins[vs_ticker_b])
+        if _vs_wins_a == _vs_wins_b:
+            _vs_overall = None
+        else:
+            _vs_overall = vs_ticker_a if _vs_wins_a > _vs_wins_b else vs_ticker_b
+
+        _vs_risk_metrics = {"Risk", "Volatility", "Drawdown"}
+        _vs_risk_wins_a = len([m for m in _vs_wins[vs_ticker_a] if m in _vs_risk_metrics])
+        _vs_risk_wins_b = len([m for m in _vs_wins[vs_ticker_b] if m in _vs_risk_metrics])
+        if _vs_risk_wins_a == _vs_risk_wins_b:
+            _vs_risk_winner = None
+        else:
+            _vs_risk_winner = vs_ticker_a if _vs_risk_wins_a > _vs_risk_wins_b else vs_ticker_b
+
+        _overall_label = "🏆 " + _vs_overall if _vs_overall else ("平手" if _vs_lang == "zh-TW" else "Tie")
+        st.markdown(
+            '<div style="margin:4px 0 10px 0;">'
+            '<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">'
+            + ("整體贏家" if _vs_lang == "zh-TW" else "Overall Winner") + '</div>'
+            f'<div style="color:var(--text);font-weight:800;font-size:22px;">{_overall_label}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        _cn = {"Return": "報酬率", "Risk": "風險（VaR）", "Sharpe": "夏普比率",
+               "Volatility": "波動度", "Drawdown": "最大回撤", "Momentum": "動能"}
+        if _vs_overall is None:
+            explanation = (
+                f"{vs_ticker_a} 與 {vs_ticker_b} 整體表現相近，各項指標互有領先，難分軒輊，建議依個人風險偏好選擇。"
+                if _vs_lang == "zh-TW" else
+                f"{vs_ticker_a} and {vs_ticker_b} are closely matched overall, each leading on different metrics -- the choice comes down to personal risk preference."
+            )
+        elif _vs_risk_winner is None or _vs_risk_winner == _vs_overall:
+            _reason_metrics = _vs_wins[_vs_overall]
+            if _vs_lang == "zh-TW":
+                _reason_str = "、".join(_cn[m] for m in _reason_metrics)
+                explanation = f"{_vs_overall} 在{_reason_str}上表現優於{(vs_ticker_b if _vs_overall == vs_ticker_a else vs_ticker_a)}，因此整體勝出。"
+            else:
+                _reason_str = ", ".join(_reason_metrics)
+                explanation = f"{_vs_overall} outperforms {(vs_ticker_b if _vs_overall == vs_ticker_a else vs_ticker_a)} on {_reason_str}, making it the overall winner."
+        else:
+            _growth_reasons = [m for m in _vs_wins[_vs_overall] if m not in _vs_risk_metrics] or _vs_wins[_vs_overall]
+            _risk_reasons = [m for m in _vs_wins[_vs_risk_winner] if m in _vs_risk_metrics]
+            if _vs_lang == "zh-TW":
+                _growth_str = "、".join(_cn[m] for m in _growth_reasons)
+                _risk_str = "、".join(_cn[m] for m in _risk_reasons)
+                explanation = (
+                    f"{_vs_overall} 在{_growth_str}上表現較佳，整體勝出；"
+                    f"不過 {_vs_risk_winner} 在{_risk_str}上風險較低，更適合保守型投資人。"
+                )
+            else:
+                _growth_str = ", ".join(_growth_reasons)
+                _risk_str = ", ".join(_risk_reasons)
+                explanation = (
+                    f"{_vs_overall} leads on {_growth_str} and wins overall; "
+                    f"however, {_vs_risk_winner} carries lower risk on {_risk_str}, making it more suitable for conservative investors."
+                )
+
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);'
+            'padding:12px 16px;">'
+            '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">'
+            + ("AI 解釋" if _vs_lang == "zh-TW" else "AI Explanation") + '</div>'
+            f'<div style="color:var(--text-secondary);font-size:12.5px;line-height:1.7;">{explanation}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+else:
+    st.info(t("msg_select_2_correlation"))
+
 # ── Summary KPIs ──────────────────────────────────────────────────────────────
 section_header(t("etf_summary_metrics"))
 cols = st.columns(len(etf_prices.columns))
