@@ -276,13 +276,13 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     border: 1px solid var(--border);
     border-top: 2px solid var(--primary);
     border-radius: var(--radius-lg);
-    padding: 18px 18px 16px 18px;
+    padding: 14px 16px 12px 16px;
     margin: 6px 0;
-    height: 148px;
+    min-height: 110px;
     transition: transform 0.18s ease, border-color 0.18s ease;
 }
 .feature-card:hover { transform: translateY(-2px); border-color: var(--border-strong); }
-.feature-card-icon { margin-bottom: 8px; }
+.feature-card-icon { margin-bottom: 6px; }
 .feature-card-title { color: var(--text); font-weight: 700; font-size: 14.5px; margin-bottom: 6px; }
 .feature-card-desc { color: var(--text-secondary); font-size: 12.5px; line-height: 1.55; }
 

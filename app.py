@@ -72,11 +72,10 @@ with st.sidebar:
 # ── Hero ──────────────────────────────────────────────────────────────────────
 hero_section()
 
-# ── Platform Statistics (higher-density KPI cards: value + title + one-
-# sentence description each; ETF/market/module counts read from the
-# actual registered data instead of being hardcoded -- "AI" and the
-# language count's description stay as fixed capability descriptions,
-# since those aren't a "count" that could be fetched). ──────────────────────
+# ── Platform Statistics (4 cards: ETF / Markets / Modules / Languages;
+# counts read from the actual registered data instead of being hardcoded).
+# The "Markets" card description already lists US/Taiwan/UK, so a separate
+# Supported Markets section would just repeat that information. ────────────
 _platform_lang = get_language()
 if _platform_lang == "zh-TW":
     _platform_stats_title = "平台統計"
@@ -85,7 +84,6 @@ if _platform_lang == "zh-TW":
         (str(len(get_countries())), "涵蓋市場", "美國、台灣、英國"),
         (str(len(NAV_ITEMS)), "分析模組", "從 ETF 分析到市場情報"),
         ("2", "支援語言", "繁體中文、English"),
-        ("AI", "市場情報", "即時分析"),
     ]
 else:
     _platform_stats_title = "Platform Statistics"
@@ -94,15 +92,14 @@ else:
         (str(len(get_countries())), "Markets", "United States, Taiwan, United Kingdom"),
         (str(len(NAV_ITEMS)), "Analysis Modules", "From ETF analysis to market intelligence"),
         ("2", "Languages", "Traditional Chinese, English"),
-        ("AI", "Market Intelligence", "Real-time Analysis"),
     ]
 
 section_header(_platform_stats_title)
-stat_cols = st.columns(5)
+stat_cols = st.columns(4)
 for _col, (_value, _title, _desc) in zip(stat_cols, _platform_stats):
     with _col:
         st.markdown(
-            '<div class="kpi-card" style="min-height:132px;">'
+            '<div class="kpi-card">'
             f'<div class="kpi-value" style="margin-bottom:4px;">{_value}</div>'
             f'<div style="color:var(--text);font-weight:700;font-size:13px;margin-bottom:6px;">{_title}</div>'
             f'<div style="color:var(--text-secondary);font-size:11.5px;line-height:1.4;">{_desc}</div>'
@@ -110,43 +107,37 @@ for _col, (_value, _title, _desc) in zip(stat_cols, _platform_stats):
             unsafe_allow_html=True,
         )
 
-# ── Supported Markets (Global ETF Support) ───────────────────────────────────
-section_header(t("home_supported_markets_title"), t("home_supported_markets_subtitle"))
-st.markdown(
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">'
-    + badge(t("home_market_us"), "blue")
-    + badge(t("home_market_taiwan"), "green")
-    + badge(t("home_market_uk"), "amber")
-    + '</div>',
-    unsafe_allow_html=True,
-)
-
-# ── Why Choose This Platform (Icon Cards, Apple style) ───────────────────────
+# ── Why Choose This Platform (merged with the former Feature Overview
+# section -- one 8-card grid, one card per module, no duplicated content). ──
 _why_lang = get_language()
 if _why_lang == "zh-TW":
-    _why_title, _why_subtitle = "為什麼選擇這個平台", "六大核心能力，涵蓋分析到決策的完整流程。"
+    _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程。"
     why_choose = [
-        {"icon": "newspaper", "title": "AI 市場情報", "desc": "即時新聞、事件分類，以及 AI 自動生成的市場摘要。"},
-        {"icon": "target", "title": "投資組合最佳化", "desc": "以現代投資組合理論為基礎，最大化風險調整後報酬。"},
-        {"icon": "cpu", "title": "機器學習預測", "desc": "以數據驅動的報酬與價格趨勢預測模型。"},
-        {"icon": "shield", "title": "風險分析", "desc": "VaR、回撤、波動度與相關性分析，涵蓋每個投資組合。"},
-        {"icon": "bar-chart", "title": "跨市場 ETF 分析", "desc": "一站比較美國、台灣、英國市場的 ETF。"},
-        {"icon": "layers", "title": "雙語支援", "desc": "完整支援繁體中文與英文，隨時切換。"},
+        {"icon": "newspaper", "title": "AI 市場情報", "desc": "即時新聞、事件分類與 AI 市場摘要。"},
+        {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析。"},
+        {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置。"},
+        {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境。"},
+        {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析。"},
+        {"icon": "cpu", "title": "機器學習預測", "desc": "數據驅動的 ETF 漲跌方向預測模型。"},
+        {"icon": "layers", "title": "AI 投資分析", "desc": "AI 生成投資組合說明與建議。"},
+        {"icon": "pie-chart", "title": "投資組合紀錄", "desc": "儲存、比較與管理你的投資組合紀錄。"},
     ]
 else:
-    _why_title, _why_subtitle = "Why Choose This Platform", "Six core capabilities spanning the full journey from analysis to decision."
+    _why_title, _why_subtitle = "Why Choose This Platform", "Eight core modules spanning the full journey from analysis to decision."
     why_choose = [
-        {"icon": "newspaper", "title": "AI Market Intelligence", "desc": "Real-time news, event classification, and AI-generated market summaries."},
-        {"icon": "target", "title": "Portfolio Optimization", "desc": "Modern portfolio theory-based allocation to maximize risk-adjusted returns."},
-        {"icon": "cpu", "title": "Machine Learning Forecast", "desc": "Data-driven return and price trend forecasting models."},
-        {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, drawdown, volatility, and correlation analysis for every portfolio."},
-        {"icon": "bar-chart", "title": "Multi-market ETF Analysis", "desc": "Compare ETFs across US, Taiwan, and UK markets in one place."},
-        {"icon": "layers", "title": "Bilingual Support", "desc": "Full Traditional Chinese and English support, switch anytime."},
+        {"icon": "newspaper", "title": "AI Market Intelligence", "desc": "Real-time news, event tagging, AI summaries."},
+        {"icon": "bar-chart", "title": "ETF Analysis", "desc": "Cross-market ETF price, return, and risk analysis."},
+        {"icon": "target", "title": "Portfolio Optimization", "desc": "Five methods to find the optimal risk-adjusted mix."},
+        {"icon": "trending-up", "title": "Investment Simulator", "desc": "Monte Carlo projections for long-term growth."},
+        {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, CVaR, Beta, and stress-test scenarios."},
+        {"icon": "cpu", "title": "Machine Learning Forecast", "desc": "Data-driven ETF direction prediction models."},
+        {"icon": "layers", "title": "AI Advisor", "desc": "AI-generated portfolio explanations and insights."},
+        {"icon": "pie-chart", "title": "Portfolio History", "desc": "Save, compare, and manage your portfolio records."},
     ]
 section_header(_why_title, _why_subtitle)
-for _row_start in (0, 3):
-    _why_cols = st.columns(3)
-    for _col, _card in zip(_why_cols, why_choose[_row_start:_row_start + 3]):
+for _row_start in (0, 4):
+    _why_cols = st.columns(4)
+    for _col, _card in zip(_why_cols, why_choose[_row_start:_row_start + 4]):
         with _col:
             st.markdown(feature_card(_card["title"], _card["desc"], _card["icon"]), unsafe_allow_html=True)
 
@@ -274,24 +265,6 @@ with col_right2:
         if not etf_prices.empty:
             fig_rr = risk_return_scatter(etf_prices)
             st.plotly_chart(fig_rr, use_container_width=True, key="home_risk_return")
-
-# ── Feature Overview ──────────────────────────────────────────────────────────
-section_header(t("home_features_title"), t("home_features_subtitle"))
-
-features = [
-    {"icon": "bar-chart", "title_key": "feature_etf_analysis_title", "desc_key": "feature_etf_analysis_desc"},
-    {"icon": "target", "title_key": "feature_portfolio_optimizer_title", "desc_key": "feature_portfolio_optimizer_desc"},
-    {"icon": "trending-up", "title_key": "feature_investment_simulator_title", "desc_key": "feature_investment_simulator_desc"},
-    {"icon": "shield", "title_key": "feature_risk_analytics_title", "desc_key": "feature_risk_analytics_desc"},
-    {"icon": "activity", "title_key": "feature_machine_learning_title", "desc_key": "feature_machine_learning_desc"},
-    {"icon": "layers", "title_key": "feature_ai_advisor_title", "desc_key": "feature_ai_advisor_desc"},
-    {"icon": "pie-chart", "title_key": "feature_portfolio_history_title", "desc_key": "feature_portfolio_history_desc"},
-]
-
-cols = st.columns(3)
-for i, feature in enumerate(features):
-    with cols[i % 3]:
-        st.markdown(feature_card(t(feature["title_key"]), t(feature["desc_key"]), feature["icon"]), unsafe_allow_html=True)
 
 # ── Technology Stack ──────────────────────────────────────────────────────────
 section_header(t("home_tech_stack_title"))
