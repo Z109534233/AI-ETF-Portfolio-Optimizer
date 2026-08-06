@@ -1281,150 +1281,155 @@ with col3:
         csv3 = dataframe_to_csv(metrics_export)
         st.download_button(t("btn_download_metrics"), csv3, "etf_metrics.csv", "text/csv")
 
-# ── Investment Verdict (rule-based, no external LLM -- independent scoring
-# from AI Insights / Compare Score / ETF DNA above; a richer 5-level
-# trend/risk read plus a final natural-language recommendation, all freshly
-# computed per ETF from currently loaded data). Bottom-most content section,
-# before the shared disclaimer/footer. ───────────────────────────────────────
+# ── Investment Verdict (rule-based, no external LLM -- a single page-level
+# synthesis that AGGREGATES the AI Score/Trend/raw metrics already stashed
+# in _ai_summary_data by the AI ETF Summary section above, per "整合整頁分析
+# 結果", rather than an isolated per-ETF calculation. Replaces the previous
+# per-ETF-card version of this section (explicit user choice). Bottom-most
+# content section, before the shared disclaimer/footer. ──────────────────────
 _verdict_lang = get_language()
 section_header(
     "Investment Verdict",
-    "根據目前資料動態產生的最終投資結論" if _verdict_lang == "zh-TW" else
-    "Final investment conclusion, dynamically generated from current data",
+    "整合整頁分析結果的最終投資結論" if _verdict_lang == "zh-TW" else
+    "A single conclusion synthesizing the whole page's analysis",
 )
 
-_VERDICT_TREND_ZH = {
-    "Strong Bullish": "強力多頭", "Bullish": "多頭", "Neutral": "中性",
-    "Bearish": "空頭", "Strong Bearish": "強力空頭",
-}
-_VERDICT_TREND_COLOR = {
-    "Strong Bullish": "var(--success)", "Bullish": "var(--success)", "Neutral": "var(--warning)",
-    "Bearish": "var(--danger)", "Strong Bearish": "var(--danger)",
-}
-_VERDICT_TREND_CLAUSE = {
-    "Strong Bullish": ("目前呈現強勁多頭趨勢", "is currently showing a strong bullish trend"),
-    "Bullish": ("目前維持多頭趨勢", "is currently maintaining a bullish trend"),
-    "Neutral": ("目前呈現盤整格局", "is currently consolidating"),
-    "Bearish": ("目前呈現空頭趨勢", "is currently in a bearish trend"),
-    "Strong Bearish": ("目前呈現強勁空頭趨勢", "is currently in a strong bearish trend"),
-}
-_VERDICT_SUIT_CLAUSE = {
-    "Growth Investors": ("適合長期成長型投資人", "suitable for long-term growth investors"),
-    "Balanced Investors": ("適合追求平衡配置的投資人", "suitable for investors seeking a balanced allocation"),
-    "Conservative Investors": ("適合風險承受度較低的穩健型投資人", "suitable for conservative, risk-averse investors"),
-}
-_VERDICT_RISK_CLAUSE = {
-    "Low": ("且整體波動相對溫和", "and overall volatility remains relatively mild"),
-    "Medium": ("但需留意中等程度的波動", "but moderate volatility should be monitored"),
-    "Medium High": ("但需注意短期波動", "but short-term volatility should be noted"),
-    "High": ("但需注意較高的波動風險", "but elevated volatility risk should be noted"),
-    "Very High": ("但需特別留意劇烈波動風險", "but investors should watch for sharp volatility"),
-}
+_verdict_tickers = [t for t in etf_prices.columns if t in _ai_summary_data]
 
-verdict_cols = st.columns(len(etf_prices.columns))
-for i, ticker in enumerate(etf_prices.columns):
-    with verdict_cols[i]:
-        p = etf_prices[ticker].dropna()
-        v_ret = annualized_return(p)
-        v_vol = annualized_volatility(p)
-        v_sr = sharpe_ratio(p, risk_free_rate)
-        v_mdd = maximum_drawdown(p)
-        v_mom_last = momentum(p, 10).iloc[-1]
-        v_mom = v_mom_last if pd.notna(v_mom_last) else 0.0
+if _verdict_tickers:
+    _v_scores = [_ai_summary_data[t]["score"] for t in _verdict_tickers]
+    _v_vols = [_ai_summary_data[t]["vol"] for t in _verdict_tickers]
+    _v_rets = [_ai_summary_data[t]["ret_ann"] for t in _verdict_tickers]
+    _v_overall_score = int(round(sum(_v_scores) / len(_v_scores)))
+    _v_avg_vol = sum(_v_vols) / len(_v_vols)
+    _v_avg_ret = sum(_v_rets) / len(_v_rets)
 
-        v_score = 50.0
-        v_score += max(-25, min(25, v_ret * 150))
-        v_score += max(-20, min(20, v_sr * 12))
-        v_score += max(-15, min(15, v_mom * 250))
-        v_score -= max(-10, min(20, (v_vol - 0.15) * 80))
-        v_score -= max(0, min(20, abs(v_mdd) * 50))
-        v_score = int(round(max(0, min(100, v_score))))
+    if _v_overall_score >= 80:
+        _v_trend = "Strong Bullish"
+    elif _v_overall_score >= 60:
+        _v_trend = "Bullish"
+    elif _v_overall_score >= 40:
+        _v_trend = "Neutral"
+    elif _v_overall_score >= 20:
+        _v_trend = "Bearish"
+    else:
+        _v_trend = "Strong Bearish"
 
-        if v_score >= 80:
-            v_trend = "Strong Bullish"
-        elif v_score >= 60:
-            v_trend = "Bullish"
-        elif v_score >= 40:
-            v_trend = "Neutral"
-        elif v_score >= 20:
-            v_trend = "Bearish"
-        else:
-            v_trend = "Strong Bearish"
+    if _v_avg_vol < 0.10:
+        _v_risk = "Low"
+    elif _v_avg_vol < 0.18:
+        _v_risk = "Medium"
+    elif _v_avg_vol < 0.26:
+        _v_risk = "Medium High"
+    elif _v_avg_vol < 0.35:
+        _v_risk = "High"
+    else:
+        _v_risk = "Very High"
 
-        if v_vol < 0.10:
-            v_risk = "Low"
-        elif v_vol < 0.18:
-            v_risk = "Medium"
-        elif v_vol < 0.26:
-            v_risk = "Medium High"
-        elif v_vol < 0.35:
-            v_risk = "High"
-        else:
-            v_risk = "Very High"
+    if _v_avg_ret < 0.08:
+        _v_exp_return = "Low"
+    elif _v_avg_ret < 0.15:
+        _v_exp_return = "Medium"
+    elif _v_avg_ret < 0.25:
+        _v_exp_return = "High"
+    else:
+        _v_exp_return = "Very High"
 
-        if v_ret < 0.08:
-            v_exp_return = "Low"
-        elif v_ret < 0.15:
-            v_exp_return = "Medium"
-        elif v_ret < 0.25:
-            v_exp_return = "High"
-        else:
-            v_exp_return = "Very High"
+    if _v_avg_vol < 0.15:
+        _v_horizon = "Short-to-Medium Term"
+    elif _v_avg_vol < 0.28:
+        _v_horizon = "Medium-to-Long Term"
+    else:
+        _v_horizon = "Long Term"
 
-        if v_vol < 0.15:
-            v_horizon = "Short-to-Medium Term"
-        elif v_vol < 0.28:
-            v_horizon = "Medium-to-Long Term"
-        else:
-            v_horizon = "Long Term"
+    if _v_risk in ("High", "Very High") and _v_exp_return in ("High", "Very High"):
+        _v_suitable = "Growth Investors"
+    elif _v_risk == "Low" and _v_exp_return in ("Low", "Medium"):
+        _v_suitable = "Conservative Investors"
+    else:
+        _v_suitable = "Balanced Investors"
 
-        if v_risk in ("High", "Very High") and v_exp_return in ("High", "Very High"):
-            v_suitable = "Growth Investors"
-        elif v_risk == "Low" and v_exp_return in ("Low", "Medium"):
-            v_suitable = "Conservative Investors"
-        else:
-            v_suitable = "Balanced Investors"
+    _V_TREND_ZH = {"Strong Bullish": "強力多頭", "Bullish": "多頭", "Neutral": "中性", "Bearish": "空頭", "Strong Bearish": "強力空頭"}
+    _V_TREND_COLOR = {"Strong Bullish": "var(--success)", "Bullish": "var(--success)", "Neutral": "var(--warning)", "Bearish": "var(--danger)", "Strong Bearish": "var(--danger)"}
+    _v_trend_display = _V_TREND_ZH[_v_trend] if _verdict_lang == "zh-TW" else _v_trend
+    _v_trend_color = _V_TREND_COLOR[_v_trend]
 
-        _trend_clause = _VERDICT_TREND_CLAUSE[v_trend][0 if _verdict_lang == "zh-TW" else 1]
-        _suit_clause = _VERDICT_SUIT_CLAUSE[v_suitable][0 if _verdict_lang == "zh-TW" else 1]
-        _risk_clause = _VERDICT_RISK_CLAUSE[v_risk][0 if _verdict_lang == "zh-TW" else 1]
+    # ── AI Final Recommendation: one market-trend clause, then up to three
+    # per-ETF role clauses (growth leader / core holding / diversifier),
+    # each assigned to a distinct ticker so no ETF is cited twice. ──────────
+    _V_MARKET_CLAUSE = {
+        "Strong Bullish": ("目前市場整體呈現強勁多頭格局", "The market is currently showing a strong bullish trend overall"),
+        "Bullish": ("目前市場仍維持多頭", "The market is currently maintaining a bullish trend"),
+        "Neutral": ("目前市場呈現盤整格局", "The market is currently consolidating"),
+        "Bearish": ("目前市場呈現空頭格局", "The market is currently in a bearish trend"),
+        "Strong Bearish": ("目前市場呈現強勁空頭格局", "The market is currently in a strong bearish trend"),
+    }
+    _clauses = [_V_MARKET_CLAUSE[_v_trend][0 if _verdict_lang == "zh-TW" else 1]]
+
+    if len(_verdict_tickers) == 1:
+        _only = _verdict_tickers[0]
         if _verdict_lang == "zh-TW":
-            v_recommendation = f"{ticker} {_trend_clause}，<br>{_suit_clause}，<br>{_risk_clause}。"
+            _clauses.append(f"{_only} 目前是唯一納入分析的標的，整體評分為 {_ai_summary_data[_only]['score']} 分")
         else:
-            v_recommendation = f"{ticker} {_trend_clause},<br>{_suit_clause},<br>{_risk_clause}."
+            _clauses.append(f"{_only} is the only ETF currently included in the analysis, with an overall score of {_ai_summary_data[_only]['score']}")
+    else:
+        _assigned = set()
+        _growth_leader = max(_verdict_tickers, key=lambda t: _ai_summary_data[t]["ret_ann"])
+        _assigned.add(_growth_leader)
+        _clauses.append(f"{_growth_leader} 擁有最佳長期成長能力" if _verdict_lang == "zh-TW" else f"{_growth_leader} offers the best long-term growth potential")
 
-        _trend_display = f"{_VERDICT_TREND_ZH[v_trend]}" if _verdict_lang == "zh-TW" else v_trend
-        _trend_color = _VERDICT_TREND_COLOR[v_trend]
+        _remaining = [t for t in _verdict_tickers if t not in _assigned]
+        if len(_verdict_tickers) >= 3 and _remaining:
+            _core_holding = max(_remaining, key=lambda t: _ai_summary_data[t]["sharpe"])
+            _assigned.add(_core_holding)
+            _clauses.append(f"{_core_holding} 適合作為核心持股" if _verdict_lang == "zh-TW" else f"{_core_holding} is well suited as a core holding")
 
+            _remaining2 = [t for t in _verdict_tickers if t not in _assigned]
+            if _remaining2:
+                _corr = etf_prices[_verdict_tickers].pct_change().dropna().corr()
+                _diversifier = min(_remaining2, key=lambda t: _corr[t].drop(t).mean() if t in _corr.columns else 0)
+                _clauses.append(f"{_diversifier} 適合分散投資" if _verdict_lang == "zh-TW" else f"{_diversifier} is well suited for diversification")
+        elif _remaining:
+            _other = _remaining[0]
+            _clauses.append(f"{_other} 可作為分散配置的補充" if _verdict_lang == "zh-TW" else f"{_other} can serve as a diversifying complement")
+
+    v_recommendation = ("，<br>".join(_clauses) + "。") if _verdict_lang == "zh-TW" else (",<br>".join(_clauses) + ".")
+
+    _v_col1, _v_col2 = st.columns([2, 3])
+    with _v_col1:
         st.markdown(
             '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-            'padding:18px 20px;margin:6px 0;box-shadow:var(--shadow-sm);">'
-            f'<div style="color:var(--text);font-weight:800;font-size:17px;margin-bottom:12px;">{ticker}</div>'
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-bottom:14px;">'
+            'padding:18px 20px;box-shadow:var(--shadow-sm);height:100%;">'
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;">'
             '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
             + ("整體評分" if _verdict_lang == "zh-TW" else "Overall Rating") + '</div>'
-            f'<div style="color:var(--text);font-weight:800;font-size:20px;">{v_score}</div></div>'
+            f'<div style="color:var(--text);font-weight:800;font-size:22px;">{_v_overall_score}</div></div>'
             '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
             + ("趨勢" if _verdict_lang == "zh-TW" else "Trend") + '</div>'
-            f'<div style="color:{_trend_color};font-weight:700;font-size:14px;">{_trend_display}</div></div>'
+            f'<div style="color:{_v_trend_color};font-weight:700;font-size:15px;">{_v_trend_display}</div></div>'
             '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
             + ("風險" if _verdict_lang == "zh-TW" else "Risk") + '</div>'
-            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_risk}</div></div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_risk}</div></div>'
             '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
             + ("預期報酬" if _verdict_lang == "zh-TW" else "Expected Return") + '</div>'
-            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_exp_return}</div></div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_exp_return}</div></div>'
             '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
             + ("投資期間" if _verdict_lang == "zh-TW" else "Investment Horizon") + '</div>'
-            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_horizon}</div></div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_horizon}</div></div>'
             '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
             + ("適合對象" if _verdict_lang == "zh-TW" else "Suitable For") + '</div>'
-            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_suitable}</div></div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_suitable}</div></div>'
             '</div>'
-            '<div style="border-top:1px solid var(--border);padding-top:12px;">'
-            '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    with _v_col2:
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:18px 20px;box-shadow:var(--shadow-sm);height:100%;">'
+            '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">'
             + ("AI 最終建議" if _verdict_lang == "zh-TW" else "AI Final Recommendation") + '</div>'
-            f'<div style="color:var(--text-secondary);font-size:12.5px;line-height:1.7;">{v_recommendation}</div>'
-            '</div>'
+            f'<div style="color:var(--text-secondary);font-size:13px;line-height:1.8;">{v_recommendation}</div>'
             '</div>',
             unsafe_allow_html=True,
         )
