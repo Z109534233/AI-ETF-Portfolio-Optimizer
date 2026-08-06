@@ -75,28 +75,25 @@ def hero_section() -> None:
     lang = get_language()
     if lang == "zh-TW":
         title = "AI ETF Portfolio Optimizer"
-        subtitle = "利用 AI 協助投資人分析 ETF、建立最佳投資組合，並掌握最新市場動態。"
+        subtitle = "利用 AI 協助投資人分析 ETF、建立最佳投資組合，並掌握最新市場動態"
         btn_primary = "開始分析"
         btn_secondary = "探索功能"
         preview_title = "投資組合預覽"
-        preview_metrics = ["預期報酬", "波動度", "夏普比率"]
-        preview_market_label = "市場"
+        preview_metrics = ["預期報酬", "波動", "Sharpe"]
     else:
         title = "AI ETF Portfolio Optimizer"
-        subtitle = "We use AI to help investors analyze ETFs, build optimal portfolios, and stay on top of the latest market trends."
+        subtitle = "We use AI to help investors analyze ETFs, build optimal portfolios, and stay on top of the latest market trends"
         btn_primary = "Start Analysis"
         btn_secondary = "Explore Features"
         preview_title = "Portfolio Preview"
-        preview_metrics = ["Expected Return", "Volatility", "Sharpe Ratio"]
-        preview_market_label = "Market"
+        preview_metrics = ["Expected Return", "Volatility", "Sharpe"]
 
     holdings = [("VOO", "40%"), ("QQQ", "35%"), ("0050", "25%")]
     metric_values = ["12.8%", "14.5%", "1.31"]
-    markets = [("US", "★★★★★"), ("TW", "★★★★☆"), ("UK", "★★★★☆")]
 
     with st.container(border=True):
         st.markdown('<div class="hero-marker"></div>', unsafe_allow_html=True)
-        col_left, col_right = st.columns([1.2, 1], gap="large")
+        col_left, col_right = st.columns([1.15, 1], gap="large")
 
         with col_left:
             st.markdown(
@@ -127,18 +124,11 @@ def hero_section() -> None:
                 f'<div class="hero-preview-metric-value">{value}</div></div>'
                 for label, value in zip(preview_metrics, metric_values)
             )
-            markets_html = "".join(
-                f'<div class="hero-preview-row"><span class="hero-preview-row-label">{code}</span>'
-                f'<span class="hero-preview-stars">{stars}</span></div>'
-                for code, stars in markets
-            )
             st.markdown(
                 '<div class="hero-preview-card">'
                 f'<div class="hero-preview-caption">{preview_title}</div>'
                 f'{holdings_html}'
                 '<div class="hero-preview-metrics">' + metrics_html + '</div>'
-                f'<div class="hero-preview-caption">{preview_market_label}</div>'
-                f'{markets_html}'
                 '</div>',
                 unsafe_allow_html=True,
             )
