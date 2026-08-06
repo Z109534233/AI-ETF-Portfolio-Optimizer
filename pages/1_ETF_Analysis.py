@@ -133,6 +133,162 @@ if etf_prices.empty:
     error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
     st.stop()
 
+# ── AI ETF Summary (rule-based, no external LLM -- a new, independent
+# section, separate from AI Insights / ETF Compare Score / ETF DNA /
+# Investment Verdict / Compare Mode further down; none of those are read
+# from or modified. Very first content section, above everything else,
+# including ETF Compare Score). ──────────────────────────────────────────────
+_sum_lang = get_language()
+section_header(
+    "AI ETF Summary",
+    "根據目前資料自動產生" if _sum_lang == "zh-TW" else
+    "Automatically generated from current data",
+)
+
+_SUM_TREND_META = {
+    "Strong Bullish": ("🟢", "var(--success)"),
+    "Bullish": ("🟢", "var(--success)"),
+    "Neutral": ("🟡", "var(--warning)"),
+    "Bearish": ("🔴", "var(--danger)"),
+    "Strong Bearish": ("🔴", "var(--danger)"),
+}
+
+
+def _ai_summary_insights(lang, s_ret_period, s_ret_ann, s_vol, s_sharpe, s_mdd, s_price, s_ma_short, s_ma_long, s_mom, s_score):
+    cands = []
+    if s_ret_period > 0.15:
+        cands.append((s_ret_period, "區間累積報酬表現強勁" if lang == "zh-TW" else "Cumulative return over the period is strong"))
+    elif s_ret_period < 0:
+        cands.append((-s_ret_period, "區間累積報酬為負" if lang == "zh-TW" else "Cumulative return over the period is negative"))
+
+    if s_ret_ann > 0.15:
+        cands.append((s_ret_ann, "年化報酬率優於市場平均" if lang == "zh-TW" else "Annualized return is above the market average"))
+    elif s_ret_ann < 0:
+        cands.append((-s_ret_ann, "年化報酬率低於預期" if lang == "zh-TW" else "Annualized return is below expectations"))
+
+    if s_vol > 0.25:
+        if s_score >= 40:
+            cands.append((s_vol, "波動增加但仍維持健康趨勢" if lang == "zh-TW" else "Volatility has increased but the trend remains healthy"))
+        else:
+            cands.append((s_vol, "波動度偏高，風險上升" if lang == "zh-TW" else "Volatility is elevated, raising risk"))
+    elif s_vol < 0.12:
+        cands.append((0.12 - s_vol, "波動度偏低，價格走勢穩定" if lang == "zh-TW" else "Volatility is low, price action is stable"))
+
+    if s_sharpe > 1.2:
+        cands.append((s_sharpe / 2, "Sharpe Ratio 高於平均，風險調整後報酬優異" if lang == "zh-TW" else "Sharpe Ratio is above average, an excellent risk-adjusted return"))
+    elif s_sharpe < 0.3:
+        cands.append((0.3 - s_sharpe, "Sharpe Ratio 偏低，風險調整後報酬不佳" if lang == "zh-TW" else "Sharpe Ratio is low, a weak risk-adjusted return"))
+
+    if s_mdd < -0.25:
+        cands.append((-s_mdd, "最大回撤較深，需留意下檔風險" if lang == "zh-TW" else "Maximum drawdown is deep, downside risk should be noted"))
+    elif s_mdd > -0.10:
+        cands.append((1 + s_mdd, "最大回撤控制良好" if lang == "zh-TW" else "Maximum drawdown is well contained"))
+
+    if s_price > s_ma_short > s_ma_long:
+        cands.append((s_price / s_ma_long - 1, "站上短期與長期均線，趨勢偏多" if lang == "zh-TW" else "Price is above both short- and long-term moving averages"))
+    elif s_price < s_ma_short < s_ma_long:
+        cands.append((s_ma_long / s_price - 1, "跌破短期與長期均線，趨勢偏空" if lang == "zh-TW" else "Price is below both short- and long-term moving averages"))
+
+    if s_mom > 0.05:
+        cands.append((s_mom, "Momentum 正在增強" if lang == "zh-TW" else "Momentum is strengthening"))
+    elif s_mom < -0.05:
+        cands.append((-s_mom, "Momentum 正在減弱" if lang == "zh-TW" else "Momentum is weakening"))
+
+    cands.sort(key=lambda c: c[0], reverse=True)
+    result = [c[1] for c in cands[:4]]
+    if len(result) < 3:
+        _fillers = (
+            ["整體風險與報酬維持平衡", "短期訊號尚不明確，建議持續觀察", "各項指標未見極端訊號"]
+            if lang == "zh-TW" else
+            ["Overall risk and return remain balanced", "Short-term signals are not yet decisive, worth continued monitoring", "No extreme signal across the tracked indicators"]
+        )
+        for f in _fillers:
+            if len(result) >= 3:
+                break
+            if f not in result:
+                result.append(f)
+    return result
+
+
+summary_cols = st.columns(len(etf_prices.columns))
+for i, ticker in enumerate(etf_prices.columns):
+    with summary_cols[i]:
+        p = etf_prices[ticker].dropna()
+        s_ret_period = p.iloc[-1] / p.iloc[0] - 1 if len(p) > 1 else 0.0
+        s_ret_ann = annualized_return(p)
+        s_vol = annualized_volatility(p)
+        s_sharpe = sharpe_ratio(p, risk_free_rate)
+        s_mdd = maximum_drawdown(p)
+        s_ma_short = sma(p, 20).iloc[-1]
+        s_ma_long = sma(p, 50).iloc[-1]
+        s_mom_last = momentum(p, 10).iloc[-1]
+        s_mom = s_mom_last if pd.notna(s_mom_last) else 0.0
+        s_price = p.iloc[-1]
+
+        s_score = 50.0
+        s_score += max(-22, min(22, s_ret_ann * 140))
+        s_score += max(-18, min(18, s_sharpe * 11))
+        s_score += max(-12, min(12, s_mom * 200))
+        s_score -= max(-8, min(22, (s_vol - 0.15) * 90))
+        s_score -= max(0, min(22, abs(s_mdd) * 55))
+        s_score = int(round(max(0, min(100, s_score))))
+
+        if s_score >= 85:
+            s_trend = "Strong Bullish"
+        elif s_score >= 65:
+            s_trend = "Bullish"
+        elif s_score >= 40:
+            s_trend = "Neutral"
+        elif s_score >= 20:
+            s_trend = "Bearish"
+        else:
+            s_trend = "Strong Bearish"
+
+        if s_score >= 90:
+            s_rec = "Buy"
+        elif s_score >= 75:
+            s_rec = "Hold"
+        elif s_score >= 60:
+            s_rec = "Watch"
+        else:
+            s_rec = "Reduce"
+
+        s_signs = [
+            1 if s_ret_ann > 0 else (-1 if s_ret_ann < 0 else 0),
+            1 if s_sharpe > 0 else (-1 if s_sharpe < 0 else 0),
+            1 if s_mom > 0 else (-1 if s_mom < 0 else 0),
+            1 if s_price > s_ma_long else (-1 if s_price < s_ma_long else 0),
+        ]
+        s_overall_sign = 1 if s_score >= 50 else -1
+        s_agreement = sum(1 for sgn in s_signs if sgn == s_overall_sign) / len(s_signs)
+        s_confidence = round(55 + s_agreement * 40)
+        if s_vol > 0.30:
+            s_confidence = max(50, s_confidence - 5)
+
+        s_insights = _ai_summary_insights(
+            _sum_lang, s_ret_period, s_ret_ann, s_vol, s_sharpe, s_mdd,
+            s_price, s_ma_short, s_ma_long, s_mom, s_score,
+        )
+        s_emoji, s_color = _SUM_TREND_META[s_trend]
+        s_insights_html = "".join(
+            f'<div style="color:var(--text-secondary);font-size:12px;line-height:1.6;">• {ins}</div>'
+            for ins in s_insights
+        )
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:16px 18px;margin:6px 0;box-shadow:var(--shadow-sm);">'
+            f'<div style="color:var(--text);font-weight:800;font-size:16px;margin-bottom:4px;">{ticker}</div>'
+            f'<div style="color:{s_color};font-weight:700;font-size:13px;margin-bottom:10px;">{s_emoji} {s_trend}</div>'
+            '<div style="color:var(--text-secondary);font-size:11px;margin-bottom:2px;">AI Score</div>'
+            f'<div style="color:var(--text);font-weight:800;font-size:20px;margin-bottom:8px;">{s_score}</div>'
+            '<div style="display:flex;justify-content:space-between;color:var(--text-secondary);font-size:11.5px;margin-bottom:10px;">'
+            f'<span>Confidence: {s_confidence}%</span><span>Recommendation: {s_rec}</span></div>'
+            '<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">AI Insights</div>'
+            f'{s_insights_html}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
 # ── ETF Compare Score (rule-based, no external LLM -- independent scoring
 # from the AI Insights section further down the page; combines Return,
 # Sharpe, Volatility, Maximum Drawdown, and Momentum into one 0-100 score
