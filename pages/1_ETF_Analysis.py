@@ -203,6 +203,25 @@ def _ai_insights(lang, ann_ret, ann_vol, sr, mom, price_now, ma_short, ma_long, 
     return [c[1] for c in cands[:3]]
 
 
+def _ai_interpretation(lines: list) -> None:
+    """Render an 'AI Interpretation' bullet block below a chart. Reused by
+    every chart on this page -- each call site computes its own `lines`
+    from that chart's actual data, nothing here is fixed text."""
+    label = "AI 解讀" if _ai_lang == "zh-TW" else "AI Interpretation"
+    items_html = "".join(
+        f'<div style="color:var(--text-secondary);font-size:12px;line-height:1.7;">• {ln}</div>'
+        for ln in lines
+    )
+    st.markdown(
+        '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);'
+        'padding:12px 16px;margin:6px 0 14px 0;">'
+        f'<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">{label}</div>'
+        f'{items_html}'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 ai_cols = st.columns(len(etf_prices.columns))
 for i, ticker in enumerate(etf_prices.columns):
     with ai_cols[i]:
@@ -284,18 +303,101 @@ if show_price:
         with tab1:
             fig = price_chart(etf_prices)
             st.plotly_chart(fig, use_container_width=True, key="etf_price_historical")
+            _chg = {}
+            for c in etf_prices.columns:
+                s = etf_prices[c].dropna()
+                if len(s) > 1:
+                    _chg[c] = s.iloc[-1] / s.iloc[0] - 1
+            if _chg:
+                _best, _worst = max(_chg, key=_chg.get), min(_chg, key=_chg.get)
+                lines = []
+                if _ai_lang == "zh-TW":
+                    lines.append(f"{_best} 期間漲幅最大（{_chg[_best]:+.1%}）")
+                    if _worst != _best:
+                        lines.append(f"{_worst} 期間表現最弱（{_chg[_worst]:+.1%}）")
+                    lines.append(f"整體平均價格變化為 {sum(_chg.values()) / len(_chg):+.1%}")
+                else:
+                    lines.append(f"{_best} gained the most over the period ({_chg[_best]:+.1%})")
+                    if _worst != _best:
+                        lines.append(f"{_worst} was the weakest performer ({_chg[_worst]:+.1%})")
+                    lines.append(f"Average price change across selected ETFs is {sum(_chg.values()) / len(_chg):+.1%}")
+                _ai_interpretation(lines)
 
         with tab2:
             fig = normalized_price_chart(etf_prices)
             st.plotly_chart(fig, use_container_width=True, key="etf_price_normalized")
+            _norm_end = {}
+            for c in etf_prices.columns:
+                s = etf_prices[c].dropna()
+                if len(s) > 1:
+                    _norm_end[c] = s.iloc[-1] / s.iloc[0] * 100
+            if _norm_end:
+                _best, _worst = max(_norm_end, key=_norm_end.get), min(_norm_end, key=_norm_end.get)
+                lines = []
+                if _ai_lang == "zh-TW":
+                    lines.append(f"以相同基準比較，{_best} 相對表現最佳（指數 {_norm_end[_best]:.1f}）")
+                    if _worst != _best:
+                        lines.append(f"{_worst} 相對表現最弱（指數 {_norm_end[_worst]:.1f}）")
+                        lines.append(f"領先與落後標的差距約 {_norm_end[_best] - _norm_end[_worst]:.1f} 個指數點")
+                    else:
+                        lines.append("僅選取單一 ETF，無相對比較對象")
+                else:
+                    lines.append(f"On a normalized basis, {_best} is the relative leader (index {_norm_end[_best]:.1f})")
+                    if _worst != _best:
+                        lines.append(f"{_worst} is the relative laggard (index {_norm_end[_worst]:.1f})")
+                        lines.append(f"Gap between leader and laggard is about {_norm_end[_best] - _norm_end[_worst]:.1f} index points")
+                    else:
+                        lines.append("Only one ETF selected, no relative comparison available")
+                _ai_interpretation(lines)
 
         with tab3:
             fig = cumulative_return_chart(etf_prices)
             st.plotly_chart(fig, use_container_width=True, key="etf_price_cumulative")
+            _cum = {}
+            for c in etf_prices.columns:
+                s = etf_prices[c].dropna()
+                if len(s) > 1:
+                    _cum[c] = (s.iloc[-1] / s.iloc[0] - 1) * 100
+            if _cum:
+                _best, _worst = max(_cum, key=_cum.get), min(_cum, key=_cum.get)
+                _pos = sum(1 for v in _cum.values() if v > 0)
+                lines = []
+                if _ai_lang == "zh-TW":
+                    lines.append(f"{_best} 累積報酬最高（{_cum[_best]:+.1f}%）")
+                    if _worst != _best:
+                        lines.append(f"{_worst} 累積報酬最低（{_cum[_worst]:+.1f}%）")
+                    lines.append(f"{_pos}/{len(_cum)} 檔 ETF 期間累積報酬為正")
+                else:
+                    lines.append(f"{_best} has the highest cumulative return ({_cum[_best]:+.1f}%)")
+                    if _worst != _best:
+                        lines.append(f"{_worst} has the lowest cumulative return ({_cum[_worst]:+.1f}%)")
+                    lines.append(f"{_pos}/{len(_cum)} selected ETFs have a positive cumulative return")
+                _ai_interpretation(lines)
 
         with tab4:
             fig = drawdown_chart(etf_prices)
             st.plotly_chart(fig, use_container_width=True, key="etf_price_drawdown")
+            _dd, _cur_dd = {}, {}
+            for c in etf_prices.columns:
+                s = etf_prices[c].dropna()
+                if len(s) > 1:
+                    roll_max = s.cummax()
+                    dd = (s - roll_max) / roll_max
+                    _dd[c] = dd.min() * 100
+                    _cur_dd[c] = dd.iloc[-1] * 100
+            if _dd:
+                _deepest = min(_dd, key=_dd.get)
+                _still_down = [c for c, v in _cur_dd.items() if v < -1]
+                lines = []
+                if _ai_lang == "zh-TW":
+                    lines.append(f"{_deepest} 歷史最大回撤最深（{_dd[_deepest]:.1f}%）")
+                    lines.append(f"目前仍處於回撤中：{'、'.join(_still_down)}" if _still_down else "所有標的目前皆已從最大回撤中恢復")
+                    lines.append(f"平均最大回撤約為 {sum(_dd.values()) / len(_dd):.1f}%")
+                else:
+                    lines.append(f"{_deepest} has the deepest historical drawdown ({_dd[_deepest]:.1f}%)")
+                    lines.append(f"Currently still in drawdown: {', '.join(_still_down)}" if _still_down else "All selected ETFs have recovered from their max drawdown")
+                    lines.append(f"Average max drawdown is about {sum(_dd.values()) / len(_dd):.1f}%")
+                _ai_interpretation(lines)
 
     # Technical indicators for single ETF
     if len(etf_prices.columns) == 1:
@@ -317,6 +419,30 @@ if show_price:
                                          fill="tonexty", fillcolor="rgba(52,211,153,0.05)"))
             fig_bb.update_layout(title=t("chart_bollinger_bands"), xaxis_title=t("chart_date"), yaxis_title=t("chart_price"))
             st.plotly_chart(apply_dark_theme(fig_bb), use_container_width=True, key="etf_bollinger_bands")
+            _bb_last = bb.iloc[-1]
+            _last_price = p.iloc[-1]
+            _band_width = (_bb_last["Upper"] - _bb_last["Lower"]) / _bb_last["Middle"] * 100 if _bb_last["Middle"] else 0
+            _pos_pct = (_last_price - _bb_last["Lower"]) / (_bb_last["Upper"] - _bb_last["Lower"]) * 100 if _bb_last["Upper"] != _bb_last["Lower"] else 50
+            lines = []
+            if _ai_lang == "zh-TW":
+                if _pos_pct >= 85:
+                    lines.append("價格接近上軌，短線有過熱疑慮")
+                elif _pos_pct <= 15:
+                    lines.append("價格接近下軌，短線可能超賣")
+                else:
+                    lines.append("價格位於通道中段，未見極端訊號")
+                lines.append(f"目前價格位於通道約 {_pos_pct:.0f}% 位置")
+                lines.append(f"通道寬度約 {_band_width:.1f}%，{'波動擴張中' if _band_width > 8 else '波動相對收斂'}")
+            else:
+                if _pos_pct >= 85:
+                    lines.append("Price is near the upper band, short-term overbought risk")
+                elif _pos_pct <= 15:
+                    lines.append("Price is near the lower band, possibly oversold")
+                else:
+                    lines.append("Price sits mid-channel, no extreme signal")
+                lines.append(f"Current price is at about {_pos_pct:.0f}% of the band width")
+                lines.append(f"Band width is about {_band_width:.1f}%, {'volatility is expanding' if _band_width > 8 else 'volatility is relatively contained'}")
+            _ai_interpretation(lines)
 
 # ── Return Analysis ───────────────────────────────────────────────────────────
 if show_returns:
@@ -329,6 +455,27 @@ if show_returns:
         with tab1:
             fig = return_distribution_chart(etf_prices)
             st.plotly_chart(fig, use_container_width=True, key="etf_return_distribution")
+            _daily = etf_prices.pct_change().dropna()
+            if not _daily.empty:
+                _pooled = _daily.values.flatten()
+                _pooled = _pooled[~np.isnan(_pooled)]
+                if len(_pooled) > 5:
+                    _mean_r = _pooled.mean()
+                    _std_r = _pooled.std()
+                    _p5 = np.percentile(_pooled, 5)
+                    _skew = pd.Series(_pooled).skew()
+                    lines = []
+                    if _ai_lang == "zh-TW":
+                        lines.append(f"平均單日報酬率約為 {_mean_r:.3%}")
+                        lines.append(f"左尾風險（5% 分位數）約為 {_p5:.2%}，代表極端下跌情境")
+                        lines.append(f"報酬波動度（標準差）約為 {_std_r:.2%}")
+                        lines.append("分布呈現右偏（正報酬機會較大）" if _skew > 0.1 else ("分布呈現左偏（極端虧損風險較高）" if _skew < -0.1 else "分布大致對稱，無明顯偏態"))
+                    else:
+                        lines.append(f"Average daily return is about {_mean_r:.3%}")
+                        lines.append(f"Left-tail risk (5th percentile) is about {_p5:.2%}, representing extreme downside scenarios")
+                        lines.append(f"Return volatility (std dev) is about {_std_r:.2%}")
+                        lines.append("Distribution is right-skewed (more upside potential)" if _skew > 0.1 else ("Distribution is left-skewed (higher extreme-loss risk)" if _skew < -0.1 else "Distribution is roughly symmetric, no strong skew"))
+                    _ai_interpretation(lines)
 
         with tab2:
             for ticker in etf_prices.columns:
@@ -339,6 +486,26 @@ if show_returns:
                         st.markdown(f"**{t('etf_monthly_returns_for', ticker=ticker)}**")
                         fig = monthly_heatmap(monthly_ret)
                         st.plotly_chart(fig, use_container_width=True, key=f"etf_monthly_heatmap_{ticker}")
+                        _month_avg = monthly_ret.mean(axis=0, skipna=True)
+                        _best_month, _worst_month = _month_avg.idxmax(), _month_avg.idxmin()
+                        _pos_rate = (monthly_ret > 0).sum(axis=0) / monthly_ret.notna().sum(axis=0)
+                        _seasonal = _pos_rate[(_pos_rate >= 0.75) | (_pos_rate <= 0.25)]
+                        lines = []
+                        if _ai_lang == "zh-TW":
+                            lines.append(f"{_best_month} 平均表現最佳（平均 {_month_avg[_best_month]:+.2%}）")
+                            lines.append(f"{_worst_month} 平均表現最差（平均 {_month_avg[_worst_month]:+.2%}）")
+                            if len(_seasonal) > 0 and monthly_ret.shape[0] >= 2:
+                                lines.append(f"{'、'.join(_seasonal.index)} 呈現較明顯的季節性傾向")
+                            else:
+                                lines.append("未觀察到明顯的季節性規律")
+                        else:
+                            lines.append(f"{_best_month} performs best on average ({_month_avg[_best_month]:+.2%})")
+                            lines.append(f"{_worst_month} performs worst on average ({_month_avg[_worst_month]:+.2%})")
+                            if len(_seasonal) > 0 and monthly_ret.shape[0] >= 2:
+                                lines.append(f"{', '.join(_seasonal.index)} show a notable seasonal tendency")
+                            else:
+                                lines.append("No clear seasonal pattern observed")
+                        _ai_interpretation(lines)
 
         with tab3:
             ticker_select = st.selectbox(t("etf_select_rolling_etf"), etf_prices.columns.tolist(), key="rolling_ticker")
@@ -347,6 +514,24 @@ if show_returns:
             if len(p) > window:
                 fig = rolling_metrics_chart(p, window)
                 st.plotly_chart(fig, use_container_width=True, key="etf_rolling_metrics")
+                _ret_series = p.pct_change().dropna()
+                _rolling_ret_valid = (_ret_series.rolling(window).mean() * 252).dropna()
+                if len(_rolling_ret_valid) > 5:
+                    _recent = _rolling_ret_valid.iloc[-1]
+                    _prior = _rolling_ret_valid.iloc[-min(window, len(_rolling_ret_valid))]
+                    _full_mean = _ret_series.mean() * 252
+                    _mom_last = momentum(p, 10).iloc[-1]
+                    _mom_recent = _mom_last if pd.notna(_mom_last) else None
+                    lines = []
+                    if _ai_lang == "zh-TW":
+                        lines.append("近期滾動報酬呈上升趨勢，動能轉強" if _recent > _prior else "近期滾動報酬呈下降趨勢，動能轉弱")
+                        lines.append("目前滾動報酬已高於長期平均，屬於突破訊號" if _recent > _full_mean else "目前滾動報酬仍低於長期平均，尚未突破")
+                        lines.append(f"10 日 Momentum {'持續增加' if _mom_recent is not None and _mom_recent > 0 else '轉為收斂或下滑'}（{_mom_recent:+.2%}）" if _mom_recent is not None else "Momentum 資料不足")
+                    else:
+                        lines.append("Recent rolling return is trending up, momentum is strengthening" if _recent > _prior else "Recent rolling return is trending down, momentum is weakening")
+                        lines.append("Rolling return is currently above the long-term average, a breakout signal" if _recent > _full_mean else "Rolling return is still below the long-term average, no breakout yet")
+                        lines.append(f"10-day Momentum is {'increasing' if _mom_recent is not None and _mom_recent > 0 else 'flattening or declining'} ({_mom_recent:+.2%})" if _mom_recent is not None else "Not enough data for Momentum")
+                    _ai_interpretation(lines)
 
         with tab4:
             returns_df = etf_prices.pct_change().dropna()
@@ -365,6 +550,24 @@ if show_returns:
                 fig.update_layout(title=t("chart_annual_performance_pct"), xaxis_title=t("chart_year"),
                                    yaxis_title=t("chart_annual_return_pct"), barmode="group")
                 st.plotly_chart(apply_dark_theme(fig), use_container_width=True, key="etf_annual_performance")
+                _yearly_avg = annual_returns.mean(axis=1)
+                _best_year, _worst_year = _yearly_avg.idxmax().year, _yearly_avg.idxmin().year
+                lines = []
+                if len(_yearly_avg) >= 2:
+                    _half = len(_yearly_avg) // 2
+                    _first_half, _second_half = _yearly_avg.iloc[:_half].mean(), _yearly_avg.iloc[_half:].mean()
+                    _trend_up = _second_half > _first_half
+                else:
+                    _trend_up = None
+                if _ai_lang == "zh-TW":
+                    lines.append(f"{_best_year} 年平均表現最佳（{_yearly_avg.max():+.1f}%）")
+                    lines.append(f"{_worst_year} 年平均表現最差（{_yearly_avg.min():+.1f}%）")
+                    lines.append(("長期趨勢偏向轉強" if _trend_up else "長期趨勢偏向轉弱") if _trend_up is not None else "資料年數過短，尚無法判斷長期趨勢")
+                else:
+                    lines.append(f"{_best_year} was the best year on average ({_yearly_avg.max():+.1f}%)")
+                    lines.append(f"{_worst_year} was the worst year on average ({_yearly_avg.min():+.1f}%)")
+                    lines.append(("Long-term trend is strengthening" if _trend_up else "Long-term trend is weakening") if _trend_up is not None else "Not enough years of data to judge the long-term trend")
+                _ai_interpretation(lines)
 
 # ── Risk Analysis ─────────────────────────────────────────────────────────────
 if show_risk:
@@ -389,6 +592,24 @@ if show_risk:
     with chart_card(t("etf_risk_vs_return_card")):
         fig = risk_return_scatter(etf_prices)
         st.plotly_chart(fig, use_container_width=True, key="etf_risk_return_scatter")
+        _rr = {}
+        for c in etf_prices.columns:
+            s = etf_prices[c].dropna()
+            if len(s) > 5:
+                _rr[c] = (annualized_return(s), annualized_volatility(s))
+        if _rr:
+            _best_ratio = max(_rr, key=lambda k: _rr[k][0] / _rr[k][1] if _rr[k][1] else 0)
+            _highest_risk = max(_rr, key=lambda k: _rr[k][1])
+            lines = []
+            if _ai_lang == "zh-TW":
+                lines.append(f"{_best_ratio} 的風險報酬比相對最佳")
+                lines.append(f"{_highest_risk} 波動度最高，風險相對集中")
+                lines.append("報酬與風險大致呈正向關係" if len(_rr) > 1 else "僅單一標的，無法比較風險報酬分布")
+            else:
+                lines.append(f"{_best_ratio} offers the best return-to-risk ratio")
+                lines.append(f"{_highest_risk} carries the highest volatility, concentrating risk")
+                lines.append("Higher return broadly tracks with higher risk here" if len(_rr) > 1 else "Only one ETF selected, no risk-return spread to compare")
+            _ai_interpretation(lines)
 
 # ── Correlation Analysis ──────────────────────────────────────────────────────
 if show_correlation:
@@ -399,6 +620,25 @@ if show_correlation:
             corr = correlation_matrix(etf_prices)
             fig = correlation_heatmap(corr)
             st.plotly_chart(fig, use_container_width=True, key="etf_correlation_heatmap")
+            _cols_c = corr.columns.tolist()
+            _pairs = [
+                (_cols_c[a], _cols_c[b], corr.iloc[a, b])
+                for a in range(len(_cols_c)) for b in range(a + 1, len(_cols_c))
+            ]
+            if _pairs:
+                _highest = max(_pairs, key=lambda x: x[2])
+                _lowest = min(_pairs, key=lambda x: x[2])
+                _avg_corr = sum(pp[2] for pp in _pairs) / len(_pairs)
+                lines = []
+                if _ai_lang == "zh-TW":
+                    lines.append(f"{_highest[0]} 與 {_highest[1]} 相關性最高（{_highest[2]:.2f}）")
+                    lines.append(f"{_lowest[0]} 與 {_lowest[1]} 相關性最低（{_lowest[2]:.2f}），分散效果較佳")
+                    lines.append(f"平均相關係數約為 {_avg_corr:.2f}，{'分散化效益有限' if _avg_corr > 0.7 else '具備一定的分散化效益'}")
+                else:
+                    lines.append(f"{_highest[0]} and {_highest[1]} are the most correlated pair ({_highest[2]:.2f})")
+                    lines.append(f"{_lowest[0]} and {_lowest[1]} are the least correlated pair ({_lowest[2]:.2f}), offering better diversification")
+                    lines.append(f"Average correlation is about {_avg_corr:.2f}, {'limiting diversification benefit' if _avg_corr > 0.7 else 'providing meaningful diversification benefit'}")
+                _ai_interpretation(lines)
 
         with chart_card(t("etf_covariance_matrix_card"), t("etf_covariance_matrix_sub")):
             cov = covariance_matrix(etf_prices)
