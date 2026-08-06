@@ -243,34 +243,25 @@ with col5:
 with col6:
     st.markdown(metric_card_html(t("metric_diversification_score"), f"{div_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 
-# ── Main Charts ───────────────────────────────────────────────────────────────
+# ── Main Charts (home page is a Preview only -- just ETF Performance and
+# Portfolio Allocation, capped to a ~380px chart height so the Dashboard
+# section (KPI row + this row) stays around 650px total. Portfolio Growth
+# and Risk vs Return stay on their own analysis pages, not duplicated here). ──
 col_left, col_right = st.columns([3, 2])
 
 with col_left:
     with chart_card(t("home_chart_etf_performance_title"), t("home_chart_etf_performance_sub")):
         if not etf_prices.empty:
             fig_norm = normalized_price_chart(etf_prices)
+            fig_norm.update_layout(height=380)
             st.plotly_chart(fig_norm, use_container_width=True, key="home_normalized_price")
 
 with col_right:
     with chart_card(t("home_chart_allocation_title"), t("home_chart_allocation_sub")):
         weights_dict = {tk: 1.0 / len(etf_prices.columns) for tk in etf_prices.columns}
         fig_donut = allocation_donut_chart(weights_dict, "")
+        fig_donut.update_layout(height=380)
         st.plotly_chart(fig_donut, use_container_width=True, key="home_allocation_donut")
-
-col_left2, col_right2 = st.columns([3, 2])
-
-with col_left2:
-    with chart_card(t("home_chart_growth_title"), t("home_chart_growth_sub")):
-        if not etf_prices.empty:
-            fig_cum = cumulative_return_chart(etf_prices)
-            st.plotly_chart(fig_cum, use_container_width=True, key="home_cumulative_return")
-
-with col_right2:
-    with chart_card(t("home_chart_risk_return_title"), t("home_chart_risk_return_sub")):
-        if not etf_prices.empty:
-            fig_rr = risk_return_scatter(etf_prices)
-            st.plotly_chart(fig_rr, use_container_width=True, key="home_risk_return")
 
 # ── Technology Stack ──────────────────────────────────────────────────────────
 section_header(t("home_tech_stack_title"))
