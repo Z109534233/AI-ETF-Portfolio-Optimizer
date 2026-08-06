@@ -753,20 +753,29 @@ def _ai_insights(lang, ann_ret, ann_vol, sr, mom, price_now, ma_short, ma_long, 
     return [c[1] for c in cands[:3]]
 
 
-def _ai_interpretation(lines: list) -> None:
-    """Render an 'AI Interpretation' bullet block below a chart. Reused by
-    every chart on this page -- each call site computes its own `lines`
-    from that chart's actual data, nothing here is fixed text."""
-    label = "AI 解讀" if _ai_lang == "zh-TW" else "AI Interpretation"
-    items_html = "".join(
-        f'<div style="color:var(--text-secondary);font-size:12px;line-height:1.7;">• {ln}</div>'
-        for ln in lines
+def _ai_interpretation(key_findings, investment_insight: str, risk_reminder: str) -> None:
+    """Render a 3-part 'AI Interpretation' block below a chart: Key
+    Findings, Investment Insight, Risk Reminder. Reused by every chart on
+    this page -- each call site computes its own content from that chart's
+    actual data and is written to answer "so what", not just restate
+    numbers; nothing here is fixed text. `key_findings` is a string or a
+    list of 1-2 strings."""
+    if isinstance(key_findings, str):
+        key_findings = [key_findings]
+    _kf_html = "".join(
+        f'<div style="color:var(--text);font-size:12.5px;line-height:1.6;">• {kf}</div>'
+        for kf in key_findings
     )
     st.markdown(
         '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);'
         'padding:12px 16px;margin:6px 0 14px 0;">'
-        f'<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">{label}</div>'
-        f'{items_html}'
+        '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">AI Interpretation</div>'
+        '<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">Key Findings</div>'
+        f'{_kf_html}'
+        '<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 3px 0;">Investment Insight</div>'
+        f'<div style="color:var(--success);font-size:12.5px;line-height:1.6;">{investment_insight}</div>'
+        '<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 3px 0;">Risk Reminder</div>'
+        f'<div style="color:var(--warning);font-size:12.5px;line-height:1.6;">{risk_reminder}</div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -926,18 +935,21 @@ if show_price:
                     _chg[c] = s.iloc[-1] / s.iloc[0] - 1
             if _chg:
                 _best, _worst = max(_chg, key=_chg.get), min(_chg, key=_chg.get)
-                lines = []
+                _avg_chg = sum(_chg.values()) / len(_chg)
+                _bullish = _avg_chg > 0
                 if _ai_lang == "zh-TW":
-                    lines.append(f"{_best} 期間漲幅最大（{_chg[_best]:+.1%}）")
+                    kf = [f"{_best} 期間漲幅最大（{_chg[_best]:+.1%}）"]
                     if _worst != _best:
-                        lines.append(f"{_worst} 期間表現最弱（{_chg[_worst]:+.1%}）")
-                    lines.append(f"整體平均價格變化為 {sum(_chg.values()) / len(_chg):+.1%}")
+                        kf.append(f"{_worst} 期間表現最弱（{_chg[_worst]:+.1%}）")
+                    insight = "目前仍維持多頭趨勢，適合以長期持有的角度觀察後續表現" if _bullish else "目前呈現空頭趨勢，短線進場需更加謹慎，建議等待訊號轉強"
+                    risk = "價格走勢可能反轉，過去的漲跌不代表未來一定延續"
                 else:
-                    lines.append(f"{_best} gained the most over the period ({_chg[_best]:+.1%})")
+                    kf = [f"{_best} gained the most over the period ({_chg[_best]:+.1%})"]
                     if _worst != _best:
-                        lines.append(f"{_worst} was the weakest performer ({_chg[_worst]:+.1%})")
-                    lines.append(f"Average price change across selected ETFs is {sum(_chg.values()) / len(_chg):+.1%}")
-                _ai_interpretation(lines)
+                        kf.append(f"{_worst} was the weakest performer ({_chg[_worst]:+.1%})")
+                    insight = "The trend remains bullish, worth holding with a long-term view" if _bullish else "The trend is currently bearish, short-term entries warrant extra caution until it turns"
+                    risk = "Price trends can reverse -- past performance is no guarantee of what comes next"
+                _ai_interpretation(kf, insight, risk)
 
         with tab2:
             fig = normalized_price_chart(etf_prices)
@@ -949,22 +961,28 @@ if show_price:
                     _norm_end[c] = s.iloc[-1] / s.iloc[0] * 100
             if _norm_end:
                 _best, _worst = max(_norm_end, key=_norm_end.get), min(_norm_end, key=_norm_end.get)
-                lines = []
-                if _ai_lang == "zh-TW":
-                    lines.append(f"以相同基準比較，{_best} 相對表現最佳（指數 {_norm_end[_best]:.1f}）")
-                    if _worst != _best:
-                        lines.append(f"{_worst} 相對表現最弱（指數 {_norm_end[_worst]:.1f}）")
-                        lines.append(f"領先與落後標的差距約 {_norm_end[_best] - _norm_end[_worst]:.1f} 個指數點")
+                if _worst != _best:
+                    _gap = _norm_end[_best] - _norm_end[_worst]
+                    _wide_gap = _gap > 15
+                    if _ai_lang == "zh-TW":
+                        kf = [
+                            f"以相同基準比較，{_best} 相對表現最佳（指數 {_norm_end[_best]:.1f}）",
+                            f"{_worst} 相對表現最弱（指數 {_norm_end[_worst]:.1f}），差距約 {_gap:.1f} 個指數點",
+                        ]
+                        insight = f"領先幅度明顯，新增資金可優先考慮 {_best}" if _wide_gap else f"{_best} 與 {_worst} 表現差距不大，可依個人配置偏好選擇"
+                        risk = f"相對強弱可能反轉，{_worst} 落後不代表長期基本面較差"
                     else:
-                        lines.append("僅選取單一 ETF，無相對比較對象")
+                        kf = [
+                            f"On a normalized basis, {_best} is the relative leader (index {_norm_end[_best]:.1f})",
+                            f"{_worst} is the relative laggard (index {_norm_end[_worst]:.1f}), a gap of about {_gap:.1f} index points",
+                        ]
+                        insight = f"The lead is significant -- new allocations could favor {_best}" if _wide_gap else f"{_best} and {_worst} are fairly close, so the choice can follow personal allocation preference"
+                        risk = f"Relative strength can flip -- {_worst} trailing now doesn't imply weaker long-term fundamentals"
                 else:
-                    lines.append(f"On a normalized basis, {_best} is the relative leader (index {_norm_end[_best]:.1f})")
-                    if _worst != _best:
-                        lines.append(f"{_worst} is the relative laggard (index {_norm_end[_worst]:.1f})")
-                        lines.append(f"Gap between leader and laggard is about {_norm_end[_best] - _norm_end[_worst]:.1f} index points")
-                    else:
-                        lines.append("Only one ETF selected, no relative comparison available")
-                _ai_interpretation(lines)
+                    kf = ["僅選取單一 ETF，無相對比較對象"] if _ai_lang == "zh-TW" else ["Only one ETF is selected, so there's no relative comparison"]
+                    insight = "建議加入至少一檔其他 ETF 以評估相對強弱" if _ai_lang == "zh-TW" else "Consider adding at least one more ETF to gauge relative strength"
+                    risk = "單一標的無法分散非系統性風險" if _ai_lang == "zh-TW" else "A single holding carries undiversified idiosyncratic risk"
+                _ai_interpretation(kf, insight, risk)
 
         with tab3:
             fig = cumulative_return_chart(etf_prices)
@@ -977,18 +995,20 @@ if show_price:
             if _cum:
                 _best, _worst = max(_cum, key=_cum.get), min(_cum, key=_cum.get)
                 _pos = sum(1 for v in _cum.values() if v > 0)
-                lines = []
+                _majority_positive = _pos >= len(_cum) / 2
                 if _ai_lang == "zh-TW":
-                    lines.append(f"{_best} 累積報酬最高（{_cum[_best]:+.1f}%）")
+                    kf = [f"{_best} 累積報酬最高（{_cum[_best]:+.1f}%）"]
                     if _worst != _best:
-                        lines.append(f"{_worst} 累積報酬最低（{_cum[_worst]:+.1f}%）")
-                    lines.append(f"{_pos}/{len(_cum)} 檔 ETF 期間累積報酬為正")
+                        kf.append(f"{_worst} 累積報酬最低（{_cum[_worst]:+.1f}%）")
+                    insight = f"{_pos}/{len(_cum)} 檔標的期間內維持正向複利成長，整體配置方向正確" if _majority_positive else f"僅 {_pos}/{len(_cum)} 檔標的為正報酬，建議重新檢視配置權重"
+                    risk = "累積報酬可能因單一區間的大幅回檔而快速侵蝕，不代表未來持續複利"
                 else:
-                    lines.append(f"{_best} has the highest cumulative return ({_cum[_best]:+.1f}%)")
+                    kf = [f"{_best} has the highest cumulative return ({_cum[_best]:+.1f}%)"]
                     if _worst != _best:
-                        lines.append(f"{_worst} has the lowest cumulative return ({_cum[_worst]:+.1f}%)")
-                    lines.append(f"{_pos}/{len(_cum)} selected ETFs have a positive cumulative return")
-                _ai_interpretation(lines)
+                        kf.append(f"{_worst} has the lowest cumulative return ({_cum[_worst]:+.1f}%)")
+                    insight = f"{_pos}/{len(_cum)} holdings have compounded positively over the period, supporting the current allocation" if _majority_positive else f"Only {_pos}/{len(_cum)} holdings are positive -- worth revisiting the allocation weights"
+                    risk = "Cumulative gains can erode quickly in a sharp drawdown -- past compounding doesn't guarantee it continues"
+                _ai_interpretation(kf, insight, risk)
 
         with tab4:
             fig = drawdown_chart(etf_prices)
@@ -1004,16 +1024,47 @@ if show_price:
             if _dd:
                 _deepest = min(_dd, key=_dd.get)
                 _still_down = [c for c, v in _cur_dd.items() if v < -1]
-                lines = []
-                if _ai_lang == "zh-TW":
-                    lines.append(f"{_deepest} 歷史最大回撤最深（{_dd[_deepest]:.1f}%）")
-                    lines.append(f"目前仍處於回撤中：{'、'.join(_still_down)}" if _still_down else "所有標的目前皆已從最大回撤中恢復")
-                    lines.append(f"平均最大回撤約為 {sum(_dd.values()) / len(_dd):.1f}%")
+
+                # Recovery speed for the deepest-drawdown ticker: trading
+                # days from its trough back to the prior peak (or "not yet
+                # recovered" if the price hasn't gotten back there).
+                _dd_s = etf_prices[_deepest].dropna()
+                _dd_roll_max = _dd_s.cummax()
+                _dd_series = (_dd_s - _dd_roll_max) / _dd_roll_max
+                _trough_idx = _dd_series.idxmin()
+                _peak_before = _dd_roll_max.loc[_trough_idx]
+                _after_trough = _dd_s.loc[_trough_idx:]
+                _recovered_pts = _after_trough[_after_trough >= _peak_before]
+                if len(_recovered_pts) > 1:
+                    _recovery_days = (_recovered_pts.index[1] - _trough_idx).days
+                    if _recovery_days <= 60:
+                        _recovery_zh, _recovery_en = "快", "fast"
+                    elif _recovery_days <= 180:
+                        _recovery_zh, _recovery_en = "中等", "moderate"
+                    else:
+                        _recovery_zh, _recovery_en = "慢", "slow"
                 else:
-                    lines.append(f"{_deepest} has the deepest historical drawdown ({_dd[_deepest]:.1f}%)")
-                    lines.append(f"Currently still in drawdown: {', '.join(_still_down)}" if _still_down else "All selected ETFs have recovered from their max drawdown")
-                    lines.append(f"Average max drawdown is about {sum(_dd.values()) / len(_dd):.1f}%")
-                _ai_interpretation(lines)
+                    _recovery_zh, _recovery_en = "尚未恢復", "not yet recovered"
+
+                _dd_pct = abs(_dd[_deepest])
+                if _dd_pct < 10:
+                    _risk_zh, _risk_en = "偏低", "relatively low"
+                elif _dd_pct < 25:
+                    _risk_zh, _risk_en = "中等", "medium"
+                else:
+                    _risk_zh, _risk_en = "偏高", "elevated"
+
+                if _ai_lang == "zh-TW":
+                    kf = [f"目前最大回撤為 {_dd_pct:.1f}%（{_deepest}）"]
+                    kf.append(f"目前仍處於回撤中：{'、'.join(_still_down)}" if _still_down else "所有標的目前皆已從最大回撤中恢復")
+                    insight = f"歷史恢復速度{_recovery_zh}，顯示波動後仍具備修復能力" if _recovery_zh != "尚未恢復" else "尚未從最深回撤恢復，建議持續觀察後續走勢"
+                    risk = f"風險屬於{_risk_zh}，實際投資仍應搭配自身風險承受度評估"
+                else:
+                    kf = [f"Current maximum drawdown is {_dd_pct:.1f}% ({_deepest})"]
+                    kf.append(f"Currently still in drawdown: {', '.join(_still_down)}" if _still_down else "All selected ETFs have recovered from their max drawdown")
+                    insight = f"Historical recovery speed is {_recovery_en}, showing it can bounce back after a drop" if _recovery_en != "not yet recovered" else "Hasn't recovered from its deepest drawdown yet -- worth continued monitoring"
+                    risk = f"Risk is {_risk_en} -- weigh this against your own risk tolerance before investing"
+                _ai_interpretation(kf, insight, risk)
 
     # Technical indicators for single ETF
     if len(etf_prices.columns) == 1:
@@ -1039,26 +1090,32 @@ if show_price:
             _last_price = p.iloc[-1]
             _band_width = (_bb_last["Upper"] - _bb_last["Lower"]) / _bb_last["Middle"] * 100 if _bb_last["Middle"] else 0
             _pos_pct = (_last_price - _bb_last["Lower"]) / (_bb_last["Upper"] - _bb_last["Lower"]) * 100 if _bb_last["Upper"] != _bb_last["Lower"] else 50
-            lines = []
+            _expanding = _band_width > 8
             if _ai_lang == "zh-TW":
                 if _pos_pct >= 85:
-                    lines.append("價格接近上軌，短線有過熱疑慮")
+                    kf = ["價格接近上軌，短線有過熱疑慮"]
+                    insight = "短線可能面臨獲利了結賣壓，追高需留意進場時機"
                 elif _pos_pct <= 15:
-                    lines.append("價格接近下軌，短線可能超賣")
+                    kf = ["價格接近下軌，短線可能超賣"]
+                    insight = "若基本面未變，短線超賣有機會出現反彈"
                 else:
-                    lines.append("價格位於通道中段，未見極端訊號")
-                lines.append(f"目前價格位於通道約 {_pos_pct:.0f}% 位置")
-                lines.append(f"通道寬度約 {_band_width:.1f}%，{'波動擴張中' if _band_width > 8 else '波動相對收斂'}")
+                    kf = ["價格位於通道中段，未見極端訊號"]
+                    insight = "目前無明顯短線訊號，可持續觀察待突破再行動"
+                kf.append(f"目前價格位於通道約 {_pos_pct:.0f}% 位置，通道寬度約 {_band_width:.1f}%")
+                risk = "波動正在擴張，區間可能加大" if _expanding else "波動相對收斂，但盤整後仍可能出現方向性突破"
             else:
                 if _pos_pct >= 85:
-                    lines.append("Price is near the upper band, short-term overbought risk")
+                    kf = ["Price is near the upper band, short-term overbought risk"]
+                    insight = "May face short-term profit-taking pressure -- be mindful of entry timing when chasing strength"
                 elif _pos_pct <= 15:
-                    lines.append("Price is near the lower band, possibly oversold")
+                    kf = ["Price is near the lower band, possibly oversold"]
+                    insight = "If fundamentals are unchanged, an oversold bounce is possible in the short term"
                 else:
-                    lines.append("Price sits mid-channel, no extreme signal")
-                lines.append(f"Current price is at about {_pos_pct:.0f}% of the band width")
-                lines.append(f"Band width is about {_band_width:.1f}%, {'volatility is expanding' if _band_width > 8 else 'volatility is relatively contained'}")
-            _ai_interpretation(lines)
+                    kf = ["Price sits mid-channel, no extreme signal"]
+                    insight = "No clear short-term signal right now -- worth waiting for a breakout before acting"
+                kf.append(f"Current price is at about {_pos_pct:.0f}% of the band width, band width is about {_band_width:.1f}%")
+                risk = "Volatility is expanding, so the range could widen further" if _expanding else "Volatility is relatively contained, but a directional breakout can still follow a quiet period"
+            _ai_interpretation(kf, insight, risk)
 
 # ── Return Analysis ───────────────────────────────────────────────────────────
 if show_returns:
@@ -1080,18 +1137,23 @@ if show_returns:
                     _std_r = _pooled.std()
                     _p5 = np.percentile(_pooled, 5)
                     _skew = pd.Series(_pooled).skew()
-                    lines = []
+                    _skew_positive = _skew > 0.1
+                    _skew_negative = _skew < -0.1
                     if _ai_lang == "zh-TW":
-                        lines.append(f"平均單日報酬率約為 {_mean_r:.3%}")
-                        lines.append(f"左尾風險（5% 分位數）約為 {_p5:.2%}，代表極端下跌情境")
-                        lines.append(f"報酬波動度（標準差）約為 {_std_r:.2%}")
-                        lines.append("分布呈現右偏（正報酬機會較大）" if _skew > 0.1 else ("分布呈現左偏（極端虧損風險較高）" if _skew < -0.1 else "分布大致對稱，無明顯偏態"))
+                        kf = [
+                            f"平均單日報酬率約為 {_mean_r:.3%}，波動度（標準差）約為 {_std_r:.2%}",
+                            "分布呈現右偏（正報酬機會較大）" if _skew_positive else ("分布呈現左偏（極端虧損風險較高）" if _skew_negative else "分布大致對稱，無明顯偏態"),
+                        ]
+                        insight = "右偏結構對長期持有者相對有利，適合以時間換取複利機會" if _skew_positive else ("左偏結構代表需特別留意黑天鵝式重挫，配置時應保留緩衝" if _skew_negative else "報酬分布均衡，可依常見資產配置原則決定部位大小")
+                        risk = f"左尾風險（5% 分位數）約為 {_p5:.2%}，代表極端下跌情境仍可能發生"
                     else:
-                        lines.append(f"Average daily return is about {_mean_r:.3%}")
-                        lines.append(f"Left-tail risk (5th percentile) is about {_p5:.2%}, representing extreme downside scenarios")
-                        lines.append(f"Return volatility (std dev) is about {_std_r:.2%}")
-                        lines.append("Distribution is right-skewed (more upside potential)" if _skew > 0.1 else ("Distribution is left-skewed (higher extreme-loss risk)" if _skew < -0.1 else "Distribution is roughly symmetric, no strong skew"))
-                    _ai_interpretation(lines)
+                        kf = [
+                            f"Average daily return is about {_mean_r:.3%}, with volatility (std dev) around {_std_r:.2%}",
+                            "Distribution is right-skewed (more upside potential)" if _skew_positive else ("Distribution is left-skewed (higher extreme-loss risk)" if _skew_negative else "Distribution is roughly symmetric, no strong skew"),
+                        ]
+                        insight = "The right-skewed shape favors patient, long-term holders looking to compound over time" if _skew_positive else ("The left-skewed shape means occasional sharp losses are more likely -- keep a buffer when sizing positions" if _skew_negative else "Returns are fairly balanced, so standard position-sizing guidelines should apply")
+                        risk = f"Left-tail risk (5th percentile) is about {_p5:.2%} -- extreme downside days can still happen"
+                    _ai_interpretation(kf, insight, risk)
 
         with tab2:
             for ticker in etf_prices.columns:
@@ -1106,22 +1168,22 @@ if show_returns:
                         _best_month, _worst_month = _month_avg.idxmax(), _month_avg.idxmin()
                         _pos_rate = (monthly_ret > 0).sum(axis=0) / monthly_ret.notna().sum(axis=0)
                         _seasonal = _pos_rate[(_pos_rate >= 0.75) | (_pos_rate <= 0.25)]
-                        lines = []
+                        _has_seasonality = len(_seasonal) > 0 and monthly_ret.shape[0] >= 2
                         if _ai_lang == "zh-TW":
-                            lines.append(f"{_best_month} 平均表現最佳（平均 {_month_avg[_best_month]:+.2%}）")
-                            lines.append(f"{_worst_month} 平均表現最差（平均 {_month_avg[_worst_month]:+.2%}）")
-                            if len(_seasonal) > 0 and monthly_ret.shape[0] >= 2:
-                                lines.append(f"{'、'.join(_seasonal.index)} 呈現較明顯的季節性傾向")
-                            else:
-                                lines.append("未觀察到明顯的季節性規律")
+                            kf = [
+                                f"{_best_month} 平均表現最佳（平均 {_month_avg[_best_month]:+.2%}）",
+                                f"{_worst_month} 平均表現最差（平均 {_month_avg[_worst_month]:+.2%}）",
+                            ]
+                            insight = f"{'、'.join(_seasonal.index)} 呈現較明顯的季節性傾向，可作為調整進出場時機的參考之一" if _has_seasonality else "未觀察到明顯的季節性規律，以月份作為進出場依據效益有限"
+                            risk = "季節性型態基於歷史統計，樣本有限且不保證重演，不應作為唯一決策依據"
                         else:
-                            lines.append(f"{_best_month} performs best on average ({_month_avg[_best_month]:+.2%})")
-                            lines.append(f"{_worst_month} performs worst on average ({_month_avg[_worst_month]:+.2%})")
-                            if len(_seasonal) > 0 and monthly_ret.shape[0] >= 2:
-                                lines.append(f"{', '.join(_seasonal.index)} show a notable seasonal tendency")
-                            else:
-                                lines.append("No clear seasonal pattern observed")
-                        _ai_interpretation(lines)
+                            kf = [
+                                f"{_best_month} performs best on average ({_month_avg[_best_month]:+.2%})",
+                                f"{_worst_month} performs worst on average ({_month_avg[_worst_month]:+.2%})",
+                            ]
+                            insight = f"{', '.join(_seasonal.index)} show a notable seasonal tendency, which could be one input for timing entries and exits" if _has_seasonality else "No clear seasonal pattern observed -- timing trades by calendar month is unlikely to add much value here"
+                            risk = "Seasonal patterns are based on limited historical samples and aren't guaranteed to repeat -- don't rely on this alone"
+                        _ai_interpretation(kf, insight, risk)
 
         with tab3:
             ticker_select = st.selectbox(t("etf_select_rolling_etf"), etf_prices.columns.tolist(), key="rolling_ticker")
@@ -1138,16 +1200,24 @@ if show_returns:
                     _full_mean = _ret_series.mean() * 252
                     _mom_last = momentum(p, 10).iloc[-1]
                     _mom_recent = _mom_last if pd.notna(_mom_last) else None
-                    lines = []
+                    _strengthening = _recent > _prior
+                    _breakout = _recent > _full_mean
+                    _mom_up = _mom_recent is not None and _mom_recent > 0
                     if _ai_lang == "zh-TW":
-                        lines.append("近期滾動報酬呈上升趨勢，動能轉強" if _recent > _prior else "近期滾動報酬呈下降趨勢，動能轉弱")
-                        lines.append("目前滾動報酬已高於長期平均，屬於突破訊號" if _recent > _full_mean else "目前滾動報酬仍低於長期平均，尚未突破")
-                        lines.append(f"10 日 Momentum {'持續增加' if _mom_recent is not None and _mom_recent > 0 else '轉為收斂或下滑'}（{_mom_recent:+.2%}）" if _mom_recent is not None else "Momentum 資料不足")
+                        kf = [
+                            "近期滾動報酬呈上升趨勢，動能轉強" if _strengthening else "近期滾動報酬呈下降趨勢，動能轉弱",
+                            "目前滾動報酬已高於長期平均，屬於突破訊號" if _breakout else "目前滾動報酬仍低於長期平均，尚未突破",
+                        ]
+                        insight = "趨勢與動能同步轉強，可能是相對有利的進場時機" if (_strengthening and _breakout) else "訊號尚未一致轉強，建議等待更明確的突破確認再加碼"
+                        risk = (f"10 日 Momentum {'持續增加' if _mom_up else '轉為收斂或下滑'}（{_mom_recent:+.2%}），但動能類指標容易反轉，且滾動指標本身落後於即時價格" if _mom_recent is not None else "Momentum 資料不足，且滾動指標本身落後於即時價格")
                     else:
-                        lines.append("Recent rolling return is trending up, momentum is strengthening" if _recent > _prior else "Recent rolling return is trending down, momentum is weakening")
-                        lines.append("Rolling return is currently above the long-term average, a breakout signal" if _recent > _full_mean else "Rolling return is still below the long-term average, no breakout yet")
-                        lines.append(f"10-day Momentum is {'increasing' if _mom_recent is not None and _mom_recent > 0 else 'flattening or declining'} ({_mom_recent:+.2%})" if _mom_recent is not None else "Not enough data for Momentum")
-                    _ai_interpretation(lines)
+                        kf = [
+                            "Recent rolling return is trending up, momentum is strengthening" if _strengthening else "Recent rolling return is trending down, momentum is weakening",
+                            "Rolling return is currently above the long-term average, a breakout signal" if _breakout else "Rolling return is still below the long-term average, no breakout yet",
+                        ]
+                        insight = "Trend and momentum are strengthening together, potentially a favorable entry window" if (_strengthening and _breakout) else "Signals aren't fully aligned yet -- worth waiting for a clearer breakout before adding"
+                        risk = (f"10-day Momentum is {'increasing' if _mom_up else 'flattening or declining'} ({_mom_recent:+.2%}), but momentum indicators can reverse quickly and rolling metrics lag real-time price" if _mom_recent is not None else "Not enough data for Momentum, and rolling metrics lag real-time price")
+                    _ai_interpretation(kf, insight, risk)
 
         with tab4:
             returns_df = etf_prices.pct_change().dropna()
@@ -1168,22 +1238,34 @@ if show_returns:
                 st.plotly_chart(apply_dark_theme(fig), use_container_width=True, key="etf_annual_performance")
                 _yearly_avg = annual_returns.mean(axis=1)
                 _best_year, _worst_year = _yearly_avg.idxmax().year, _yearly_avg.idxmin().year
-                lines = []
                 if len(_yearly_avg) >= 2:
                     _half = len(_yearly_avg) // 2
                     _first_half, _second_half = _yearly_avg.iloc[:_half].mean(), _yearly_avg.iloc[_half:].mean()
                     _trend_up = _second_half > _first_half
                 else:
                     _trend_up = None
+                _year_spread = _yearly_avg.max() - _yearly_avg.min()
                 if _ai_lang == "zh-TW":
-                    lines.append(f"{_best_year} 年平均表現最佳（{_yearly_avg.max():+.1f}%）")
-                    lines.append(f"{_worst_year} 年平均表現最差（{_yearly_avg.min():+.1f}%）")
-                    lines.append(("長期趨勢偏向轉強" if _trend_up else "長期趨勢偏向轉弱") if _trend_up is not None else "資料年數過短，尚無法判斷長期趨勢")
+                    kf = [
+                        f"{_best_year} 年平均表現最佳（{_yearly_avg.max():+.1f}%）",
+                        f"{_worst_year} 年平均表現最差（{_yearly_avg.min():+.1f}%）",
+                    ]
+                    if _trend_up is None:
+                        insight = "資料年數過短，尚無法判斷長期趨勢，建議搭配更長期的數據評估"
+                    else:
+                        insight = "長期趨勢偏向轉強，支持持續採用目前的長期配置方向" if _trend_up else "長期趨勢偏向轉弱，建議重新檢視長期投資邏輯是否仍然成立"
+                    risk = f"年度報酬落差達 {_year_spread:.1f} 個百分點，顯示年與年之間的波動不小，需有承受單一年度虧損的心理準備"
                 else:
-                    lines.append(f"{_best_year} was the best year on average ({_yearly_avg.max():+.1f}%)")
-                    lines.append(f"{_worst_year} was the worst year on average ({_yearly_avg.min():+.1f}%)")
-                    lines.append(("Long-term trend is strengthening" if _trend_up else "Long-term trend is weakening") if _trend_up is not None else "Not enough years of data to judge the long-term trend")
-                _ai_interpretation(lines)
+                    kf = [
+                        f"{_best_year} was the best year on average ({_yearly_avg.max():+.1f}%)",
+                        f"{_worst_year} was the worst year on average ({_yearly_avg.min():+.1f}%)",
+                    ]
+                    if _trend_up is None:
+                        insight = "Not enough years of data to judge the long-term trend -- worth revisiting with a longer history"
+                    else:
+                        insight = "Long-term trend is strengthening, supporting the current long-term allocation approach" if _trend_up else "Long-term trend is weakening -- worth re-examining whether the long-term thesis still holds"
+                    risk = f"The spread between the best and worst year is {_year_spread:.1f} percentage points -- year-to-year swings can be sizable, so be prepared for down years"
+                _ai_interpretation(kf, insight, risk)
 
 # ── Risk Analysis ─────────────────────────────────────────────────────────────
 if show_risk:
@@ -1216,16 +1298,20 @@ if show_risk:
         if _rr:
             _best_ratio = max(_rr, key=lambda k: _rr[k][0] / _rr[k][1] if _rr[k][1] else 0)
             _highest_risk = max(_rr, key=lambda k: _rr[k][1])
-            lines = []
-            if _ai_lang == "zh-TW":
-                lines.append(f"{_best_ratio} 的風險報酬比相對最佳")
-                lines.append(f"{_highest_risk} 波動度最高，風險相對集中")
-                lines.append("報酬與風險大致呈正向關係" if len(_rr) > 1 else "僅單一標的，無法比較風險報酬分布")
+            if len(_rr) > 1:
+                if _ai_lang == "zh-TW":
+                    kf = [f"{_best_ratio} 的風險報酬比相對最佳", f"{_highest_risk} 波動度最高，風險相對集中"]
+                    insight = f"就目前選取的標的而言，{_best_ratio} 的風險調整後表現較值得優先考慮" if _best_ratio != _highest_risk else f"{_best_ratio} 兼具最高波動與最佳比率，屬於高風險高報酬型標的，配置比重應審慎拿捏"
+                    risk = f"{_highest_risk} 的波動度最高，短線震盪可能較大，配置比重不宜過度集中"
+                else:
+                    kf = [f"{_best_ratio} offers the best return-to-risk ratio", f"{_highest_risk} carries the highest volatility, concentrating risk"]
+                    insight = f"Among the current selection, {_best_ratio} looks worth prioritizing on a risk-adjusted basis" if _best_ratio != _highest_risk else f"{_best_ratio} combines the highest volatility with the best ratio -- a high-risk, high-return profile that needs careful position sizing"
+                    risk = f"{_highest_risk} carries the highest volatility -- short-term swings could be larger, so avoid over-concentrating in it"
             else:
-                lines.append(f"{_best_ratio} offers the best return-to-risk ratio")
-                lines.append(f"{_highest_risk} carries the highest volatility, concentrating risk")
-                lines.append("Higher return broadly tracks with higher risk here" if len(_rr) > 1 else "Only one ETF selected, no risk-return spread to compare")
-            _ai_interpretation(lines)
+                kf = ["僅單一標的，無法比較風險報酬分布"] if _ai_lang == "zh-TW" else ["Only one ETF is selected, so there's no risk-return spread to compare"]
+                insight = "建議加入至少一檔其他 ETF 以評估相對風險報酬位置" if _ai_lang == "zh-TW" else "Consider adding at least one more ETF to gauge its relative risk-return position"
+                risk = "單一標的的風險完全取決於該檔本身，缺乏分散效果" if _ai_lang == "zh-TW" else "A single holding's risk is fully tied to that one ETF, with no diversification benefit"
+            _ai_interpretation(kf, insight, risk)
 
 # ── Correlation Analysis ──────────────────────────────────────────────────────
 if show_correlation:
@@ -1245,16 +1331,41 @@ if show_correlation:
                 _highest = max(_pairs, key=lambda x: x[2])
                 _lowest = min(_pairs, key=lambda x: x[2])
                 _avg_corr = sum(pp[2] for pp in _pairs) / len(_pairs)
-                lines = []
-                if _ai_lang == "zh-TW":
-                    lines.append(f"{_highest[0]} 與 {_highest[1]} 相關性最高（{_highest[2]:.2f}）")
-                    lines.append(f"{_lowest[0]} 與 {_lowest[1]} 相關性最低（{_lowest[2]:.2f}），分散效果較佳")
-                    lines.append(f"平均相關係數約為 {_avg_corr:.2f}，{'分散化效益有限' if _avg_corr > 0.7 else '具備一定的分散化效益'}")
+
+                # Which single ticker adds the LEAST diversification: the one
+                # with the highest average correlation to every other ticker.
+                _avg_corr_by_ticker = {
+                    tk: corr[tk].drop(tk).mean() for tk in _cols_c if tk in corr.columns
+                }
+                _least_diversifying = max(_avg_corr_by_ticker, key=_avg_corr_by_ticker.get)
+                _limited_benefit = _avg_corr_by_ticker[_least_diversifying] > 0.7
+
+                if _highest[2] > 0.7:
+                    _highest_zh, _highest_en = "高度相關", "highly correlated"
+                elif _highest[2] > 0.4:
+                    _highest_zh, _highest_en = "中度相關", "moderately correlated"
                 else:
-                    lines.append(f"{_highest[0]} and {_highest[1]} are the most correlated pair ({_highest[2]:.2f})")
-                    lines.append(f"{_lowest[0]} and {_lowest[1]} are the least correlated pair ({_lowest[2]:.2f}), offering better diversification")
-                    lines.append(f"Average correlation is about {_avg_corr:.2f}, {'limiting diversification benefit' if _avg_corr > 0.7 else 'providing meaningful diversification benefit'}")
-                _ai_interpretation(lines)
+                    _highest_zh, _highest_en = "相關性偏低（即使是相關性最高的一組）", "only mildly correlated (even as the highest pair in this set)"
+
+                if _ai_lang == "zh-TW":
+                    kf = [f"{_highest[0]} 與 {_highest[1]} {_highest_zh}（{_highest[2]:.2f}）"]
+                    kf.append(f"{_lowest[0]} 與 {_lowest[1]} 相關性最低（{_lowest[2]:.2f}），分散效果較佳")
+                    insight = (
+                        f"加入 {_least_diversifying} 對分散效果有限，可考慮以相關性較低的標的替代以提升分散度"
+                        if _limited_benefit else
+                        f"目前組合平均相關係數約為 {_avg_corr:.2f}，整體仍具備一定的分散化效益"
+                    )
+                    risk = "持股間相關性偏高時，市場下跌會同步拖累多檔標的，實際分散效果可能低於預期" if _limited_benefit else "相關係數會隨市場狀態變動，壓力時期（如系統性風險事件）相關性經常會上升，分散效果可能不如平時"
+                else:
+                    kf = [f"{_highest[0]} and {_highest[1]} are {_highest_en} ({_highest[2]:.2f})"]
+                    kf.append(f"{_lowest[0]} and {_lowest[1]} are the least correlated pair ({_lowest[2]:.2f}), offering better diversification")
+                    insight = (
+                        f"Adding {_least_diversifying} offers limited diversification benefit -- a lower-correlation ETF could add more diversification value"
+                        if _limited_benefit else
+                        f"The portfolio's average correlation is about {_avg_corr:.2f}, still providing meaningful diversification benefit"
+                    )
+                    risk = "When holdings are highly correlated, a market downturn tends to drag several of them down together -- actual diversification may be less than it appears" if _limited_benefit else "Correlations shift with market conditions -- they often rise during systemic stress events, so diversification benefits can shrink exactly when they're needed most"
+                _ai_interpretation(kf, insight, risk)
 
         with chart_card(t("etf_covariance_matrix_card"), t("etf_covariance_matrix_sub")):
             cov = covariance_matrix(etf_prices)
