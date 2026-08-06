@@ -839,5 +839,153 @@ with col3:
         csv3 = dataframe_to_csv(metrics_export)
         st.download_button(t("btn_download_metrics"), csv3, "etf_metrics.csv", "text/csv")
 
+# ── Investment Verdict (rule-based, no external LLM -- independent scoring
+# from AI Insights / Compare Score / ETF DNA above; a richer 5-level
+# trend/risk read plus a final natural-language recommendation, all freshly
+# computed per ETF from currently loaded data). Bottom-most content section,
+# before the shared disclaimer/footer. ───────────────────────────────────────
+_verdict_lang = get_language()
+section_header(
+    "Investment Verdict",
+    "根據目前資料動態產生的最終投資結論" if _verdict_lang == "zh-TW" else
+    "Final investment conclusion, dynamically generated from current data",
+)
+
+_VERDICT_TREND_ZH = {
+    "Strong Bullish": "強力多頭", "Bullish": "多頭", "Neutral": "中性",
+    "Bearish": "空頭", "Strong Bearish": "強力空頭",
+}
+_VERDICT_TREND_COLOR = {
+    "Strong Bullish": "var(--success)", "Bullish": "var(--success)", "Neutral": "var(--warning)",
+    "Bearish": "var(--danger)", "Strong Bearish": "var(--danger)",
+}
+_VERDICT_TREND_CLAUSE = {
+    "Strong Bullish": ("目前呈現強勁多頭趨勢", "is currently showing a strong bullish trend"),
+    "Bullish": ("目前維持多頭趨勢", "is currently maintaining a bullish trend"),
+    "Neutral": ("目前呈現盤整格局", "is currently consolidating"),
+    "Bearish": ("目前呈現空頭趨勢", "is currently in a bearish trend"),
+    "Strong Bearish": ("目前呈現強勁空頭趨勢", "is currently in a strong bearish trend"),
+}
+_VERDICT_SUIT_CLAUSE = {
+    "Growth Investors": ("適合長期成長型投資人", "suitable for long-term growth investors"),
+    "Balanced Investors": ("適合追求平衡配置的投資人", "suitable for investors seeking a balanced allocation"),
+    "Conservative Investors": ("適合風險承受度較低的穩健型投資人", "suitable for conservative, risk-averse investors"),
+}
+_VERDICT_RISK_CLAUSE = {
+    "Low": ("且整體波動相對溫和", "and overall volatility remains relatively mild"),
+    "Medium": ("但需留意中等程度的波動", "but moderate volatility should be monitored"),
+    "Medium High": ("但需注意短期波動", "but short-term volatility should be noted"),
+    "High": ("但需注意較高的波動風險", "but elevated volatility risk should be noted"),
+    "Very High": ("但需特別留意劇烈波動風險", "but investors should watch for sharp volatility"),
+}
+
+verdict_cols = st.columns(len(etf_prices.columns))
+for i, ticker in enumerate(etf_prices.columns):
+    with verdict_cols[i]:
+        p = etf_prices[ticker].dropna()
+        v_ret = annualized_return(p)
+        v_vol = annualized_volatility(p)
+        v_sr = sharpe_ratio(p, risk_free_rate)
+        v_mdd = maximum_drawdown(p)
+        v_mom_last = momentum(p, 10).iloc[-1]
+        v_mom = v_mom_last if pd.notna(v_mom_last) else 0.0
+
+        v_score = 50.0
+        v_score += max(-25, min(25, v_ret * 150))
+        v_score += max(-20, min(20, v_sr * 12))
+        v_score += max(-15, min(15, v_mom * 250))
+        v_score -= max(-10, min(20, (v_vol - 0.15) * 80))
+        v_score -= max(0, min(20, abs(v_mdd) * 50))
+        v_score = int(round(max(0, min(100, v_score))))
+
+        if v_score >= 80:
+            v_trend = "Strong Bullish"
+        elif v_score >= 60:
+            v_trend = "Bullish"
+        elif v_score >= 40:
+            v_trend = "Neutral"
+        elif v_score >= 20:
+            v_trend = "Bearish"
+        else:
+            v_trend = "Strong Bearish"
+
+        if v_vol < 0.10:
+            v_risk = "Low"
+        elif v_vol < 0.18:
+            v_risk = "Medium"
+        elif v_vol < 0.26:
+            v_risk = "Medium High"
+        elif v_vol < 0.35:
+            v_risk = "High"
+        else:
+            v_risk = "Very High"
+
+        if v_ret < 0.08:
+            v_exp_return = "Low"
+        elif v_ret < 0.15:
+            v_exp_return = "Medium"
+        elif v_ret < 0.25:
+            v_exp_return = "High"
+        else:
+            v_exp_return = "Very High"
+
+        if v_vol < 0.15:
+            v_horizon = "Short-to-Medium Term"
+        elif v_vol < 0.28:
+            v_horizon = "Medium-to-Long Term"
+        else:
+            v_horizon = "Long Term"
+
+        if v_risk in ("High", "Very High") and v_exp_return in ("High", "Very High"):
+            v_suitable = "Growth Investors"
+        elif v_risk == "Low" and v_exp_return in ("Low", "Medium"):
+            v_suitable = "Conservative Investors"
+        else:
+            v_suitable = "Balanced Investors"
+
+        _trend_clause = _VERDICT_TREND_CLAUSE[v_trend][0 if _verdict_lang == "zh-TW" else 1]
+        _suit_clause = _VERDICT_SUIT_CLAUSE[v_suitable][0 if _verdict_lang == "zh-TW" else 1]
+        _risk_clause = _VERDICT_RISK_CLAUSE[v_risk][0 if _verdict_lang == "zh-TW" else 1]
+        if _verdict_lang == "zh-TW":
+            v_recommendation = f"{ticker} {_trend_clause}，<br>{_suit_clause}，<br>{_risk_clause}。"
+        else:
+            v_recommendation = f"{ticker} {_trend_clause},<br>{_suit_clause},<br>{_risk_clause}."
+
+        _trend_display = f"{_VERDICT_TREND_ZH[v_trend]}" if _verdict_lang == "zh-TW" else v_trend
+        _trend_color = _VERDICT_TREND_COLOR[v_trend]
+
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:18px 20px;margin:6px 0;box-shadow:var(--shadow-sm);">'
+            f'<div style="color:var(--text);font-weight:800;font-size:17px;margin-bottom:12px;">{ticker}</div>'
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-bottom:14px;">'
+            '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
+            + ("整體評分" if _verdict_lang == "zh-TW" else "Overall Rating") + '</div>'
+            f'<div style="color:var(--text);font-weight:800;font-size:20px;">{v_score}</div></div>'
+            '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
+            + ("趨勢" if _verdict_lang == "zh-TW" else "Trend") + '</div>'
+            f'<div style="color:{_trend_color};font-weight:700;font-size:14px;">{_trend_display}</div></div>'
+            '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
+            + ("風險" if _verdict_lang == "zh-TW" else "Risk") + '</div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_risk}</div></div>'
+            '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
+            + ("預期報酬" if _verdict_lang == "zh-TW" else "Expected Return") + '</div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_exp_return}</div></div>'
+            '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
+            + ("投資期間" if _verdict_lang == "zh-TW" else "Investment Horizon") + '</div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_horizon}</div></div>'
+            '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
+            + ("適合對象" if _verdict_lang == "zh-TW" else "Suitable For") + '</div>'
+            f'<div style="color:var(--text-secondary);font-weight:700;font-size:14px;">{v_suitable}</div></div>'
+            '</div>'
+            '<div style="border-top:1px solid var(--border);padding-top:12px;">'
+            '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">'
+            + ("AI 最終建議" if _verdict_lang == "zh-TW" else "AI Final Recommendation") + '</div>'
+            f'<div style="color:var(--text-secondary);font-size:12.5px;line-height:1.7;">{v_recommendation}</div>'
+            '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
 disclaimer_box()
 render_footer()
