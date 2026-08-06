@@ -400,6 +400,72 @@ for i, ticker in enumerate(etf_prices.columns):
             unsafe_allow_html=True,
         )
 
+# ── ETF DNA (rule-based, no external LLM -- independent from AI Insights /
+# Compare Score above; five 0-100 dimensions per ETF, each freshly computed
+# from the currently loaded price data, rendered as horizontal progress
+# bars in the same dark-card style used elsewhere on this page). ────────────
+_dna_lang = get_language()
+section_header(
+    "ETF DNA",
+    "根據目前資料自動計算的五個維度" if _dna_lang == "zh-TW" else
+    "Five dimensions automatically calculated from current data",
+)
+
+_DNA_DIMENSIONS = [
+    ("Growth", "var(--success)"),
+    ("Risk", "var(--danger)"),
+    ("Momentum", "var(--primary)"),
+    ("Diversification", "var(--purple)"),
+    ("Liquidity", "var(--cyan)"),
+]
+
+_bench_returns = bench_prices.dropna().pct_change().dropna() if bench_prices is not None else None
+
+dna_cols = st.columns(len(etf_prices.columns))
+for i, ticker in enumerate(etf_prices.columns):
+    with dna_cols[i]:
+        p = etf_prices[ticker].dropna()
+        d_ret = annualized_return(p)
+        d_vol = annualized_volatility(p)
+        d_mom_last = momentum(p, 10).iloc[-1]
+        d_mom = d_mom_last if pd.notna(d_mom_last) else 0.0
+
+        d_returns = p.pct_change().dropna()
+        if _bench_returns is not None and len(d_returns) > 5:
+            _aligned = pd.concat([d_returns, _bench_returns], axis=1).dropna()
+            d_corr = _aligned.iloc[:, 0].corr(_aligned.iloc[:, 1]) if len(_aligned) > 5 else None
+        else:
+            d_corr = None
+
+        d_zero_frac = (d_returns == 0).sum() / len(d_returns) if len(d_returns) > 0 else 0.0
+
+        d_growth = int(round(max(0, min(100, 50 + d_ret * 150))))
+        d_risk = int(round(max(0, min(100, d_vol / 0.40 * 100))))
+        d_momentum = int(round(max(0, min(100, 50 + d_mom * 300))))
+        d_diversification = int(round(max(0, min(100, d_corr * 100)))) if d_corr is not None else 50
+        d_liquidity = int(round(max(0, min(100, 100 - d_zero_frac * 400))))
+
+        d_values = [d_growth, d_risk, d_momentum, d_diversification, d_liquidity]
+
+        bars_html = "".join(
+            '<div style="margin-bottom:10px;">'
+            '<div style="display:flex;justify-content:space-between;font-size:11.5px;'
+            f'color:var(--text-secondary);margin-bottom:4px;"><span>{label}</span>'
+            f'<span style="color:var(--text);font-weight:700;">{value}</span></div>'
+            '<div style="background:var(--border);border-radius:999px;height:6px;overflow:hidden;">'
+            f'<div style="background:{color};width:{value}%;height:100%;border-radius:999px;"></div>'
+            '</div></div>'
+            for (label, color), value in zip(_DNA_DIMENSIONS, d_values)
+        )
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:16px 18px;margin:6px 0;box-shadow:var(--shadow-sm);">'
+            f'<div style="color:var(--text);font-weight:800;font-size:15px;margin-bottom:12px;">{ticker}</div>'
+            f'{bars_html}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
 # ── Price Analysis ────────────────────────────────────────────────────────────
 if show_price:
     section_header(t("etf_price_analysis_title"), t("etf_price_analysis_subtitle"))
