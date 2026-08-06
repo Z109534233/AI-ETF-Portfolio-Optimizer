@@ -660,4 +660,5 @@ hr { border-color: var(--border); margin: 18px 0; }
     .page-title { font-size: 22px; }
     .section-title { font-size: 16px; }
     .kpi-card { min-height: auto; }
+    .how-it-works-arrow { display: inline-block; transform: rotate(90deg); }
 }

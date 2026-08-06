@@ -141,30 +141,36 @@ for _row_start in (0, 4):
         with _col:
             st.markdown(feature_card(_card["title"], _card["desc"], _card["icon"]), unsafe_allow_html=True)
 
-# ── How It Works (vertical flow-card timeline, Apple/Bloomberg style) ────────
+# ── How It Works (horizontal step row on desktop, full width; collapses to
+# a vertical stack on mobile via the site's existing stHorizontalBlock
+# wrap rule in assets/style.css). ─────────────────────────────────────────
 section_header(t("home_how_it_works_title"), t("home_how_it_works_subtitle"))
 _how_it_works_steps = (
-    ["① 選擇 ETF", "② 分析績效", "③ 最佳化投資組合", "④ 了解市場", "⑤ 做出更好的決策"]
+    ["① 選 ETF", "② 分析績效", "③ 最佳化", "④ 市場分析", "⑤ 做出決策"]
     if get_language() == "zh-TW" else
-    ["① Select ETFs", "② Analyze Performance", "③ Optimize Portfolio", "④ Understand Market", "⑤ Make Better Decisions"]
+    ["① Select ETFs", "② Analyze", "③ Optimize", "④ Market Analysis", "⑤ Decide"]
 )
-_flow_rows = []
-for _i, _step in enumerate(_how_it_works_steps):
-    _flow_rows.append(
-        '<div style="display:flex;align-items:center;gap:16px;width:100%;max-width:480px;'
-        'background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-        'padding:16px 22px;box-shadow:var(--shadow-sm);">'
-        f'<div style="color:var(--text);font-weight:700;font-size:15px;letter-spacing:-0.01em;">{_step}</div>'
-        '</div>'
-    )
-    if _i < len(_how_it_works_steps) - 1:
-        _flow_rows.append('<div style="color:var(--text-muted);font-size:20px;line-height:1;">&#8595;</div>')
-st.markdown(
-    '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0 20px 0;">'
-    + "".join(_flow_rows) +
-    '</div>',
-    unsafe_allow_html=True,
-)
+_how_cols = st.columns([3, 1, 3, 1, 3, 1, 3, 1, 3])
+_step_idx = 0
+for _ci, _col in enumerate(_how_cols):
+    with _col:
+        if _ci % 2 == 0:
+            st.markdown(
+                '<div style="display:flex;align-items:center;justify-content:center;height:90px;'
+                'background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+                'box-shadow:var(--shadow-sm);padding:8px 12px;text-align:center;">'
+                f'<div style="color:var(--text);font-weight:700;font-size:14px;letter-spacing:-0.01em;">{_how_it_works_steps[_step_idx]}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            _step_idx += 1
+        else:
+            st.markdown(
+                '<div style="display:flex;align-items:center;justify-content:center;height:90px;">'
+                '<span class="how-it-works-arrow" style="color:var(--text-muted);font-size:20px;line-height:1;">&#8594;</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
 # ── Who Is This Platform For ─────────────────────────────────────────────────
 section_header(t("home_target_users_title"), t("home_target_users_subtitle"))
