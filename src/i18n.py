@@ -73,7 +73,7 @@ TRANSLATIONS = {
 
         # ── How It Works ──────────────────────────────────────────────────
         "home_how_it_works_title": "如何運作",
-        "home_how_it_works_subtitle": "從選擇 ETF 到 AI 分析洞察，只需五個步驟。",
+        "home_how_it_works_subtitle": "從選擇 ETF 到 AI 分析洞察，只需五個步驟",
         "step_choose_etfs": "選擇 ETF",
         "step_analyze_performance": "分析績效",
         "step_optimize_portfolio": "最佳化投資組合",
@@ -82,13 +82,13 @@ TRANSLATIONS = {
 
         # ── Who Is This Platform For ─────────────────────────────────────
         "home_target_users_title": "這個平台適合誰？",
-        "home_target_users_subtitle": "為 ETF 投資旅程的每個階段而設計。",
+        "home_target_users_subtitle": "為 ETF 投資旅程的每個階段而設計",
         "persona_beginner_title": "ETF 初學者",
-        "persona_beginner_desc": "適合剛開始接觸 ETF 投資的使用者。",
+        "persona_beginner_desc": "適合剛開始接觸 ETF 投資的使用者",
         "persona_long_term_title": "長期投資人",
-        "persona_long_term_desc": "建立分散且適合退休規劃的投資組合。",
+        "persona_long_term_desc": "建立分散且適合退休規劃的投資組合",
         "persona_student_title": "財金學生",
-        "persona_student_desc": "學習投資組合最佳化與金融分析技術。",
+        "persona_student_desc": "學習投資組合最佳化與金融分析技術",
 
         # ── Common Investment Questions (Problem Statement) ──────────────
         "home_problem_title": "常見投資疑問",
@@ -98,7 +98,7 @@ TRANSLATIONS = {
         "problem_q4": "我的投資在 20 年後可以成長多少？",
         "problem_q5": "我的投資組合風險是不是太高？",
         "problem_q6": "我的投資組合分散程度如何？",
-        "home_problem_conclusion": "本平台運用金融分析與最佳化模型，協助你回答這些問題。",
+        "home_problem_conclusion": "本平台運用金融分析與最佳化模型，協助你回答這些問題",
 
         # ── Home Page Sections ──────────────────────────────────────────
         "home_dashboard_title": "投資組合儀表板",
@@ -107,7 +107,7 @@ TRANSLATIONS = {
         "home_dashboard_etfs_label": "儀表板 ETF",
         "home_dashboard_etfs_help": "選擇要顯示於儀表板預覽的 ETF",
         "home_loading_market_data": "正在載入市場資料……",
-        "home_live_data_unavailable": "即時市場資料目前無法取得，儀表板顯示範例資料。",
+        "home_live_data_unavailable": "即時市場資料目前無法取得，儀表板顯示範例資料",
         "home_chart_etf_performance_title": "ETF 績效比較",
         "home_chart_etf_performance_sub": "標準化價格，基準 = 100",
         "home_chart_allocation_title": "投資組合配置",

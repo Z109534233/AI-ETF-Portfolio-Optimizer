@@ -111,16 +111,16 @@ for _col, (_value, _title, _desc) in zip(stat_cols, _platform_stats):
 # section -- one 8-card grid, one card per module, no duplicated content). ──
 _why_lang = get_language()
 if _why_lang == "zh-TW":
-    _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程。"
+    _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程"
     why_choose = [
-        {"icon": "newspaper", "title": "AI 市場情報", "desc": "即時新聞、事件分類與 AI 市場摘要。"},
-        {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析。"},
-        {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置。"},
-        {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境。"},
-        {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析。"},
-        {"icon": "cpu", "title": "機器學習預測", "desc": "數據驅動的 ETF 漲跌方向預測模型。"},
-        {"icon": "layers", "title": "AI 投資分析", "desc": "AI 生成投資組合說明與建議。"},
-        {"icon": "pie-chart", "title": "投資組合紀錄", "desc": "儲存、比較與管理你的投資組合紀錄。"},
+        {"icon": "newspaper", "title": "AI 市場情報", "desc": "即時新聞、事件分類與 AI 市場摘要"},
+        {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析"},
+        {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置"},
+        {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境"},
+        {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析"},
+        {"icon": "cpu", "title": "機器學習預測", "desc": "數據驅動的 ETF 漲跌方向預測模型"},
+        {"icon": "layers", "title": "AI 投資分析", "desc": "AI 生成投資組合說明與建議"},
+        {"icon": "pie-chart", "title": "投資組合紀錄", "desc": "儲存、比較與管理你的投資組合紀錄"},
     ]
 else:
     _why_title, _why_subtitle = "Why Choose This Platform", "Eight core modules spanning the full journey from analysis to decision."
