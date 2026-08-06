@@ -19,7 +19,7 @@ from src.financial_metrics import (
     maximum_drawdown, calmar_ratio, value_at_risk, conditional_var,
     correlation_matrix, covariance_matrix, monthly_returns_table, compute_all_metrics
 )
-from src.technical_indicators import sma, ema, rsi, bollinger_bands
+from src.technical_indicators import sma, ema, rsi, bollinger_bands, momentum
 from src.charts import (
     price_chart, normalized_price_chart, cumulative_return_chart,
     drawdown_chart, correlation_heatmap, return_distribution_chart,
@@ -30,7 +30,7 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state
 )
-from src.i18n import t, t_country
+from src.i18n import t, t_country, get_language
 
 st.set_page_config(
     page_title="ETF Analysis | AI ETF Portfolio Optimizer",
@@ -145,6 +145,133 @@ for i, ticker in enumerate(etf_prices.columns):
         mdd = maximum_drawdown(p)
         st.metric(ticker, f"{ann_ret:.2%}", t("etf_vol_caption", vol=f"{ann_vol:.2%}"))
         st.caption(t("etf_sharpe_mdd_caption", sharpe=f"{sr:.2f}", mdd=f"{mdd:.2%}"))
+
+# ── AI Insights (rule-based, no external LLM -- reuses the Return /
+# Volatility / Sharpe Ratio already computed above, plus a fresh Moving
+# Average + Momentum read per ETF, in the same deterministic scoring style
+# already used on the Market Intelligence page). One card per selected ETF. ──
+_ai_lang = get_language()
+section_header(
+    "AI Insights",
+    "根據 Return、Volatility、Sharpe Ratio、Moving Average 與 Momentum 自動產生"
+    if _ai_lang == "zh-TW" else
+    "Automatically generated from Return, Volatility, Sharpe Ratio, Moving Average, and Momentum",
+)
+
+_AI_TREND_META = {
+    "Bullish": ("🟢", "var(--success)"),
+    "Neutral": ("🟡", "var(--warning)"),
+    "Bearish": ("🔴", "var(--danger)"),
+}
+
+
+def _ai_insights(lang, ann_ret, ann_vol, sr, mom, price_now, ma_short, ma_long, score):
+    cands = []
+    if mom > 0.05:
+        cands.append((mom, "Momentum 持續增強" if lang == "zh-TW" else "Momentum continues to strengthen"))
+    elif mom < -0.05:
+        cands.append((-mom, "Momentum 明顯轉弱" if lang == "zh-TW" else "Momentum is weakening"))
+    else:
+        cands.append((0.01, "短期動能持平" if lang == "zh-TW" else "Short-term momentum is flat"))
+
+    if ann_ret > 0.15:
+        cands.append((ann_ret, "報酬率高於市場平均" if lang == "zh-TW" else "Return is above the market average"))
+    elif ann_ret < 0:
+        cands.append((-ann_ret, "報酬率低於預期" if lang == "zh-TW" else "Return is below expectations"))
+
+    if sr > 1.2:
+        cands.append((sr / 3, "風險調整後報酬表現優異" if lang == "zh-TW" else "Risk-adjusted return is excellent"))
+    elif sr < 0.3:
+        cands.append((0.3 - sr, "風險調整後報酬偏弱" if lang == "zh-TW" else "Risk-adjusted return is weak"))
+
+    if ann_vol > 0.25:
+        if score >= 50:
+            cands.append((ann_vol, "波動增加但仍維持健康趨勢" if lang == "zh-TW" else "Volatility has increased but the trend remains healthy"))
+        else:
+            cands.append((ann_vol, "波動偏高，風險上升" if lang == "zh-TW" else "Volatility is elevated, raising risk"))
+    elif ann_vol < 0.12:
+        cands.append((0.12 - ann_vol, "波動度偏低，走勢穩定" if lang == "zh-TW" else "Volatility is low, price action is stable"))
+
+    if price_now > ma_short > ma_long:
+        cands.append((price_now / ma_long - 1, "站上短期與長期均線，趨勢偏多" if lang == "zh-TW" else "Price is above both short- and long-term moving averages"))
+    elif price_now < ma_short < ma_long:
+        cands.append((ma_long / price_now - 1, "跌破短期與長期均線，趨勢偏空" if lang == "zh-TW" else "Price is below both short- and long-term moving averages"))
+    else:
+        cands.append((0.01, "均線呈現盤整格局" if lang == "zh-TW" else "Moving averages show a consolidating pattern"))
+
+    cands.sort(key=lambda c: c[0], reverse=True)
+    return [c[1] for c in cands[:3]]
+
+
+ai_cols = st.columns(len(etf_prices.columns))
+for i, ticker in enumerate(etf_prices.columns):
+    with ai_cols[i]:
+        p = etf_prices[ticker].dropna()
+        ann_ret = annualized_return(p)
+        ann_vol = annualized_volatility(p)
+        sr = sharpe_ratio(p, risk_free_rate)
+        ma_short = sma(p, 20).iloc[-1]
+        ma_long = sma(p, 50).iloc[-1]
+        mom_last = momentum(p, 10).iloc[-1]
+        mom = mom_last if pd.notna(mom_last) else 0.0
+        price_now = p.iloc[-1]
+
+        score = 50.0
+        score += max(-20, min(20, ann_ret * 100))
+        score += max(-15, min(15, sr * 10))
+        score += max(-15, min(15, mom * 100))
+        if price_now > ma_short > ma_long:
+            score += 10
+        elif price_now < ma_short < ma_long:
+            score -= 10
+        score = int(round(max(0, min(100, score))))
+
+        if score >= 65:
+            trend = "Bullish"
+        elif score <= 35:
+            trend = "Bearish"
+        else:
+            trend = "Neutral"
+
+        if score >= 75:
+            recommendation = "Buy"
+        elif score >= 45:
+            recommendation = "Hold"
+        else:
+            recommendation = "Reduce"
+
+        signs = [
+            1 if ann_ret > 0 else (-1 if ann_ret < 0 else 0),
+            1 if sr > 0 else (-1 if sr < 0 else 0),
+            1 if mom > 0 else (-1 if mom < 0 else 0),
+            1 if price_now > ma_long else (-1 if price_now < ma_long else 0),
+        ]
+        overall_sign = 1 if score >= 50 else -1
+        agreement = sum(1 for s in signs if s == overall_sign) / len(signs)
+        confidence = round(55 + agreement * 40)
+        if ann_vol > 0.30:
+            confidence = max(50, confidence - 5)
+
+        insights = _ai_insights(_ai_lang, ann_ret, ann_vol, sr, mom, price_now, ma_short, ma_long, score)
+        emoji, color = _AI_TREND_META[trend]
+        insights_html = "".join(
+            f'<div style="color:var(--text-secondary);font-size:12px;line-height:1.6;">• {ins}</div>'
+            for ins in insights
+        )
+        st.markdown(
+            '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+            'padding:16px 18px;margin:6px 0;box-shadow:var(--shadow-sm);">'
+            f'<div style="color:var(--text);font-weight:800;font-size:16px;margin-bottom:4px;">{ticker}</div>'
+            f'<div style="color:{color};font-weight:700;font-size:13px;margin-bottom:10px;">{emoji} {trend}</div>'
+            '<div style="color:var(--text-secondary);font-size:11px;margin-bottom:2px;">AI Score</div>'
+            f'<div style="color:var(--text);font-weight:800;font-size:20px;margin-bottom:8px;">{score}</div>'
+            '<div style="display:flex;justify-content:space-between;color:var(--text-secondary);font-size:11.5px;margin-bottom:10px;">'
+            f'<span>Confidence: {confidence}%</span><span>Recommendation: {recommendation}</span></div>'
+            '<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">AI Insights</div>'
+            f'{insights_html}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
 # ── Price Analysis ────────────────────────────────────────────────────────────
 if show_price:
