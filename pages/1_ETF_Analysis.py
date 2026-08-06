@@ -133,6 +133,114 @@ if etf_prices.empty:
     error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
     st.stop()
 
+# ── ETF Compare Score (rule-based, no external LLM -- independent scoring
+# from the AI Insights section further down the page; combines Return,
+# Sharpe, Volatility, Maximum Drawdown, and Momentum into one 0-100 score
+# per ETF, ranked highest first). Placed at the very top of the page. ────────
+_cmp_lang = get_language()
+section_header(
+    "ETF Compare Score",
+    "根據 Return、Sharpe、Volatility、Maximum Drawdown 與 Momentum 綜合計算"
+    if _cmp_lang == "zh-TW" else
+    "Calculated from Return, Sharpe, Volatility, Maximum Drawdown, and Momentum",
+)
+
+_CMP_TREND_META = {
+    "Bullish": ("🟢", "var(--success)"),
+    "Neutral": ("🟡", "var(--warning)"),
+    "Bearish": ("🔴", "var(--danger)"),
+}
+
+_cmp_rows = []
+for ticker in etf_prices.columns:
+    p = etf_prices[ticker].dropna()
+    if len(p) < 10:
+        continue
+    c_ret = annualized_return(p)
+    c_vol = annualized_volatility(p)
+    c_sr = sharpe_ratio(p, risk_free_rate)
+    c_mdd = maximum_drawdown(p)
+    c_mom_last = momentum(p, 10).iloc[-1]
+    c_mom = c_mom_last if pd.notna(c_mom_last) else 0.0
+
+    c_score = 50.0
+    c_score += max(-20, min(20, c_ret * 100))
+    c_score += max(-15, min(15, c_sr * 10))
+    c_score += max(-10, min(10, c_mom * 100))
+    c_score -= max(-10, min(25, (c_vol - 0.15) * 100))
+    c_score -= max(0, min(25, abs(c_mdd) * 60))
+    c_score = int(round(max(0, min(100, c_score))))
+
+    if c_score >= 65:
+        c_trend = "Bullish"
+    elif c_score <= 35:
+        c_trend = "Bearish"
+    else:
+        c_trend = "Neutral"
+
+    if c_score >= 75:
+        c_rec = "Buy"
+    elif c_score >= 45:
+        c_rec = "Hold"
+    else:
+        c_rec = "Reduce"
+
+    if c_vol < 0.12:
+        c_risk = "Low"
+    elif c_vol < 0.25:
+        c_risk = "Medium"
+    else:
+        c_risk = "High"
+
+    if c_ret < 0:
+        c_return_label = "Poor"
+    elif c_ret < 0.08:
+        c_return_label = "Fair"
+    elif c_ret < 0.15:
+        c_return_label = "Good"
+    elif c_ret < 0.25:
+        c_return_label = "Very Good"
+    else:
+        c_return_label = "Excellent"
+
+    _cmp_rows.append({
+        "ticker": ticker, "score": c_score, "trend": c_trend,
+        "risk": c_risk, "return_label": c_return_label, "rec": c_rec,
+    })
+
+_cmp_rows.sort(key=lambda r: r["score"], reverse=True)
+
+if _cmp_rows:
+    _cmp_headers = ["ETF", "Overall Score", "Trend", "Risk", "Return", "Recommendation"]
+    _cmp_header_html = "".join(
+        f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;'
+        f'letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{h}</th>'
+        for h in _cmp_headers
+    )
+    _cmp_row_html = []
+    for r in _cmp_rows:
+        emoji, color = _CMP_TREND_META[r["trend"]]
+        _cmp_row_html.append(
+            '<tr>'
+            f'<td style="padding:10px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{r["ticker"]}</td>'
+            f'<td style="padding:10px 12px;color:var(--text);font-weight:800;font-size:15px;border-bottom:1px solid var(--border);">{r["score"]}</td>'
+            f'<td style="padding:10px 12px;color:{color};font-weight:700;border-bottom:1px solid var(--border);">{emoji} {r["trend"]}</td>'
+            f'<td style="padding:10px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{r["risk"]}</td>'
+            f'<td style="padding:10px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{r["return_label"]}</td>'
+            f'<td style="padding:10px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{r["rec"]}</td>'
+            '</tr>'
+        )
+    st.markdown(
+        '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+        'padding:4px 8px;overflow-x:auto;box-shadow:var(--shadow-sm);margin-bottom:8px;">'
+        '<table style="width:100%;border-collapse:collapse;">'
+        f'<thead><tr>{_cmp_header_html}</tr></thead>'
+        f'<tbody>{"".join(_cmp_row_html)}</tbody>'
+        '</table>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
 # ── Summary KPIs ──────────────────────────────────────────────────────────────
 section_header(t("etf_summary_metrics"))
 cols = st.columns(len(etf_prices.columns))
