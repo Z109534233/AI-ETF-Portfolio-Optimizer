@@ -52,62 +52,185 @@ init_database()
 page_header(t("opt_title"), t("opt_subtitle"))
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
+# Round 1 (Portfolio Builder / Input UX): progressive disclosure --
+# essential investor-facing inputs (Build Your Portfolio) first, then
+# Optimization Strategy, then Advanced Settings (collapsed by default).
+# Every existing variable below (optimization_method, min_weight,
+# max_weight, allow_short, target_return_pct, risk_free_rate, start_date,
+# end_date, n_simulations, custom_ticker) keeps its exact name and is fed
+# into the SAME calculation calls further down, unchanged -- only where
+# and how each control is presented has moved.
+def _shadow_default(name: str, default):
+    """Read-or-seed a plain (non-widget) session_state mirror for a sidebar
+    control. Needed because Streamlit can drop a widget's own keyed state
+    if something earlier in the same script run -- the language selector
+    inside render_sidebar_nav(), called first thing on every page --
+    triggers st.rerun() before this widget has been (re-)instantiated on
+    that particular pass. A plain session_state entry isn't tied to widget
+    instantiation, so it survives that and reseeds the widget on the next
+    run instead of silently falling back to its hard-coded default.
+    """
+    shadow_key = f"_{name}_shadow"
+    if shadow_key not in st.session_state:
+        st.session_state[shadow_key] = default
+    return shadow_key, st.session_state[shadow_key]
+
+
 with st.sidebar:
     render_sidebar_nav()
-    st.markdown(f"### {t('opt_sidebar_settings')}")
 
-    # ── Region Selector (Global ETF Support) ─────────────────────────────
-    # "United States" preserves the exact original ETF list (DEFAULT_ETFS)
-    # so existing behavior is unchanged unless the user explicitly picks a
-    # different region.
-    #
-    # region_selector() / region_etf_multiselect() (src/ui.py) are the SAME
-    # shared helpers used by ETF Analysis, Risk Analytics, and AI Advisor:
-    # they read and write one canonical st.session_state["selected_region"]
-    # / ["selected_etfs_<region>"], so picking a market or ETF here is
-    # immediately reflected on those other pages too, not just persisted
-    # within this page.
+    # ── Build Your Portfolio ─────────────────────────────────────────────
+    st.markdown(f"### {t('opt_build_portfolio_title')}")
+
+    # 1. Market -- shared global state (src/ui.py), same canonical
+    # st.session_state["selected_region"] used by ETF Analysis, Risk
+    # Analytics, Machine Learning, and AI Advisor. Picking a market here
+    # updates those pages too, and vice versa.
     selected_region, ALL_REGIONS_LABEL = region_selector()
     etf_options = region_etf_options(selected_region, ALL_REGIONS_LABEL)
+
+    # 2. ETF Selection -- shared global state, same as above. Invalid
+    # tickers from a since-changed market are dropped automatically since
+    # region_etf_multiselect() filters against the current `etf_options`.
     selected_etfs = region_etf_multiselect(
         selected_region, etf_options, t("field_select_etfs"),
         help_text=t("opt_select_etfs_help"), n_default=5,
     )
-
-    custom_ticker = st.text_input(t("field_add_custom_ticker"), placeholder="e.g. ARKK").upper().strip()
+    with st.expander(t("field_add_custom_etf"), expanded=False):
+        _ctk, _ctv = _shadow_default("opt_custom_ticker", "")
+        custom_ticker = st.text_input(
+            t("field_add_custom_etf"), value=_ctv, placeholder="e.g. ARKK",
+            label_visibility="collapsed", key="opt_custom_ticker",
+        ).upper().strip()
+        st.session_state[_ctk] = custom_ticker
     if custom_ticker and custom_ticker not in selected_etfs:
         selected_etfs.append(custom_ticker)
 
-    investment_amount = st.number_input(t("field_investment_amount_usd"), min_value=100.0,
-                                         max_value=10_000_000.0, value=10000.0, step=500.0)
+    # 3. Investment Amount -- currency intentionally stays USD-denominated
+    # in Round 1. weights_to_dataframe() (src/utils.py), the PDF report,
+    # and every "$" metric below are hard-coded to USD throughout the
+    # calculation/display pipeline; relabeling this per-market without
+    # touching that pipeline would silently mislabel the numbers. See the
+    # end-of-round report for the currency-architecture note.
+    _ak, _av = _shadow_default("investment_amount", 10000.0)
+    investment_amount = st.number_input(
+        t("field_investment_amount_usd"), min_value=100.0, max_value=10_000_000.0,
+        value=_av, step=500.0, key="investment_amount",
+    )
+    st.session_state[_ak] = investment_amount
 
-    default_start, default_end = get_date_range_defaults()
-    start_date = st.date_input(t("field_start_date"), value=default_start)
-    end_date = st.date_input(t("field_end_date"), value=default_end)
+    # 4. Investment Goal -- portfolio metadata / user preference only in
+    # Round 1. Does NOT alter the optimizer's math yet -- later rounds will
+    # map it to portfolio interpretation and AI analysis.
+    _goal_options = ["Growth", "Balanced", "Income", "Capital Preservation"]
+    _goal_labels = {
+        "Growth": t("opt_goal_growth"), "Balanced": t("opt_goal_balanced"),
+        "Income": t("opt_goal_income"), "Capital Preservation": t("opt_goal_capital_preservation"),
+    }
+    _gk, _gv = _shadow_default("investment_goal", _goal_options[0])
+    investment_goal = st.selectbox(
+        t("opt_investment_goal_label"), _goal_options,
+        index=_goal_options.index(_gv) if _gv in _goal_options else 0,
+        format_func=lambda x: _goal_labels.get(x, x), key="investment_goal",
+    )
+    st.session_state[_gk] = investment_goal
 
-    risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, 5.0, 0.25) / 100
+    # 5. Risk Tolerance -- same Round 1 scope note as Investment Goal above:
+    # metadata only, does not change optimization constraints yet.
+    _risk_options = ["Conservative", "Balanced", "Aggressive"]
+    _risk_labels = {
+        "Conservative": t("opt_risk_conservative"), "Balanced": t("opt_risk_balanced"),
+        "Aggressive": t("opt_risk_aggressive"),
+    }
+    _rk, _rv = _shadow_default("risk_tolerance", _risk_options[1])
+    risk_tolerance = st.radio(
+        t("opt_risk_tolerance_label"), _risk_options,
+        index=_risk_options.index(_rv) if _rv in _risk_options else 1,
+        format_func=lambda x: _risk_labels.get(x, x), key="risk_tolerance",
+        horizontal=True,
+    )
+    st.session_state[_rk] = risk_tolerance
+
+    # 6. Investment Horizon -- same Round 1 scope note as above. This is the
+    # investor's intended holding period, distinct from the Historical Data
+    # Range in Advanced Settings below (a calculation input, not a
+    # preference) -- the two must not be confused.
+    _horizon_options = ["1 Year", "3 Years", "5 Years", "10+ Years"]
+    _horizon_labels = {
+        "1 Year": t("opt_horizon_1y"), "3 Years": t("opt_horizon_3y"),
+        "5 Years": t("opt_horizon_5y"), "10+ Years": t("opt_horizon_10y"),
+    }
+    _hk, _hv = _shadow_default("investment_horizon", _horizon_options[2])
+    investment_horizon = st.selectbox(
+        t("opt_investment_horizon_label"), _horizon_options,
+        index=_horizon_options.index(_hv) if _hv in _horizon_options else 2,
+        format_func=lambda x: _horizon_labels.get(x, x), key="investment_horizon",
+    )
+    st.session_state[_hk] = investment_horizon
 
     st.markdown("---")
-    st.markdown(f"### {t('opt_constraints_label')}")
-    # Pre-resolve labels once (within a valid script context) rather than
-    # passing a format_func that reads st.session_state on every invocation.
-    _opt_method_labels = {k: t_opt_method(k) for k in OPTIMIZATION_METHOD_KEYS}
-    optimization_method = st.selectbox(
-        t("opt_method_label"),
-        list(OPTIMIZATION_METHOD_KEYS.keys()),
-        format_func=lambda x: _opt_method_labels.get(x, x),
-    )
 
-    min_weight = st.slider(t("opt_min_weight"), 0.0, 20.0, 0.0, 1.0) / 100
-    max_weight = st.slider(t("opt_max_weight"), 10.0, 100.0, 100.0, 5.0) / 100
-    allow_short = st.checkbox(t("opt_allow_short"), value=False)
+    # ── Optimization Strategy ────────────────────────────────────────────
+    # Only the methods actually implemented in src/portfolio_optimizer.py
+    # (OPTIMIZATION_METHOD_KEYS already matches run_optimization()'s real
+    # branches 1:1 -- Equal Weight, Maximum Sharpe Ratio, Minimum
+    # Volatility, Target Return, Risk Parity) are shown; nothing added.
+    st.markdown(f"### {t('opt_strategy_title')}")
+    _opt_method_labels = {k: t_opt_method(k) for k in OPTIMIZATION_METHOD_KEYS}
+    _mk, _mv = _shadow_default("optimization_method", list(OPTIMIZATION_METHOD_KEYS.keys())[0])
+    _method_options = list(OPTIMIZATION_METHOD_KEYS.keys())
+    optimization_method = st.selectbox(
+        t("opt_method_label"), _method_options,
+        index=_method_options.index(_mv) if _mv in _method_options else 0,
+        format_func=lambda x: _opt_method_labels.get(x, x), key="optimization_method",
+    )
+    st.session_state[_mk] = optimization_method
 
     target_return_pct = None
     if optimization_method == "Target Return":
-        target_return_pct = st.slider(t("opt_target_return_pct"), 1.0, 30.0, 10.0, 0.5) / 100
+        _tk, _tv = _shadow_default("opt_target_return_pct", 10.0)
+        target_return_pct = st.slider(
+            t("opt_target_return_pct"), 1.0, 30.0, _tv, 0.5, key="opt_target_return_pct_slider",
+        ) / 100
+        st.session_state[_tk] = target_return_pct * 100
 
-    n_simulations = st.slider(t("opt_mc_simulations"), 1000, 10000, 5000, 500)
+    # ── Advanced Settings (collapsed by default) ─────────────────────────
+    # Historical Data Range, Risk-Free Rate, Min/Max ETF Weight, Allow
+    # Short Selling, Monte Carlo Simulation Count -- same values,
+    # constraints, and calculation behavior as before; only relocated here
+    # for progressive disclosure.
+    with st.expander(t("opt_advanced_settings_title"), expanded=False):
+        st.markdown(f"**{t('opt_historical_data_range_label')}**")
+        default_start, default_end = get_date_range_defaults()
+        _sk, _sv = _shadow_default("opt_start_date", default_start)
+        start_date = st.date_input(t("field_start_date"), value=_sv, key="opt_start_date")
+        st.session_state[_sk] = start_date
 
+        _ek, _ev = _shadow_default("opt_end_date", default_end)
+        end_date = st.date_input(t("field_end_date"), value=_ev, key="opt_end_date")
+        st.session_state[_ek] = end_date
+
+        _fk, _fv = _shadow_default("opt_risk_free_rate", 5.0)
+        risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, _fv, 0.25, key="opt_risk_free_rate_slider") / 100
+        st.session_state[_fk] = risk_free_rate * 100
+
+        _minwk, _minwv = _shadow_default("opt_min_weight", 0.0)
+        min_weight = st.slider(t("opt_min_weight"), 0.0, 20.0, _minwv, 1.0, key="opt_min_weight_slider") / 100
+        st.session_state[_minwk] = min_weight * 100
+
+        _maxwk, _maxwv = _shadow_default("opt_max_weight", 100.0)
+        max_weight = st.slider(t("opt_max_weight"), 10.0, 100.0, _maxwv, 5.0, key="opt_max_weight_slider") / 100
+        st.session_state[_maxwk] = max_weight * 100
+
+        _ashk, _ashv = _shadow_default("opt_allow_short", False)
+        allow_short = st.checkbox(t("opt_allow_short"), value=_ashv, key="opt_allow_short_cb")
+        st.session_state[_ashk] = allow_short
+
+        _nsk, _nsv = _shadow_default("opt_n_simulations", 5000)
+        n_simulations = st.slider(t("opt_mc_simulations"), 1000, 10000, _nsv, 500, key="opt_n_simulations_slider")
+        st.session_state[_nsk] = n_simulations
+
+    # ── Primary Action ────────────────────────────────────────────────────
     run_btn = st.button(t("btn_run_optimization"), type="primary", use_container_width=True)
 
     render_sidebar_footer()
@@ -120,6 +243,34 @@ if len(selected_etfs) < 2:
 if start_date >= end_date:
     st.error(t("msg_start_before_end"))
     st.stop()
+
+# ── Portfolio Setup Summary ─────────────────────────────────────────────────
+# Compact confirmation of "what portfolio am I currently building", shown
+# before any optimization results (and before the Build button has
+# necessarily been clicked) -- not a results section, just an echo of the
+# current inputs above.
+_market_display = t_country(selected_region) if selected_region != ALL_REGIONS_LABEL else selected_region
+_setup_rows = [
+    (t("opt_setup_label_market"), _market_display),
+    (t("opt_setup_label_etfs"), " · ".join(selected_etfs)),
+    (t("opt_investment_goal_label"), _goal_labels.get(investment_goal, investment_goal)),
+    (t("opt_risk_tolerance_label"), _risk_labels.get(risk_tolerance, risk_tolerance)),
+    (t("opt_investment_horizon_label"), _horizon_labels.get(investment_horizon, investment_horizon)),
+    (t("opt_setup_label_amount"), f"${investment_amount:,.0f}"),
+]
+st.markdown(
+    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
+    'padding:12px 16px;margin:6px 0 16px 0;box-shadow:var(--shadow-sm);">'
+    f'<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">{t("opt_setup_summary_title")}</div>'
+    '<div style="display:flex;flex-wrap:wrap;gap:20px;">'
+    + "".join(
+        '<div><div style="color:var(--text-muted);font-size:10px;margin-bottom:2px;">'
+        f'{label}</div><div style="color:var(--text);font-weight:700;font-size:13px;">{value}</div></div>'
+        for label, value in _setup_rows
+    )
+    + '</div></div>',
+    unsafe_allow_html=True,
+)
 
 # ── State Management ──────────────────────────────────────────────────────────
 # `run_inputs` fingerprints everything the optimization result depends on.
