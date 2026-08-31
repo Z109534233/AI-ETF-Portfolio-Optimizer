@@ -56,12 +56,20 @@ with st.sidebar:
     render_sidebar_nav()
     st.markdown(f"### {t('home_quick_settings')}")
 
+    # Shadow value protects against the same rerun-before-instantiation
+    # issue as pages/1_ETF_Analysis.py: render_sidebar_nav() (called just
+    # above) renders the language selector, whose internal st.rerun() can
+    # otherwise drop this widget's own keyed state before it's reached.
+    if "_home_selected_etfs_shadow" not in st.session_state:
+        st.session_state["_home_selected_etfs_shadow"] = DEFAULT_ETFS[:4]
     demo_etfs = st.multiselect(
         t("home_dashboard_etfs_label"),
         DEFAULT_ETFS,
-        default=DEFAULT_ETFS[:4],
+        default=st.session_state["_home_selected_etfs_shadow"],
         help=t("home_dashboard_etfs_help"),
+        key="home_selected_etfs",
     )
+    st.session_state["_home_selected_etfs_shadow"] = demo_etfs
 
     import datetime
     end_date = datetime.date.today()
