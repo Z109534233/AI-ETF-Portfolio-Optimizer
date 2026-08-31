@@ -20,7 +20,10 @@ from src.charts import (
     feature_importance_chart, confusion_matrix_chart, apply_dark_theme, CHART_COLORS
 )
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
-from src.ui import render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer, error_state
+from src.ui import (
+    render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer, error_state,
+    region_selector, region_etf_options,
+)
 from src.theme import COLORS
 from src.i18n import t, t_model_type, t_country, MODEL_TYPE_KEYS
 
@@ -47,22 +50,17 @@ with st.sidebar:
     # different region. The ML pipeline itself (src/machine_learning.py)
     # is fully ticker-agnostic -- it only ever sees a price Series -- so no
     # model code needs to change to support new markets.
-    ALL_REGIONS_LABEL = t("field_all_regions")
-    region_options = [ALL_REGIONS_LABEL] + get_countries()
-    # Pre-resolve labels once (within a valid script context) rather than
-    # passing a format_func that reads st.session_state on every invocation.
-    _region_labels = {c: t_country(c) for c in get_countries()}
-    selected_region = st.selectbox(
-        t("field_select_region"), region_options, index=1,
-        format_func=lambda x: ALL_REGIONS_LABEL if x == ALL_REGIONS_LABEL else _region_labels.get(x, x),
-    )
-
-    if selected_region == ALL_REGIONS_LABEL:
-        etf_options = DEFAULT_ETFS + [tk for c in get_countries() for tk in get_tickers_by_country(c) if tk not in DEFAULT_ETFS]
-    elif selected_region == "United States":
-        etf_options = DEFAULT_ETFS
-    else:
-        etf_options = get_tickers_by_country(selected_region)
+    #
+    # region_selector() (src/ui.py) is the SAME shared helper used by ETF
+    # Analysis, Risk Analytics, and AI Advisor: it reads and writes one
+    # canonical st.session_state["selected_region"], so picking a market
+    # here is immediately reflected on those other pages too. This page's
+    # own ETF choice below stays page-local (a single st.selectbox, not a
+    # multiselect, so it isn't the same shape as the other pages' shared
+    # multi-ETF selection) but is correctly re-scoped to whichever region
+    # is globally selected.
+    selected_region, ALL_REGIONS_LABEL = region_selector()
+    etf_options = region_etf_options(selected_region, ALL_REGIONS_LABEL)
 
     selected_etf = st.selectbox(
         t("field_select_etfs"),

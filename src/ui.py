@@ -9,7 +9,86 @@ import contextlib
 import streamlit as st
 
 from src.theme import COLORS, icon_svg
-from src.i18n import t, language_selector, get_language
+from src.i18n import t, t_country, language_selector, get_language
+from src.etf_database import get_countries, get_tickers_by_country
+from src.data_loader import DEFAULT_ETFS
+
+# ── Global Market / Region Selector ─────────────────────────────────────────
+# Shared by every page that lets the user scope ETFs to a market (currently
+# ETF Analysis, Risk Analytics, Machine Learning, AI Advisor). A single
+# canonical st.session_state["selected_region"] is the source of truth --
+# picking a market on one page is immediately reflected on every other page
+# that calls region_selector(), and survives reruns from any other widget
+# (tabs, chart type, checkboxes, language switch) since none of them touch
+# this key.
+def region_selector(default_index: int = 1):
+    """Render the shared region/market selectbox. Returns
+    (selected_region, ALL_REGIONS_LABEL).
+
+    "_selected_region_shadow" is a plain (non-widget) session_state entry
+    that mirrors the widget's value after every render. It's needed on top
+    of key="selected_region" alone because Streamlit can drop a widget's
+    own keyed state if something earlier in the same script run -- the
+    language selector inside render_sidebar_nav(), called first thing on
+    every page -- triggers st.rerun() before this widget is reached on that
+    particular pass. A plain session_state entry isn't tied to widget
+    instantiation, so it survives that and reseeds the widget on the next
+    run instead of silently falling back to index=1.
+    """
+    ALL_REGIONS_LABEL = t("field_all_regions")
+    region_options = [ALL_REGIONS_LABEL] + get_countries()
+    region_labels = {c: t_country(c) for c in get_countries()}
+
+    if "_selected_region_shadow" not in st.session_state:
+        st.session_state["_selected_region_shadow"] = region_options[default_index]
+    _shadow = st.session_state["_selected_region_shadow"]
+    _index = region_options.index(_shadow) if _shadow in region_options else default_index
+
+    selected_region = st.selectbox(
+        t("field_select_region"), region_options, index=_index,
+        format_func=lambda x: ALL_REGIONS_LABEL if x == ALL_REGIONS_LABEL else region_labels.get(x, x),
+        key="selected_region",
+    )
+    st.session_state["_selected_region_shadow"] = selected_region
+    return selected_region, ALL_REGIONS_LABEL
+
+
+def region_etf_options(selected_region: str, all_regions_label: str) -> list:
+    """ETF ticker universe for `selected_region` -- the same "All Regions"
+    / "United States" / single-country branching every page used
+    identically before this was centralized here."""
+    if selected_region == all_regions_label:
+        return DEFAULT_ETFS + [tk for c in get_countries() for tk in get_tickers_by_country(c) if tk not in DEFAULT_ETFS]
+    elif selected_region == "United States":
+        return DEFAULT_ETFS
+    return get_tickers_by_country(selected_region)
+
+
+def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
+                            help_text: str = None, n_default: int = 3):
+    """Shared ETF multiselect, scoped to the current global region, backed
+    by st.session_state["selected_etfs_<region>"] -- picking ETFs on one
+    page carries over to any other page calling this helper for the same
+    region. Invalid tickers left over from a since-changed region are
+    dropped automatically since they're filtered out of `etf_options`.
+    `n_default` only applies the first time a given region is ever visited
+    in this session; after that the shared shadow state takes over.
+    """
+    if "_selected_etfs_shadow" not in st.session_state:
+        st.session_state["_selected_etfs_shadow"] = {}
+    _shadow_map = st.session_state["_selected_etfs_shadow"]
+    _default = [tk for tk in _shadow_map.get(selected_region, []) if tk in etf_options]
+    if not _default:
+        _default = etf_options[:n_default]
+
+    selected_etfs = st.multiselect(
+        label, options=etf_options, default=_default, help=help_text,
+        key=f"selected_etfs_{selected_region}",
+    )
+    _shadow_map[selected_region] = selected_etfs
+    st.session_state["_selected_etfs_shadow"] = _shadow_map
+    return selected_etfs
+
 
 # ── Navigation ────────────────────────────────────────────────────────────────
 NAV_ITEMS = [

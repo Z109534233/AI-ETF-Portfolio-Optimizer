@@ -28,7 +28,8 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, error_state
+    chart_card, render_footer, error_state,
+    region_selector, region_etf_options, region_etf_multiselect,
 )
 from src.i18n import t, t_country, get_language
 
@@ -53,69 +54,18 @@ with st.sidebar:
     # different region. Switching regions never breaks the custom-ticker
     # field below, which still accepts any free-text symbol.
     #
-    # key="selected_region" makes st.session_state the primary source of
-    # truth for this widget so ordinary reruns (tabs, chart type,
-    # checkboxes) never reset it. On top of that, "_selected_region_shadow"
-    # is a plain (non-widget) session_state entry that mirrors the value
-    # after every render. This extra shadow is needed because Streamlit can
-    # drop a widget's own keyed state if something earlier in the same
-    # script run -- here, the language selector inside render_sidebar_nav(),
-    # which sits above this widget -- calls st.rerun() before this widget
-    # has been (re-)instantiated on that particular pass. A plain
-    # session_state entry isn't tied to widget instantiation, so it
-    # survives that and lets the widget recover on the next run instead of
-    # silently falling back to index=1.
-    ALL_REGIONS_LABEL = t("field_all_regions")
-    region_options = [ALL_REGIONS_LABEL] + get_countries()
-    # Pre-resolve labels once (within a valid script context) rather than
-    # passing a format_func that reads st.session_state on every invocation.
-    _region_labels = {c: t_country(c) for c in get_countries()}
-
-    if "_selected_region_shadow" not in st.session_state:
-        st.session_state["_selected_region_shadow"] = region_options[1]
-    _region_shadow = st.session_state["_selected_region_shadow"]
-    _region_index = region_options.index(_region_shadow) if _region_shadow in region_options else 1
-
-    selected_region = st.selectbox(
-        t("field_select_region"), region_options, index=_region_index,
-        format_func=lambda x: ALL_REGIONS_LABEL if x == ALL_REGIONS_LABEL else _region_labels.get(x, x),
-        key="selected_region",
+    # region_selector() / region_etf_multiselect() (src/ui.py) are the
+    # SAME shared helpers used by Risk Analytics and AI Advisor: they read
+    # and write one canonical st.session_state["selected_region"] /
+    # ["selected_etfs_<region>"], so picking a market or ETF here is
+    # immediately reflected on those other pages too, not just persisted
+    # within this page.
+    selected_region, ALL_REGIONS_LABEL = region_selector()
+    etf_options = region_etf_options(selected_region, ALL_REGIONS_LABEL)
+    selected_etfs = region_etf_multiselect(
+        selected_region, etf_options, t("field_select_etfs"),
+        help_text=t("etf_select_etfs_help"), n_default=3,
     )
-    st.session_state["_selected_region_shadow"] = selected_region
-
-    if selected_region == ALL_REGIONS_LABEL:
-        etf_options = DEFAULT_ETFS + [tk for c in get_countries() for tk in get_tickers_by_country(c) if tk not in DEFAULT_ETFS]
-    elif selected_region == "United States":
-        etf_options = DEFAULT_ETFS
-    else:
-        etf_options = get_tickers_by_country(selected_region)
-
-    # One multiselect key per region (not a single flat "selected_etfs" key)
-    # is intentional: it's what auto-validates the ETF selection when the
-    # region changes (requirement 5) -- switching to Taiwan can never show
-    # stale US tickers because it's a distinct widget with its own state,
-    # defaulting fresh the first time that region is visited. Now that
-    # `selected_region` above is stable across reruns, this key is stable
-    # too. "_selected_etfs_shadow" (per region) gives the same
-    # rerun-before-instantiation protection described above: it seeds
-    # `default=` from the last known selection for this region instead of
-    # a hardcoded default whenever this key's own state gets dropped.
-    if "_selected_etfs_shadow" not in st.session_state:
-        st.session_state["_selected_etfs_shadow"] = {}
-    _etfs_shadow_map = st.session_state["_selected_etfs_shadow"]
-    _etfs_default = [tk for tk in _etfs_shadow_map.get(selected_region, []) if tk in etf_options]
-    if not _etfs_default:
-        _etfs_default = etf_options[:3]
-
-    selected_etfs = st.multiselect(
-        t("field_select_etfs"),
-        options=etf_options,
-        default=_etfs_default,
-        help=t("etf_select_etfs_help"),
-        key=f"etf_analysis_multiselect_{selected_region}",
-    )
-    _etfs_shadow_map[selected_region] = selected_etfs
-    st.session_state["_selected_etfs_shadow"] = _etfs_shadow_map
 
     custom_ticker = st.text_input(
         t("field_add_custom_ticker"), placeholder="e.g. ARKK", key="selected_custom_ticker",

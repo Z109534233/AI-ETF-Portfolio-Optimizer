@@ -29,7 +29,8 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, error_state, style_signed_columns
+    chart_card, render_footer, error_state, style_signed_columns,
+    region_selector, region_etf_options, region_etf_multiselect,
 )
 from src.theme import COLORS
 from src.i18n import t, t_country
@@ -53,29 +54,18 @@ with st.sidebar:
     # "United States" preserves the exact original ETF list (DEFAULT_ETFS)
     # so existing behavior is unchanged unless the user explicitly picks a
     # different region.
-    ALL_REGIONS_LABEL = t("field_all_regions")
-    region_options = [ALL_REGIONS_LABEL] + get_countries()
-    # Pre-resolve labels once (within a valid script context) rather than
-    # passing a format_func that reads st.session_state on every invocation.
-    _region_labels = {c: t_country(c) for c in get_countries()}
-    selected_region = st.selectbox(
-        t("field_select_region"), region_options, index=1,
-        format_func=lambda x: ALL_REGIONS_LABEL if x == ALL_REGIONS_LABEL else _region_labels.get(x, x),
-    )
-
-    if selected_region == ALL_REGIONS_LABEL:
-        etf_options = DEFAULT_ETFS + [tk for c in get_countries() for tk in get_tickers_by_country(c) if tk not in DEFAULT_ETFS]
-    elif selected_region == "United States":
-        etf_options = DEFAULT_ETFS
-    else:
-        etf_options = get_tickers_by_country(selected_region)
-
-    selected_etfs = st.multiselect(
-        t("field_select_etfs"),
-        options=etf_options,
-        default=etf_options[:4],
-        help=t("risk_select_etfs_help"),
-        key=f"risk_multiselect_{selected_region}",
+    #
+    # region_selector() / region_etf_multiselect() (src/ui.py) are the SAME
+    # shared helpers used by ETF Analysis and AI Advisor: they read and
+    # write one canonical st.session_state["selected_region"] /
+    # ["selected_etfs_<region>"], so picking a market or ETF here is
+    # immediately reflected on those other pages too, not just persisted
+    # within this page.
+    selected_region, ALL_REGIONS_LABEL = region_selector()
+    etf_options = region_etf_options(selected_region, ALL_REGIONS_LABEL)
+    selected_etfs = region_etf_multiselect(
+        selected_region, etf_options, t("field_select_etfs"),
+        help_text=t("risk_select_etfs_help"), n_default=4,
     )
 
     custom_ticker = st.text_input(t("field_add_custom_ticker"), placeholder="e.g. ARKK").upper().strip()
