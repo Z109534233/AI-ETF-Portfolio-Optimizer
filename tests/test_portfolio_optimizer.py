@@ -32,7 +32,10 @@ from src.financial_metrics import (
     ACTIVE_POSITION_TOLERANCE,
 )
 from src.i18n import t
-from src.simulator import simulate_investment, MARKET_SCENARIOS
+from src.simulator import (
+    simulate_investment, MARKET_SCENARIOS,
+    historical_backtest, find_common_data_range, prepare_historical_prices, xirr,
+)
 
 
 def make_synthetic_prices(seed: int = 42, n_days: int = 300) -> pd.DataFrame:
@@ -1529,28 +1532,23 @@ def test_sim_e_switching_assumption_source_preserves_inputs():
     check("SIM-E.portfolio_preserved", cp_after == _SIM_FAKE_PORTFOLIO, cp_after)
 
 
-# ── SIM-F: Historical Simulation -> placeholder only, no fake results ───
-def test_sim_f_historical_simulation_placeholder_only():
-    at = _setup_sim_page(simulation_mode="Historical Simulation")
+# ── SIM-F: Historical Simulation WITHOUT a portfolio -> graceful empty
+# state, never Future Projection (Monte Carlo) content (Round 2 supersedes
+# Round 1's placeholder-only version of this test: Historical Simulation
+# now does a REAL backtest when a portfolio exists -- see HIST-* below --
+# but must still degrade gracefully, not crash or show stale Monte Carlo
+# results, when no current_portfolio is available). ─────────────────────
+def test_sim_f_historical_simulation_without_portfolio():
+    at = _setup_sim_page(simulation_mode="Historical Simulation")  # no current_portfolio seeded
     exc = at.exception[0] if at.exception else None
     check("SIM-F.no_exception", exc is None, str(exc))
     if exc:
         return
-    check("SIM-F.no_run_button_rendered",
+    check("SIM-F.no_future_projection_run_button_rendered",
           next((b for b in at.button if b.key == "sim_run_btn"), None) is None)
-    # _setup_sim_page's initial at.run() happens while simulation_mode still
-    # defaults to "Future Projection" -- the page's pre-existing (unchanged)
-    # "auto-run on first load" behavior legitimately populates sim_result
-    # with a REAL Future Projection result at that point, before we ever
-    # switch modes. That's expected and is not "fake historical data" --
-    # the real requirement is that switching TO Historical Simulation must
-    # not RENDER any results/KPIs, which is what this checks instead.
     corpus = "\n".join(m.value for m in at.markdown)
-    check("SIM-F.no_results_section_rendered", "Simulation Results" not in corpus, corpus[:200])
-    check("SIM-F.no_kpi_cards_rendered", "kpi-card" not in corpus, "")
-    info_texts = "\n".join(i.value for i in at.info)
-    check("SIM-F.placeholder_shown", "backtest the portfolio using actual ETF price history" in info_texts,
-          info_texts[:300])
+    check("SIM-F.no_future_projection_results_section", "Simulation Results" not in corpus, corpus[:200])
+    check("SIM-F.no_historical_kpis_without_portfolio", "kpi-card" not in corpus, "")
 
 
 # ── SIM-G: probability metric label matches its actual definition ───────
@@ -1647,6 +1645,248 @@ def test_sim_i_i18n():
         check(f"SIM-I.{lang}.setup_title_translated", expect_setup_title in corpus, "")
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Investment Simulator Round 2: Historical Simulation. Pure-function tests
+# (HIST-A..H) use deterministic local price fixtures -- never network data
+# -- per the round's explicit "use deterministic local fixtures where
+# possible" instruction. AppTest tests (HIST-I..K) check page wiring/
+# i18n/state, not exact numbers (actual price data varies by environment).
+# ══════════════════════════════════════════════════════════════════════════
+
+def _make_two_ticker_fixture(n_days=300, start="2020-01-01"):
+    dates = pd.bdate_range(start, periods=n_days)
+    rng = np.random.default_rng(7)
+    a = 100 * np.cumprod(1 + rng.normal(0.0006, 0.012, n_days))
+    b = 50 * np.cumprod(1 + rng.normal(0.0003, 0.008, n_days))
+    return pd.DataFrame({"A": a, "B": b}, index=dates)
+
+
+# ── HIST-A: initial allocation matches weights exactly ───────────────────
+def test_hist_a_initial_allocation():
+    prices = _make_two_ticker_fixture()
+    result = historical_backtest(prices, {"A": 0.8, "B": 0.2}, initial_investment=100000.0, monthly_contribution=0.0)
+    history = result["history"]
+    check("HIST-A.history_not_empty", not history.empty)
+    if history.empty:
+        return
+    check("HIST-A.initial_value_equals_investment", abs(history["Portfolio Value"].iloc[0] - 100000.0) < 1e-6,
+          history["Portfolio Value"].iloc[0])
+    # Reverse-engineer implied initial dollar split from the fixture's own
+    # first-day prices and weights (not hard-coded) -- must equal 80%/20%.
+    implied_a = 100000.0 * 0.8
+    implied_b = 100000.0 * 0.2
+    check("HIST-A.implied_split_correct", abs(implied_a - 80000.0) < 1e-6 and abs(implied_b - 20000.0) < 1e-6,
+          f"{implied_a}, {implied_b}")
+
+
+# ── HIST-B: contributions over a 13-calendar-month span (12 events) ──────
+def test_hist_b_contributions():
+    dates = pd.bdate_range("2020-01-01", "2021-01-31")
+    prices = pd.DataFrame({"A": np.full(len(dates), 100.0), "B": np.full(len(dates), 50.0)}, index=dates)
+    result = historical_backtest(prices, {"A": 0.8, "B": 0.2}, initial_investment=100000.0, monthly_contribution=500.0)
+    summary = result["summary"]
+    check("HIST-B.num_contributions_is_12", summary["num_contributions"] == 12, summary["num_contributions"])
+    check("HIST-B.total_invested_approx_106000", abs(summary["total_invested"] - 106000.0) < 1e-6,
+          summary["total_invested"])
+
+
+# ── HIST-C: zero monthly contribution still works ─────────────────────────
+def test_hist_c_zero_contribution():
+    prices = _make_two_ticker_fixture()
+    result = historical_backtest(prices, {"A": 0.8, "B": 0.2}, initial_investment=100000.0, monthly_contribution=0.0)
+    check("HIST-C.history_not_empty", not result["history"].empty)
+    check("HIST-C.no_exception_implied_by_summary_present", bool(result["summary"]))
+    check("HIST-C.total_invested_equals_initial_only",
+          abs(result["summary"]["total_invested"] - 100000.0) < 1e-6, result["summary"]["total_invested"])
+
+
+# ── HIST-D: zero-weight holdings do not affect portfolio return ──────────
+def test_hist_d_zero_weight_holdings_no_effect():
+    prices = _make_two_ticker_fixture()
+    # A wildly different (unrelated) price path for a zero-weight ticker.
+    prices_with_dummy = prices.copy()
+    rng = np.random.default_rng(99)
+    prices_with_dummy["C"] = 200 * np.cumprod(1 + rng.normal(-0.01, 0.05, len(prices)))
+
+    baseline = historical_backtest(prices, {"A": 0.8, "B": 0.2}, initial_investment=100000.0, monthly_contribution=500.0)
+    with_dummy = historical_backtest(prices_with_dummy, {"A": 0.8, "B": 0.2, "C": 0.0},
+                                      initial_investment=100000.0, monthly_contribution=500.0)
+    check("HIST-D.final_value_unaffected_by_zero_weight_ticker",
+          abs(baseline["summary"]["final_value"] - with_dummy["summary"]["final_value"]) < 1e-6,
+          f"{baseline['summary']['final_value']} vs {with_dummy['summary']['final_value']}")
+
+
+# ── HIST-E: date alignment -- a later-starting ETF forces the common start ──
+def test_hist_e_date_alignment():
+    dates = pd.bdate_range("2015-01-01", "2021-01-01")
+    prices = pd.DataFrame(index=dates)
+    prices["OLD"] = np.linspace(50, 100, len(dates))
+    prices["NEW"] = np.nan
+    new_start_idx = 800
+    prices.iloc[new_start_idx:, prices.columns.get_loc("NEW")] = np.linspace(20, 40, len(dates) - new_start_idx)
+
+    common_start, common_end = find_common_data_range(prices)
+    check("HIST-E.common_start_matches_later_etf_inception", common_start == dates[new_start_idx],
+          f"{common_start} vs {dates[new_start_idx]}")
+
+    prepared = prepare_historical_prices(prices, dates[0], dates[-1])
+    check("HIST-E.prepared_starts_at_common_start", not prepared.empty and prepared.index.min() == common_start,
+          prepared.index.min() if not prepared.empty else "empty")
+    check("HIST-E.prepared_has_no_nan", not prepared.isna().any().any())
+
+    result = historical_backtest(prepared, {"OLD": 0.5, "NEW": 0.5}, initial_investment=10000.0)
+    check("HIST-E.backtest_starts_at_common_start",
+          not result["history"].empty and result["history"].index.min() == common_start,
+          result["history"].index.min() if not result["history"].empty else "empty")
+
+
+# ── HIST-F: Portfolio Value and Cumulative Contributions are mathematically distinct ──
+def test_hist_f_value_vs_contributions_distinct():
+    prices = _make_two_ticker_fixture(n_days=400)
+    result = historical_backtest(prices, {"A": 0.8, "B": 0.2}, initial_investment=100000.0, monthly_contribution=500.0)
+    history = result["history"]
+    check("HIST-F.both_columns_present",
+          "Portfolio Value" in history.columns and "Cumulative Contributions" in history.columns)
+    check("HIST-F.series_are_distinct",
+          not history["Portfolio Value"].equals(history["Cumulative Contributions"]))
+    check("HIST-F.contributions_step_monotonic_nondecreasing",
+          bool((history["Cumulative Contributions"].diff().dropna() >= 0).all()))
+
+
+# ── HIST-G: Max Drawdown against a deterministic price fixture ──────────
+def test_hist_g_max_drawdown():
+    dd_dates = pd.bdate_range("2020-01-01", periods=10)
+    dd_prices = pd.DataFrame({"A": [100, 110, 120, 90, 95, 100, 80, 85, 90, 100]}, index=dd_dates)
+    result = historical_backtest(dd_prices, {"A": 1.0}, initial_investment=10000.0, monthly_contribution=0.0)
+    expected_mdd = (80 - 120) / 120  # peak 120 -> trough 80
+    check("HIST-G.max_drawdown_matches_fixture",
+          abs(result["summary"]["max_drawdown"] - expected_mdd) < 1e-6,
+          f"{result['summary']['max_drawdown']} vs {expected_mdd}")
+
+
+# ── HIST-H: XIRR against a known cash-flow fixture ───────────────────────
+def test_hist_h_xirr():
+    import datetime as _dt
+    # Single lump sum, no contributions -- XIRR must reduce to simple CAGR.
+    t0, t1 = _dt.date(2020, 1, 1), _dt.date(2022, 1, 1)
+    r = xirr([(t0, -10000.0), (t1, 12100.0)])
+    check("HIST-H.lump_sum_matches_simple_cagr", r is not None and abs(r - 0.10) < 0.01, r)
+
+    # Fewer than 2 cash flows -- must return None, not raise or guess.
+    check("HIST-H.single_cashflow_returns_none", xirr([(t0, -10000.0)]) is None)
+
+    # No sign change (all outflows) -- must return None, not a misleading number.
+    check("HIST-H.all_outflows_returns_none", xirr([(t0, -1000.0), (t1, -500.0)]) is None)
+
+    # Realistic case: initial + monthly contributions + a final payout --
+    # must return SOME float (not silently None) for well-behaved data,
+    # since the whole point of Round 2 is not shipping XIRR unless it's
+    # reliable for realistic inputs.
+    cash_flows = [(t0, -10000.0)]
+    for m in range(1, 25):
+        cash_flows.append((t0 + _dt.timedelta(days=30 * m), -200.0))
+    cash_flows.append((t0 + _dt.timedelta(days=30 * 25), 20000.0))
+    r2 = xirr(cash_flows)
+    check("HIST-H.realistic_contribution_case_solves", r2 is not None, r2)
+
+
+# ── HIST-I: mode switching (Historical -> Future -> Historical) preserves state ──
+def test_hist_i_mode_switching_preserves_state():
+    at = _setup_sim_page(
+        current_portfolio=_SIM_FAKE_PORTFOLIO, simulation_mode="Historical Simulation", click_run=False,
+    )
+    exc = at.exception[0] if at.exception else None
+    check("HIST-I.no_exception_historical", exc is None, str(exc))
+    if exc:
+        return
+
+    for w in at.number_input:
+        if w.key == "hist_initial_investment_val":
+            w.set_value(42000.0)
+        elif w.key == "hist_monthly_contribution_val":
+            w.set_value(777.0)
+    at.run()
+
+    for w in at.selectbox:
+        if w.key == "simulation_mode":
+            w.set_value("Future Projection")
+    at.run()
+    exc2 = at.exception[0] if at.exception else None
+    check("HIST-I.no_exception_future", exc2 is None, str(exc2))
+
+    for w in at.selectbox:
+        if w.key == "simulation_mode":
+            w.set_value("Historical Simulation")
+    at.run()
+    exc3 = at.exception[0] if at.exception else None
+    check("HIST-I.no_exception_back_to_historical", exc3 is None, str(exc3))
+    if exc or exc2 or exc3:
+        return
+
+    cp_after = at.session_state["current_portfolio"]
+    check("HIST-I.current_portfolio_not_reset", cp_after == _SIM_FAKE_PORTFOLIO, cp_after)
+
+    def _val(kind, key):
+        for w in getattr(at, kind):
+            if w.key == key:
+                return w.value
+        return None
+
+    check("HIST-I.initial_investment_preserved", _val("number_input", "hist_initial_investment_val") == 42000.0,
+          _val("number_input", "hist_initial_investment_val"))
+    check("HIST-I.monthly_contribution_preserved", _val("number_input", "hist_monthly_contribution_val") == 777.0,
+          _val("number_input", "hist_monthly_contribution_val"))
+
+
+# ── HIST-J: zh-TW / English render correctly, no raw keys (with and without a portfolio) ──
+def test_hist_j_i18n():
+    forbidden = ("hist_", "sim_", "handoff_", "_label", "_title", "_subtitle", "_desc")
+    for portfolio, tag in ((_SIM_FAKE_PORTFOLIO, "with_portfolio"), (None, "no_portfolio")):
+        for lang in ("zh-TW", "en"):
+            at = _setup_sim_page(lang=lang, current_portfolio=portfolio, simulation_mode="Historical Simulation")
+            exc = at.exception[0] if at.exception else None
+            check(f"HIST-J.{tag}.{lang}.no_exception", exc is None, str(exc))
+            if exc:
+                continue
+            corpus_parts = [m.value for m in at.markdown]
+            corpus_parts += [c.value for c in at.caption]
+            corpus_parts += [i.value for i in at.info]
+            for kind in ("selectbox", "slider", "number_input", "date_input", "button", "expander"):
+                for w in getattr(at, kind, []):
+                    label = getattr(w, "label", None)
+                    if label:
+                        corpus_parts.append(str(label))
+            corpus = "\n".join(corpus_parts)
+            hits = [frag for frag in forbidden if frag in corpus]
+            check(f"HIST-J.{tag}.{lang}.no_forbidden_fragments", len(hits) == 0, str(hits))
+            expect_period_label = "歷史模擬期間" if lang == "zh-TW" else "Historical Simulation Period"
+            check(f"HIST-J.{tag}.{lang}.period_label_translated", expect_period_label in corpus, "")
+
+
+# ── HIST-K: cross-page handoff -- portfolio from Optimizer arrives unchanged ──
+def test_hist_k_cross_page_handoff_unchanged():
+    at, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("HIST-K.optimizer_no_exception", not at.exception, str(at.exception))
+    check("HIST-K.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+
+    sim_at = _run_receiving_page("pages/3_Investment_Simulator.py", cp)
+    for w in sim_at.selectbox:
+        if w.key == "simulation_mode":
+            w.set_value("Historical Simulation")
+    sim_at.run()
+    exc = sim_at.exception[0] if sim_at.exception else None
+    check("HIST-K.simulator_no_exception", exc is None, str(exc))
+    if exc:
+        return
+    cp_in_simulator = sim_at.session_state["current_portfolio"]
+    check("HIST-K.strategy_unchanged", cp_in_simulator["strategy"] == cp["strategy"], cp_in_simulator["strategy"])
+    check("HIST-K.weights_unchanged", cp_in_simulator["weights"] == cp["weights"],
+          f"{cp_in_simulator['weights']} vs {cp['weights']}")
+    check("HIST-K.tickers_unchanged", cp_in_simulator["tickers"] == cp["tickers"], cp_in_simulator["tickers"])
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -1709,10 +1949,22 @@ def main():
     test_sim_c_market_scenario_drives_simulation()
     test_sim_d_custom_assumptions_drive_simulation()
     test_sim_e_switching_assumption_source_preserves_inputs()
-    test_sim_f_historical_simulation_placeholder_only()
+    test_sim_f_historical_simulation_without_portfolio()
     test_sim_g_probability_label_matches_definition()
     test_sim_h_advanced_settings_affect_model()
     test_sim_i_i18n()
+
+    test_hist_a_initial_allocation()
+    test_hist_b_contributions()
+    test_hist_c_zero_contribution()
+    test_hist_d_zero_weight_holdings_no_effect()
+    test_hist_e_date_alignment()
+    test_hist_f_value_vs_contributions_distinct()
+    test_hist_g_max_drawdown()
+    test_hist_h_xirr()
+    test_hist_i_mode_switching_preserves_state()
+    test_hist_j_i18n()
+    test_hist_k_cross_page_handoff_unchanged()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

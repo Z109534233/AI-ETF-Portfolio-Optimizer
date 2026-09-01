@@ -351,6 +351,36 @@ def portfolio_growth_chart(backtest_df: pd.DataFrame,
     return apply_dark_theme(fig)
 
 
+def historical_growth_chart(history_df: pd.DataFrame, currency_symbol: str = "$",
+                             title: str = None) -> go.Figure:
+    """Historical Simulation growth chart (Investment Simulator Round 2):
+    Portfolio Value vs Cumulative Contributions over the actual backtest
+    period, so the gap between the two lines visually IS the investment
+    growth (as opposed to money the investor put in). `history_df` must
+    have columns "Portfolio Value" and "Cumulative Contributions"
+    (src/simulator.py's historical_backtest() return shape) -- this is
+    real historical data, never Monte Carlo paths.
+    """
+    title = title if title is not None else t("hist_growth_chart_title")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=history_df.index, y=history_df["Portfolio Value"],
+        name=t("hist_chart_portfolio_value"), line=dict(color=COLORS["primary"], width=2.5),
+        fill="tonexty", fillcolor="rgba(59,130,246,0.10)",
+        hovertemplate=f"{t('chart_date')}: %{{x|%Y-%m-%d}}<br>{t('hist_chart_portfolio_value')}: {currency_symbol}%{{y:,.0f}}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=history_df.index, y=history_df["Cumulative Contributions"],
+        name=t("hist_cumulative_contributions_line"), line=dict(color=COLORS["text_muted"], width=1.5, dash="dash"),
+        hovertemplate=f"{t('chart_date')}: %{{x|%Y-%m-%d}}<br>{t('hist_cumulative_contributions_line')}: {currency_symbol}%{{y:,.0f}}<extra></extra>"
+    ))
+    fig.update_layout(
+        title=title, xaxis_title=t("chart_date"),
+        yaxis_title=f"{t('hist_chart_value_label')} ({currency_symbol})",
+    )
+    return apply_dark_theme(fig)
+
+
 def monte_carlo_paths_chart(paths_df: pd.DataFrame, title: str = None) -> go.Figure:
     """Monte Carlo simulation paths chart."""
     title = title if title is not None else t("chart_monte_carlo_simulation")

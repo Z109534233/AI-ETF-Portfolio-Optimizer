@@ -1,8 +1,8 @@
 """
 Page 3: Investment Simulator
-Future Monte Carlo projection (Historical Simulation architecture is
-introduced this round as a placeholder -- see Simulation Mode below; the
-actual historical backtest is not implemented until a later round).
+Future Monte Carlo projection AND real Historical Simulation (a genuine
+monthly-rebalanced backtest against actual ETF price history -- see
+src/simulator.py's historical_backtest(), not Monte Carlo).
 """
 
 import streamlit as st
@@ -11,19 +11,38 @@ import numpy as np
 import plotly.graph_objects as go
 import sys
 import os
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.simulator import simulate_investment, compound_growth_projection, scenario_comparison, MARKET_SCENARIOS
+from src.simulator import (
+    simulate_investment, compound_growth_projection, scenario_comparison, MARKET_SCENARIOS,
+    historical_backtest, find_common_data_range, prepare_historical_prices,
+)
 from src.database import save_simulation, init_database
-from src.charts import monte_carlo_paths_chart, future_value_distribution_chart, apply_dark_theme
+from src.data_loader import download_etf_data
+from src.etf_database import to_yahoo_symbol, rename_yahoo_columns
+from src.financial_metrics import drawdown_series, ACTIVE_POSITION_TOLERANCE
+from src.charts import (
+    monte_carlo_paths_chart, future_value_distribution_chart, historical_growth_chart, apply_dark_theme,
+)
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, dataframe_to_csv
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card,
-    render_footer, render_current_portfolio_handoff,
+    render_footer, render_current_portfolio_handoff, error_state,
 )
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, t_opt_method
+
+# Display-currency symbol per market (Round 2 spec section 20) -- this
+# ONLY changes which symbol is shown; every underlying calculation stays
+# in whatever currency the ETF's own price data is already denominated in
+# (Yahoo Finance returns .TW tickers in TWD, .L in GBX/GBP, etc.). The
+# rest of this app (Portfolio Optimizer, and this page's Future Projection
+# section) still hard-codes "$" everywhere regardless of market -- a
+# pre-existing, cross-cutting assumption this round does not change; see
+# the end-of-round report for the full limitation writeup.
+_CURRENCY_SYMBOL_BY_MARKET = {"United States": "$", "Taiwan": "NT$", "United Kingdom": "£"}
 
 st.set_page_config(
     page_title="Investment Simulator | AI ETF Portfolio Optimizer",
@@ -203,11 +222,229 @@ with st.sidebar:
 
         run_btn = st.button(t("btn_run_simulation"), type="primary", use_container_width=True, key="sim_run_btn")
 
+    elif simulation_mode == "Historical Simulation":
+        # ── Primary Controls ─────────────────────────────────────────────
+        # Initial Investment / Monthly Contribution SHARE the same shadow
+        # key as the Future Projection widgets above (different widget
+        # `key=` since Streamlit needs a unique id per instantiated
+        # widget, but the same underlying value) -- switching modes
+        # preserves these amounts, per spec section 19.
+        st.markdown("---")
+        st.markdown(f"### {t('sim_sidebar_params')}")
+
+        _ik, _iv = _shadow_default("sim_initial_investment_val", 10000.0)
+        initial_investment = st.number_input(
+            t("sim_initial_investment"), 100.0, 1_000_000.0, _iv, 500.0, key="hist_initial_investment_val",
+        )
+        st.session_state[_ik] = initial_investment
+
+        _mck, _mcv = _shadow_default("sim_monthly_contribution_val", 500.0)
+        monthly_contribution = st.number_input(
+            t("sim_monthly_contribution"), 0.0, 50000.0, _mcv, 100.0, key="hist_monthly_contribution_val",
+        )
+        st.session_state[_mck] = monthly_contribution
+
+        # ── Historical Simulation Period ─────────────────────────────────
+        st.markdown("---")
+        st.markdown(f"### {t('hist_period_label')}")
+
+        active_tickers = []
+        hist_wide_prices = pd.DataFrame()
+        hist_common_start = None
+        hist_common_end = None
+        hist_start_date = None
+        hist_end_date = None
+
+        if current_portfolio:
+            active_tickers = [
+                tk for tk, w in (current_portfolio.get("weights") or {}).items()
+                if w > ACTIVE_POSITION_TOLERANCE
+            ]
+
+        if not active_tickers:
+            st.caption(t("hist_requires_portfolio"))
+        else:
+            # A single wide-window download (start=2000-01-01) discovers
+            # true per-ticker data availability in one shot; it's cached
+            # by download_etf_data()'s @st.cache_data, so re-running this
+            # page (language switch, other widget changes) doesn't
+            # re-fetch. The user's chosen date range below is then just a
+            # slice of this same DataFrame -- no second download.
+            with st.spinner(t("hist_running")):
+                _yahoo_tickers = [to_yahoo_symbol(tk) for tk in active_tickers]
+                _raw_wide = download_etf_data(_yahoo_tickers, "2000-01-01", str(date.today()))
+            if not _raw_wide.empty:
+                hist_wide_prices = rename_yahoo_columns(_raw_wide)
+                hist_wide_prices = hist_wide_prices[[tk for tk in active_tickers if tk in hist_wide_prices.columns]]
+                hist_common_start, hist_common_end = find_common_data_range(hist_wide_prices)
+
+            if hist_common_start is None:
+                st.caption(t("hist_no_common_data"))
+            else:
+                _default_start = hist_common_start.date()
+                _default_end = hist_common_end.date()
+                _hsk, _hsv = _shadow_default("hist_start_date_val", _default_start)
+                hist_start_date = st.date_input(
+                    t("field_start_date"), value=_hsv, max_value=_default_end, key="hist_start_date_widget",
+                )
+                st.session_state[_hsk] = hist_start_date
+
+                _hek, _hev = _shadow_default("hist_end_date_val", _default_end)
+                hist_end_date = st.date_input(
+                    t("field_end_date"), value=_hev, max_value=_default_end, key="hist_end_date_widget",
+                )
+                st.session_state[_hek] = hist_end_date
+
+                if hist_start_date < _default_start:
+                    st.caption(t("hist_start_date_constrained_msg"))
+                st.caption(t("hist_data_limitation_note"))
+
+        st.caption(f"{t('hist_rebalancing_label')}: {t('hist_rebalancing_monthly')}")
+
+        run_btn_hist = st.button(
+            t("btn_run_simulation"), type="primary", use_container_width=True, key="hist_run_btn",
+        )
+
     render_sidebar_footer()
 
-# ── Historical Simulation placeholder (Round 1: architecture only) ──────────────
+# ── Historical Simulation (Round 2: real backtest, no Monte Carlo) ──────────────
 if simulation_mode == "Historical Simulation":
-    st.info(t("sim_historical_placeholder"))
+    if not active_tickers or hist_common_start is None or hist_start_date is None:
+        if current_portfolio and active_tickers:
+            st.info(t("hist_no_common_data"))
+        elif current_portfolio:
+            st.info(t("hist_requires_portfolio"))
+        # else: the top-of-page handoff empty_state already explains this
+        disclaimer_box()
+        render_footer()
+        st.stop()
+
+    # Effective start/end never fall outside the common valid-data range,
+    # even if a shadow-restored date from a previous session predates it.
+    effective_start = max(hist_start_date, hist_common_start.date())
+    effective_end = min(hist_end_date, hist_common_end.date()) if hist_end_date else hist_common_end.date()
+
+    if "hist_result" not in st.session_state:
+        st.session_state.hist_result = None
+
+    if run_btn_hist or st.session_state.hist_result is None:
+        with st.spinner(t("hist_running")):
+            _missing = set(active_tickers) - set(hist_wide_prices.columns)
+            if _missing:
+                st.warning(f"No usable price data for: {', '.join(sorted(_missing))}. "
+                           "These tickers were excluded from the historical simulation.")
+            _prepared = prepare_historical_prices(
+                hist_wide_prices, pd.Timestamp(effective_start), pd.Timestamp(effective_end),
+            )
+            active_weights = {
+                tk: w for tk, w in current_portfolio["weights"].items() if tk in active_tickers
+            }
+            _bt = historical_backtest(
+                _prepared, active_weights,
+                initial_investment=initial_investment, monthly_contribution=monthly_contribution,
+            )
+        st.session_state.hist_result = _bt
+        st.session_state.hist_params = {
+            "initial_investment": initial_investment,
+            "monthly_contribution": monthly_contribution,
+            "strategy": current_portfolio.get("strategy"),
+            "market": current_portfolio.get("market"),
+            "active_weights": active_weights,
+        }
+
+    hist_result = st.session_state.hist_result
+    if not hist_result or hist_result.get("history") is None or hist_result["history"].empty:
+        error_state(t("msg_no_price_data_title"), t("hist_no_common_data"))
+        disclaimer_box()
+        render_footer()
+        st.stop()
+
+    history = hist_result["history"]
+    hist_summary = hist_result["summary"]
+    hist_params = st.session_state.hist_params
+    _currency_symbol = _CURRENCY_SYMBOL_BY_MARKET.get(hist_params.get("market"), "$")
+
+    # ── Allocation disclaimer (spec section 16: this is a fixed
+    # hypothetical allocation from the CURRENT optimizer run, never a
+    # claim that the optimizer would have chosen this historically) ──────
+    _active_weights_text = " · ".join(
+        f"{tk} {w:.2%}" for tk, w in sorted(hist_params["active_weights"].items(), key=lambda kv: -kv[1])
+    )
+    st.caption(f"{t('hist_allocation_disclaimer')} {_active_weights_text}")
+
+    # ── Backtest Setup ────────────────────────────────────────────────────
+    with chart_card(t("hist_backtest_setup_title")):
+        _bt_setup_rows = [
+            (t("sim_initial_investment"), f"{_currency_symbol}{hist_params['initial_investment']:,.0f}"),
+            (t("sim_monthly_contribution"), f"{_currency_symbol}{hist_params['monthly_contribution']:,.0f}"),
+            (t("hist_num_contributions"), f"{hist_summary['num_contributions']}"),
+            (t("hist_total_invested"), f"{_currency_symbol}{hist_summary['total_invested']:,.0f}"),
+            (t("field_start_date"), str(hist_summary["start_date"].date())),
+            (t("field_end_date"), str(hist_summary["end_date"].date())),
+            (t("hist_rebalancing_label"), t("hist_rebalancing_monthly")),
+        ]
+        _bt_items_html = "".join(
+            f'<div style="min-width:130px;"><div style="font-size:11px;color:{COLORS["text_muted"]};">{label}</div>'
+            f'<div style="font-size:13px;color:{COLORS["text"]};font-weight:600;">{value}</div></div>'
+            for label, value in _bt_setup_rows
+        )
+        st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:10px 28px;">{_bt_items_html}</div>', unsafe_allow_html=True)
+
+    # ── KPI Cards ─────────────────────────────────────────────────────────
+    section_header(t("hist_results_title"))
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(metric_card_html(t("hist_total_invested"), f"{_currency_symbol}{hist_summary['total_invested']:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
+    with col2:
+        st.markdown(metric_card_html(t("hist_final_value"), f"{_currency_symbol}{hist_summary['final_value']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
+    with col3:
+        _gain_color = COLORS["success"] if hist_summary["gain"] >= 0 else COLORS["danger"]
+        st.markdown(metric_card_html(t("hist_investment_gain_loss"), f"{_currency_symbol}{hist_summary['gain']:,.0f}", color=_gain_color), unsafe_allow_html=True)
+    with col4:
+        st.markdown(metric_card_html(t("hist_cumulative_return"), f"{hist_summary['cumulative_return']:.2%}", color=COLORS["purple"]), unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if hist_summary.get("annualized_mwr") is not None:
+            st.markdown(metric_card_html(t("hist_annualized_mwr"), f"{hist_summary['annualized_mwr']:.2%}", color=COLORS["warning"]), unsafe_allow_html=True)
+        else:
+            st.markdown(metric_card_html(t("hist_annualized_mwr"), "—", color=COLORS["text_muted"]), unsafe_allow_html=True)
+    with col2:
+        st.markdown(metric_card_html(t("metric_maximum_drawdown"), f"{hist_summary['max_drawdown']:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    with col3:
+        if hist_summary.get("best_year"):
+            _by, _byr = hist_summary["best_year"]
+            st.markdown(metric_card_html(t("hist_best_year"), f"{_by} ({_byr:.1%})", color=COLORS["success"]), unsafe_allow_html=True)
+
+    if hist_summary.get("annualized_mwr") is None:
+        st.caption(t("hist_mwr_unavailable"))
+    if hist_summary.get("worst_year"):
+        _wy, _wyr = hist_summary["worst_year"]
+        st.caption(f"{t('hist_worst_year')}: {_wy} ({_wyr:.1%})")
+
+    # ── Charts ────────────────────────────────────────────────────────────
+    with chart_card(t("hist_growth_chart_title")):
+        fig_hist_growth = historical_growth_chart(history, currency_symbol=_currency_symbol)
+        st.plotly_chart(fig_hist_growth, use_container_width=True, key="hist_growth_chart")
+
+    with chart_card(t("hist_drawdown_chart_title")):
+        _hist_dd = drawdown_series(history["Portfolio Value"]) * 100
+        fig_hist_dd = go.Figure()
+        fig_hist_dd.add_trace(go.Scatter(
+            x=_hist_dd.index, y=_hist_dd, fill="tozeroy",
+            line=dict(color=COLORS["danger"], width=1.5), name=t("hist_drawdown_chart_title"),
+        ))
+        fig_hist_dd.update_layout(xaxis_title=t("chart_date"), yaxis_title=t("chart_drawdown_pct"))
+        st.plotly_chart(apply_dark_theme(fig_hist_dd), use_container_width=True, key="hist_drawdown_chart")
+
+    # ── Result Interpretation (deterministic, not generative) ──────────────
+    _hist_interp_key = (
+        "hist_summary_positive" if hist_summary["final_value"] >= hist_summary["total_invested"]
+        else "hist_summary_negative"
+    )
+    st.markdown(f"**{t('hist_result_interpretation_title')}**  \n{t(_hist_interp_key)}")
+    st.caption(t("hist_data_limitation_note"))
+
     disclaimer_box()
     render_footer()
     st.stop()
