@@ -664,6 +664,39 @@ def test_ef_d_frontier_only_feasible():
           f"{len(tight_df)} rows out of {n_requested} requested -- expected fewer")
 
 
+# ── EF-D2: no hook near the Minimum Volatility point -- frontier begins at
+# the actual min-vol portfolio and only shows the efficient upper branch ──
+def test_ef_d2_no_hook_near_min_vol():
+    import numpy as np
+    from src.portfolio_optimizer import optimize_min_volatility
+
+    mean_returns, cov = _ef_mean_cov()
+    mv_weights, mv_ok = optimize_min_volatility(mean_returns, cov)
+    check("EF-D2.min_vol_solver_converged", mv_ok)
+    if not mv_ok:
+        return
+    mv_return = portfolio_return(mv_weights, mean_returns)
+    mv_vol = portfolio_volatility(mv_weights, cov)
+
+    frontier_df = compute_efficient_frontier(mean_returns, cov, n_points=40)
+    check("EF-D2.frontier_has_points", len(frontier_df) >= 2, str(len(frontier_df)))
+    if len(frontier_df) < 2:
+        return
+
+    rets = frontier_df["Return"].values
+    vols = frontier_df["Volatility"].values
+    check("EF-D2.starts_at_min_vol_return", abs(rets[0] - mv_return) < 1e-6,
+          f"frontier_first_return={rets[0]} min_vol_return={mv_return}")
+    check("EF-D2.starts_at_min_vol_volatility", abs(vols[0] - mv_vol) < 1e-6,
+          f"frontier_first_vol={vols[0]} min_vol_vol={mv_vol}")
+    check("EF-D2.returns_strictly_increasing", bool(np.all(np.diff(rets) > 0)),
+          f"non-monotonic returns -- this is the hook: {rets.tolist()}")
+    check("EF-D2.volatility_non_decreasing", bool(np.all(np.diff(vols) >= -1e-9)),
+          f"volatility decreases somewhere -- this is the hook: {vols.tolist()}")
+    check("EF-D2.no_duplicate_volatility",
+          len(vols) == len(set(np.round(vols, 8))), str(vols.tolist()))
+
+
 # ── EF-E: All frontier weights satisfy current constraints ──────────────
 def test_ef_e_frontier_respects_constraints():
     import numpy as np
@@ -829,6 +862,7 @@ def main():
     test_ef_b_max_sharpe_current_matches_comparison()
     test_ef_c_min_vol_current_matches_comparison()
     test_ef_d_frontier_only_feasible()
+    test_ef_d2_no_hook_near_min_vol()
     test_ef_e_frontier_respects_constraints()
     test_ef_f_monte_carlo_visually_secondary()
     test_ef_g_no_duplicate_legend_labels()

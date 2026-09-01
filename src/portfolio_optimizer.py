@@ -256,25 +256,47 @@ def compute_efficient_frontier(mean_returns: np.ndarray, cov_matrix: np.ndarray,
                                 max_weight: float = 1.0,
                                 allow_short: bool = False) -> pd.DataFrame:
     """
-    Deterministic Efficient Frontier (Round 2B-2): for a grid of target
-    annual returns spanning the range of individual asset returns, minimize
-    portfolio volatility subject to sum(weights) == 1, portfolio_return ==
-    target, and the SAME min/max weight + allow_short bounds used by every
-    other strategy in this module. A target return that SLSQP cannot solve
-    feasibly is skipped entirely (not included with a fallback/garbage
-    point) -- callers should treat "too few rows returned" as "too few
-    feasible portfolios under these constraints" rather than a bug.
+    Deterministic Efficient Frontier (Round 2B-2, hook fixed in 2B-2 follow-up):
+    for a grid of target annual returns, minimize portfolio volatility
+    subject to sum(weights) == 1, portfolio_return == target, and the SAME
+    min/max weight + allow_short bounds used by every other strategy in
+    this module. A target return that SLSQP cannot solve feasibly is
+    skipped entirely (not included with a fallback/garbage point).
+
+    The grid's LOWER bound is the actual global Minimum-Volatility
+    portfolio's own return (from optimize_min_volatility() -- the same
+    verified engine the Minimum Volatility strategy marker uses elsewhere),
+    not the lowest individual asset return. Target returns below the
+    min-vol return still have feasible "minimize volatility subject to
+    target" solutions, but they sit on the INEFFICIENT lower branch of the
+    mean-variance parabola (higher volatility for a LOWER return, mirroring
+    the efficient upper branch) -- including them was the root cause of a
+    visible hook/loop near the Minimum Volatility point when the curve was
+    connected. Sampling only targets >= the min-vol return keeps every
+    point on the efficient upper branch, where volatility and return are
+    both monotonically increasing together by construction.
+
+    A final monotonic-return pass (after sorting by volatility) is kept as
+    a numerical-safety net for solver noise right at the min-vol vertex --
+    it only ever DROPS a point that doesn't strictly improve on the best
+    return seen so far, never alters a surviving value.
 
     Returns a DataFrame with columns Return, Volatility, Weights (the last
     is a list aligned to mean_returns' column order, so callers can verify
     every frontier point actually respects the requested constraints).
     """
-    min_ret = float(np.min(mean_returns) * 252)
+    min_vol_weights, min_vol_success = optimize_min_volatility(
+        mean_returns, cov_matrix, min_weight, max_weight, allow_short
+    )
+    if not min_vol_success:
+        return pd.DataFrame(columns=["Return", "Volatility", "Weights"])
+    min_vol_return = portfolio_return(min_vol_weights, mean_returns)
+
     max_ret = float(np.max(mean_returns) * 252)
-    if not np.isfinite([min_ret, max_ret]).all() or min_ret >= max_ret:
+    if not np.isfinite([min_vol_return, max_ret]).all() or min_vol_return >= max_ret:
         return pd.DataFrame(columns=["Return", "Volatility", "Weights"])
 
-    target_returns = np.linspace(min_ret, max_ret, n_points)
+    target_returns = np.linspace(min_vol_return, max_ret, n_points)
 
     frontier_points = []
     for target in target_returns:
@@ -285,9 +307,28 @@ def compute_efficient_frontier(mean_returns: np.ndarray, cov_matrix: np.ndarray,
             continue
         ret = portfolio_return(weights, mean_returns)
         vol = portfolio_volatility(weights, cov_matrix)
+        if not np.isfinite(ret) or not np.isfinite(vol):
+            continue
+        # A "successful" SLSQP solve that landed far from the requested
+        # target isn't a trustworthy point on the curve -- numerical
+        # instability guard, not a fabricated/adjusted value.
+        if abs(ret - target) > 1e-4:
+            continue
         frontier_points.append({"Return": ret, "Volatility": vol, "Weights": weights.tolist()})
 
-    return pd.DataFrame(frontier_points, columns=["Return", "Volatility", "Weights"])
+    if not frontier_points:
+        return pd.DataFrame(columns=["Return", "Volatility", "Weights"])
+
+    frontier_df = pd.DataFrame(frontier_points).sort_values("Volatility").reset_index(drop=True)
+
+    kept_rows = []
+    best_return_so_far = -np.inf
+    for _, row in frontier_df.iterrows():
+        if row["Return"] > best_return_so_far + 1e-9:
+            kept_rows.append(row)
+            best_return_so_far = row["Return"]
+
+    return pd.DataFrame(kept_rows, columns=["Return", "Volatility", "Weights"]).reset_index(drop=True)
 
 
 def run_optimization(prices_df: pd.DataFrame, method: str,
