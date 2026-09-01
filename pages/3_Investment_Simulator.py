@@ -1,6 +1,8 @@
 """
 Page 3: Investment Simulator
-Long-term investment projection with Monte Carlo simulation.
+Future Monte Carlo projection (Historical Simulation architecture is
+introduced this round as a placeholder -- see Simulation Mode below; the
+actual historical backtest is not implemented until a later round).
 """
 
 import streamlit as st
@@ -21,7 +23,7 @@ from src.ui import (
     render_footer, render_current_portfolio_handoff,
 )
 from src.theme import COLORS
-from src.i18n import t, t_market_scenario, MARKET_SCENARIO_KEYS
+from src.i18n import t, t_market_scenario, t_opt_method
 
 st.set_page_config(
     page_title="Investment Simulator | AI ETF Portfolio Optimizer",
@@ -35,51 +37,180 @@ init_database()
 page_header(t("sim_title"), t("sim_subtitle"))
 
 # ── Current Portfolio handoff (Round 2B-4) ───────────────────────────────────
-# Proof-of-handoff preview only -- the rest of this page (below) remains
-# fully self-contained and never requires a current_portfolio to exist;
-# see render_current_portfolio_handoff() in src/ui.py.
+# Proof-of-handoff preview only -- the rest of this page remains fully
+# self-contained and never requires a current_portfolio to exist; see
+# render_current_portfolio_handoff() in src/ui.py.
 render_current_portfolio_handoff(
     t("handoff_empty_state_title"), t("handoff_empty_state_body_sim"),
 )
+current_portfolio = st.session_state.get("current_portfolio")
 
 st.info(t("sim_projection_disclaimer"))
+
+
+def _shadow_default(name: str, default):
+    """Same pattern as pages/2_Portfolio_Optimizer.py's helper of the same
+    name (duplicated here, not imported -- a page script runs
+    st.set_page_config() and other top-level Streamlit calls on import, so
+    importing another page's module is unsafe). Needed because
+    render_sidebar_nav()'s language selector can st.rerun() before a
+    not-yet-reached widget on this page is instantiated, which would
+    otherwise silently drop that widget's state back to its hard-coded
+    default -- see Round 1 spec section 15: switching language/tabs/charts
+    must not reset simulation inputs.
+    """
+    shadow_key = f"_{name}_shadow"
+    if shadow_key not in st.session_state:
+        st.session_state[shadow_key] = default
+    return shadow_key, st.session_state[shadow_key]
+
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_nav()
-    st.markdown(f"### {t('sim_sidebar_params')}")
 
-    initial_investment = st.number_input(t("sim_initial_investment"), 100.0, 1_000_000.0, 10000.0, 500.0)
-    monthly_contribution = st.number_input(t("sim_monthly_contribution"), 0.0, 50000.0, 500.0, 100.0)
-    years = st.slider(t("sim_investment_years"), 1, 40, 20)
-
-    st.markdown("---")
-    st.markdown(f"### {t('sim_market_assumptions')}")
-    # Pre-resolve labels once (within a valid script context) rather than
-    # passing a format_func that reads st.session_state on every invocation.
-    _scenario_labels = {k: t_market_scenario(k) for k in MARKET_SCENARIOS}
-    _scenario_labels["Custom"] = t("sim_scenario_custom")
-    scenario = st.selectbox(
-        t("sim_market_scenario"),
-        list(MARKET_SCENARIOS.keys()) + ["Custom"],
-        format_func=lambda x: _scenario_labels.get(x, x),
+    # ── Simulation Mode ───────────────────────────────────────────────────
+    # Canonical (untranslated) values stored in session_state, per spec
+    # section 15 -- "Future Projection" / "Historical Simulation", never a
+    # translated label.
+    _mode_options = ["Future Projection", "Historical Simulation"]
+    _mode_labels = {"Future Projection": t("sim_mode_future"), "Historical Simulation": t("sim_mode_historical")}
+    _mk, _mv = _shadow_default("simulation_mode", _mode_options[0])
+    simulation_mode = st.selectbox(
+        t("sim_mode_label"), _mode_options,
+        index=_mode_options.index(_mv) if _mv in _mode_options else 0,
+        format_func=lambda x: _mode_labels.get(x, x), key="simulation_mode",
     )
+    st.session_state[_mk] = simulation_mode
 
-    if scenario == "Custom":
-        annual_return = st.slider(t("sim_expected_annual_return_pct"), -5.0, 30.0, 10.0, 0.5) / 100
-        annual_volatility = st.slider(t("sim_expected_annual_volatility_pct"), 1.0, 50.0, 15.0, 0.5) / 100
-    else:
-        annual_return = MARKET_SCENARIOS[scenario]["return"]
-        annual_volatility = MARKET_SCENARIOS[scenario]["volatility"]
-        st.info(t("sim_scenario_return_vol", ret=f"{annual_return:.1%}", vol=f"{annual_volatility:.1%}"))
+    if simulation_mode == "Future Projection":
+        # ── Primary Controls ─────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown(f"### {t('sim_sidebar_params')}")
 
-    inflation_rate = st.slider(t("sim_inflation_rate_pct"), 0.0, 10.0, 2.5, 0.25) / 100
-    annual_fee = st.slider(t("sim_annual_fee_pct"), 0.0, 3.0, 0.1, 0.05) / 100
-    n_simulations = st.slider(t("sim_number_of_simulations"), 200, 5000, 1000, 100)
+        _ik, _iv = _shadow_default("sim_initial_investment_val", 10000.0)
+        initial_investment = st.number_input(
+            t("sim_initial_investment"), 100.0, 1_000_000.0, _iv, 500.0, key="sim_initial_investment_val",
+        )
+        st.session_state[_ik] = initial_investment
 
-    run_btn = st.button(t("btn_run_simulation"), type="primary", use_container_width=True)
+        _mck, _mcv = _shadow_default("sim_monthly_contribution_val", 500.0)
+        monthly_contribution = st.number_input(
+            t("sim_monthly_contribution"), 0.0, 50000.0, _mcv, 100.0, key="sim_monthly_contribution_val",
+        )
+        st.session_state[_mck] = monthly_contribution
+
+        _yk, _yv = _shadow_default("sim_investment_years_val", 20)
+        years = st.slider(t("sim_investment_years"), 1, 40, _yv, key="sim_investment_years_val")
+        st.session_state[_yk] = years
+
+        # ── Projection Assumptions ───────────────────────────────────────
+        st.markdown("---")
+        st.markdown(f"### {t('sim_assumption_source_label')}")
+
+        _portfolio_stats_available = (
+            current_portfolio is not None
+            and current_portfolio.get("expected_return") is not None
+            and current_portfolio.get("volatility") is not None
+        )
+        _asrc_options = (
+            (["Portfolio Historical Statistics"] if _portfolio_stats_available else [])
+            + ["Market Scenario", "Custom Assumptions"]
+        )
+        _asrc_labels = {
+            "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+            "Market Scenario": t("sim_market_scenario"),
+            "Custom Assumptions": t("sim_assumption_source_custom"),
+        }
+        _asrc_default = "Portfolio Historical Statistics" if _portfolio_stats_available else "Market Scenario"
+        _ask, _asv = _shadow_default("projection_assumption_source", _asrc_default)
+        _asrc_index = _asrc_options.index(_asv) if _asv in _asrc_options else 0
+        projection_assumption_source = st.selectbox(
+            t("sim_assumption_source_label"), _asrc_options, index=_asrc_index,
+            format_func=lambda x: _asrc_labels.get(x, x),
+            key="projection_assumption_source", label_visibility="collapsed",
+        )
+        st.session_state[_ask] = projection_assumption_source
+
+        if not _portfolio_stats_available:
+            st.caption(t("sim_portfolio_stats_unavailable"))
+
+        if projection_assumption_source == "Portfolio Historical Statistics":
+            # These are historical estimates from Portfolio Optimizer used
+            # AS simulation assumptions -- never described as a prediction
+            # of future returns (spec section 6).
+            annual_return = current_portfolio["expected_return"]
+            annual_volatility = current_portfolio["volatility"]
+            st.caption(
+                f"{t('metric_expected_annual_return')}: {annual_return:.2%} | "
+                f"{t('metric_expected_volatility')}: {annual_volatility:.2%}"
+            )
+            st.caption(t("sim_portfolio_stats_source_note"))
+        elif projection_assumption_source == "Market Scenario":
+            _scenario_labels = {k: t_market_scenario(k) for k in MARKET_SCENARIOS}
+            _scenario_options = list(MARKET_SCENARIOS.keys())
+            _sk, _sv = _shadow_default("sim_market_scenario_choice", _scenario_options[0])
+            scenario = st.selectbox(
+                t("sim_market_scenario"), _scenario_options,
+                index=_scenario_options.index(_sv) if _sv in _scenario_options else 0,
+                format_func=lambda x: _scenario_labels.get(x, x), key="sim_market_scenario_choice",
+            )
+            st.session_state[_sk] = scenario
+            annual_return = MARKET_SCENARIOS[scenario]["return"]
+            annual_volatility = MARKET_SCENARIOS[scenario]["volatility"]
+            st.caption(
+                f"{t('sim_assumed_return_label')}: {annual_return:.1%} | "
+                f"{t('sim_assumed_volatility_label')}: {annual_volatility:.1%}"
+            )
+            st.caption(t("sim_scenario_hypothetical_note"))
+        else:  # Custom Assumptions
+            _crk, _crv = _shadow_default("sim_custom_return_pct", 10.0)
+            _custom_return_pct = st.slider(
+                t("sim_expected_annual_return_pct"), -5.0, 30.0, _crv, 0.5, key="sim_custom_return_pct",
+            )
+            st.session_state[_crk] = _custom_return_pct
+
+            _cvk, _cvv = _shadow_default("sim_custom_vol_pct", 15.0)
+            _custom_vol_pct = st.slider(
+                t("sim_expected_annual_volatility_pct"), 1.0, 50.0, _cvv, 0.5, key="sim_custom_vol_pct",
+            )
+            st.session_state[_cvk] = _custom_vol_pct
+
+            annual_return = _custom_return_pct / 100
+            annual_volatility = _custom_vol_pct / 100
+
+        # ── Advanced Settings ─────────────────────────────────────────────
+        with st.expander(t("opt_advanced_settings_title"), expanded=False):
+            _infk, _infv = _shadow_default("sim_inflation_rate_pct_val", 2.5)
+            _inflation_pct = st.slider(
+                t("sim_inflation_rate_pct"), 0.0, 10.0, _infv, 0.25, key="sim_inflation_rate_pct_val",
+            )
+            st.session_state[_infk] = _inflation_pct
+            inflation_rate = _inflation_pct / 100
+
+            _feek, _feev = _shadow_default("sim_annual_fee_pct_val", 0.1)
+            _fee_pct = st.slider(
+                t("sim_annual_fee_pct"), 0.0, 3.0, _feev, 0.05, key="sim_annual_fee_pct_val",
+            )
+            st.session_state[_feek] = _fee_pct
+            annual_fee = _fee_pct / 100
+
+            _nsk, _nsv = _shadow_default("sim_number_of_simulations_val", 1000)
+            n_simulations = st.slider(
+                t("sim_number_of_simulations"), 200, 5000, _nsv, 100, key="sim_number_of_simulations_val",
+            )
+            st.session_state[_nsk] = n_simulations
+
+        run_btn = st.button(t("btn_run_simulation"), type="primary", use_container_width=True, key="sim_run_btn")
 
     render_sidebar_footer()
+
+# ── Historical Simulation placeholder (Round 1: architecture only) ──────────────
+if simulation_mode == "Historical Simulation":
+    st.info(t("sim_historical_placeholder"))
+    disclaimer_box()
+    render_footer()
+    st.stop()
 
 # ── Run Simulation ────────────────────────────────────────────────────────────
 if "sim_result" not in st.session_state:
@@ -106,6 +237,9 @@ if run_btn or st.session_state.sim_result is None:
             "annual_volatility": annual_volatility,
             "inflation_rate": inflation_rate,
             "annual_fee": annual_fee,
+            "n_simulations": n_simulations,
+            "assumption_source": projection_assumption_source,
+            "portfolio_strategy": current_portfolio.get("strategy") if current_portfolio else None,
         }
 
 sim_result = st.session_state.sim_result
@@ -118,6 +252,44 @@ annual_table = sim_result["annual_table"]
 paths_df = sim_result["paths"]
 final_values = sim_result["all_final_values"]
 total_contributed = summary["total_contributed"]
+sim_params = st.session_state.sim_params
+
+# ── Projection Setup (Round 1: assumption transparency) ──────────────────────
+# Reflects exactly what drove the CURRENTLY DISPLAYED sim_result (frozen at
+# the moment "Run Simulation" was last clicked, via sim_params above) --
+# not the live sidebar widget values, which may have changed since without
+# a re-run. This is what actually produced the numbers below.
+_asrc_display_labels = {
+    "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+    "Market Scenario": t("sim_market_scenario"),
+    "Custom Assumptions": t("sim_assumption_source_custom"),
+}
+_setup_portfolio_label = (
+    t_opt_method(sim_params["portfolio_strategy"]) if sim_params.get("portfolio_strategy")
+    else t("sim_projection_setup_no_portfolio")
+)
+_setup_rows = [
+    (t("sim_projection_setup_portfolio_label"), _setup_portfolio_label),
+    (t("sim_assumption_source_label"), _asrc_display_labels.get(sim_params.get("assumption_source"), "—")),
+    (t("metric_expected_annual_return"), f"{sim_params['annual_return']:.2%}"),
+    (t("metric_expected_volatility"), f"{sim_params['annual_volatility']:.2%}"),
+    (t("sim_initial_investment"), f"${sim_params['initial_investment']:,.0f}"),
+    (t("sim_monthly_contribution"), f"${sim_params['monthly_contribution']:,.0f}"),
+    (t("sim_investment_years"), f"{sim_params['years']}"),
+    (t("sim_inflation_rate_pct"), f"{sim_params['inflation_rate']:.2%}"),
+    (t("sim_annual_fee_pct"), f"{sim_params['annual_fee']:.2%}"),
+    (t("sim_number_of_simulations"), f"{sim_params['n_simulations']:,}"),
+]
+with chart_card(t("sim_projection_setup_title")):
+    _setup_items_html = "".join(
+        f'<div style="min-width:130px;"><div style="font-size:11px;color:{COLORS["text_muted"]};">{label}</div>'
+        f'<div style="font-size:13px;color:{COLORS["text"]};font-weight:600;">{value}</div></div>'
+        for label, value in _setup_rows
+    )
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:10px 28px;">{_setup_items_html}</div>',
+        unsafe_allow_html=True,
+    )
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
 section_header(t("sim_results_title"), t("sim_results_sub", count=f"{n_simulations:,}", years=years))
@@ -137,7 +309,10 @@ with col1:
 with col2:
     st.markdown(metric_card_html(t("metric_pessimistic_10"), f"${summary['pessimistic_final']:,.0f}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html(t("metric_probability_of_profit"), f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
+    # Exact definition (see src/simulator.py): mean(final nominal value >
+    # total nominal contributions) -- renamed from the ambiguous "Probability
+    # of Profit" to state that definition directly (Round 1 spec section 10).
+    st.markdown(metric_card_html(t("sim_prob_ending_above_contributions"), f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
 
 # ── Charts ────────────────────────────────────────────────────────────────────
 section_header(t("sim_projection_charts_title"))

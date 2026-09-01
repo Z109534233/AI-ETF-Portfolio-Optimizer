@@ -29,8 +29,10 @@ from src.financial_metrics import (
     portfolio_return, portfolio_volatility, covariance_matrix,
     portfolio_diagnosis, effective_number_of_holdings, active_position_count,
     top_n_concentration, concentration_level, top2_concentration_status,
+    ACTIVE_POSITION_TOLERANCE,
 )
 from src.i18n import t
+from src.simulator import simulate_investment, MARKET_SCENARIOS
 
 
 def make_synthetic_prices(seed: int = 42, n_days: int = 300) -> pd.DataFrame:
@@ -1131,6 +1133,23 @@ def _run_receiving_page(page_path, current_portfolio, lang="en", extra_session=N
     return at
 
 
+def _check_handoff_holdings_shown(prefix, weights, corpus):
+    """Mirrors render_current_portfolio_handoff()'s exact display rule
+    (src/ui.py): up to 5 largest ACTIVE (weight > ACTIVE_POSITION_TOLERANCE)
+    holdings shown individually as "TICKER weight%"; zero-weight holdings
+    are summarized as a count, never listed individually."""
+    sorted_holdings = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)
+    active = [(tk, w) for tk, w in sorted_holdings if w > ACTIVE_POSITION_TOLERANCE]
+    zero = [(tk, w) for tk, w in sorted_holdings if w <= ACTIVE_POSITION_TOLERANCE]
+    for tk, w in active[:5]:
+        check(f"{prefix}_shows_{tk}", f"{tk} {w:.2%}" in corpus, f"expected {tk} {w:.2%} in corpus")
+    if zero:
+        check(f"{prefix}_deemphasizes_zero_weight", "0%" in corpus, corpus[:0])
+        for tk, _ in zero:
+            check(f"{prefix}_does_not_list_{tk}_individually", f"{tk} 0.00%" not in corpus,
+                  f"{tk} 0.00% should be summarized, not listed individually")
+
+
 # ── PH-A: Equal Weight build -> Simulator receives exact equal weights ──
 def test_ph_a_equal_weight_handoff_to_simulator():
     at, cp = _build_current_portfolio_via_optimizer("Equal Weight")
@@ -1168,11 +1187,10 @@ def test_ph_b_max_sharpe_handoff_to_simulator():
     if exc2:
         return
     corpus = "\n".join(m.value for m in sim_at.markdown)
-    # Handoff preview shows at most the 5 largest holdings -- verify
-    # against exactly that same truncation rule, not every ticker.
-    top_holdings = sorted(cp["weights"].items(), key=lambda kv: kv[1], reverse=True)[:5]
-    for tk, w in top_holdings:
-        check(f"PH-B.simulator_shows_{tk}", f"{tk} {w:.2%}" in corpus, f"expected {tk} {w:.2%} in corpus")
+    # Handoff preview shows at most the 5 largest ACTIVE holdings
+    # individually; zero-weight holdings are summarized as a de-emphasized
+    # count instead (Round 1 spec section 12), not listed as "TICKER 0.00%".
+    _check_handoff_holdings_shown("PH-B.simulator", cp["weights"], corpus)
 
 
 # ── PH-C: Minimum Volatility build -> Risk Analytics receives exact weights ──
@@ -1192,9 +1210,7 @@ def test_ph_c_min_vol_handoff_to_risk_analytics():
     if exc2:
         return
     corpus = "\n".join(m.value for m in risk_at.markdown)
-    top_holdings = sorted(cp["weights"].items(), key=lambda kv: kv[1], reverse=True)[:5]
-    for tk, w in top_holdings:
-        check(f"PH-C.risk_analytics_shows_{tk}", f"{tk} {w:.2%}" in corpus, f"expected {tk} {w:.2%} in corpus")
+    _check_handoff_holdings_shown("PH-C.risk_analytics", cp["weights"], corpus)
     check("PH-C.risk_analytics_shows_strategy",
           "Minimum Volatility" in corpus, corpus[:0])
 
@@ -1327,6 +1343,310 @@ def test_ph_i_handoff_no_raw_keys():
                 check(f"PH-I.{name}.{state_label}.{lang}.no_forbidden_fragments", len(hits) == 0, str(hits))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Investment Simulator Round 1: Simulation Architecture & Assumption
+# Transparency. Covers Simulation Mode, Projection Assumptions (Portfolio
+# Historical Statistics / Market Scenario / Custom Assumptions), Advanced
+# Settings, the renamed probability metric, and the Projection Setup panel.
+# No Monte Carlo mathematics were changed -- src/simulator.py is untouched.
+# ══════════════════════════════════════════════════════════════════════════
+
+_SIM_FAKE_PORTFOLIO = {
+    "strategy": "Maximum Sharpe Ratio",
+    "tickers": ["VOO", "SCHD", "QQQ", "VTI", "SPY"],
+    "weights": {"VOO": 0.6834, "SCHD": 0.1599, "QQQ": 0.1567, "VTI": 0.0, "SPY": 0.0},
+    "investment_amount": 10000.0,
+    "expected_return": 0.1344,
+    "volatility": 0.1681,
+}
+
+
+def _setup_sim_page(lang="en", current_portfolio=None, simulation_mode=None,
+                     assumption_source=None, scenario=None,
+                     custom_return_pct=None, custom_vol_pct=None, click_run=True):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+
+    at = AppTest.from_file("pages/3_Investment_Simulator.py", default_timeout=180)
+    at.session_state["language"] = lang
+    if current_portfolio is not None:
+        at.session_state["current_portfolio"] = current_portfolio
+    at.run()
+
+    if simulation_mode:
+        for w in at.selectbox:
+            if w.key == "simulation_mode":
+                w.set_value(simulation_mode)
+                at.run()
+                break
+        if simulation_mode == "Historical Simulation":
+            return at  # nothing else to configure -- rest of sidebar doesn't render
+
+    if assumption_source:
+        for w in at.selectbox:
+            if w.key == "projection_assumption_source":
+                w.set_value(assumption_source)
+                at.run()
+                break
+
+    if scenario:
+        for w in at.selectbox:
+            if w.key == "sim_market_scenario_choice":
+                w.set_value(scenario)
+                at.run()
+                break
+
+    if custom_return_pct is not None:
+        for w in at.slider:
+            if w.key == "sim_custom_return_pct":
+                w.set_value(custom_return_pct)
+                at.run()
+                break
+
+    if custom_vol_pct is not None:
+        for w in at.slider:
+            if w.key == "sim_custom_vol_pct":
+                w.set_value(custom_vol_pct)
+                at.run()
+                break
+
+    if click_run:
+        run_btn = next((b for b in at.button if b.key == "sim_run_btn"), None)
+        if run_btn:
+            run_btn.click()
+            at.run()
+    return at
+
+
+# ── SIM-A: current_portfolio arrives intact (same strategy/tickers/weights) ──
+def test_sim_a_current_portfolio_arrives_intact():
+    at = _setup_sim_page(current_portfolio=_SIM_FAKE_PORTFOLIO, click_run=False)
+    exc = at.exception[0] if at.exception else None
+    check("SIM-A.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    cp = at.session_state["current_portfolio"]
+    check("SIM-A.strategy_unchanged", cp["strategy"] == _SIM_FAKE_PORTFOLIO["strategy"], cp["strategy"])
+    check("SIM-A.tickers_unchanged", cp["tickers"] == _SIM_FAKE_PORTFOLIO["tickers"], cp["tickers"])
+    check("SIM-A.weights_unchanged", cp["weights"] == _SIM_FAKE_PORTFOLIO["weights"], cp["weights"])
+
+
+# ── SIM-B: Portfolio Historical Statistics -> return/vol come from current_portfolio ──
+def test_sim_b_portfolio_historical_statistics_drives_simulation():
+    at = _setup_sim_page(
+        current_portfolio=_SIM_FAKE_PORTFOLIO, assumption_source="Portfolio Historical Statistics",
+    )
+    exc = at.exception[0] if at.exception else None
+    check("SIM-B.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    sim_params = at.session_state["sim_params"]
+    check("SIM-B.return_matches_portfolio",
+          abs(sim_params["annual_return"] - _SIM_FAKE_PORTFOLIO["expected_return"]) < 1e-9,
+          f"{sim_params['annual_return']} vs {_SIM_FAKE_PORTFOLIO['expected_return']}")
+    check("SIM-B.volatility_matches_portfolio",
+          abs(sim_params["annual_volatility"] - _SIM_FAKE_PORTFOLIO["volatility"]) < 1e-9,
+          f"{sim_params['annual_volatility']} vs {_SIM_FAKE_PORTFOLIO['volatility']}")
+    check("SIM-B.assumption_source_recorded",
+          sim_params["assumption_source"] == "Portfolio Historical Statistics", sim_params["assumption_source"])
+
+
+# ── SIM-C: Market Scenario -> scenario return/vol drive the simulation ──
+def test_sim_c_market_scenario_drives_simulation():
+    at = _setup_sim_page(assumption_source="Market Scenario", scenario="Bear Market")
+    exc = at.exception[0] if at.exception else None
+    check("SIM-C.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    sim_params = at.session_state["sim_params"]
+    expected = MARKET_SCENARIOS["Bear Market"]
+    check("SIM-C.return_matches_scenario", abs(sim_params["annual_return"] - expected["return"]) < 1e-9,
+          f"{sim_params['annual_return']} vs {expected['return']}")
+    check("SIM-C.volatility_matches_scenario", abs(sim_params["annual_volatility"] - expected["volatility"]) < 1e-9,
+          f"{sim_params['annual_volatility']} vs {expected['volatility']}")
+
+
+# ── SIM-D: Custom Assumptions -> manual return/vol drive the simulation ──
+def test_sim_d_custom_assumptions_drive_simulation():
+    at = _setup_sim_page(assumption_source="Custom Assumptions", custom_return_pct=12.5, custom_vol_pct=22.0)
+    exc = at.exception[0] if at.exception else None
+    check("SIM-D.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    sim_params = at.session_state["sim_params"]
+    check("SIM-D.return_matches_custom", abs(sim_params["annual_return"] - 0.125) < 1e-9, sim_params["annual_return"])
+    check("SIM-D.volatility_matches_custom", abs(sim_params["annual_volatility"] - 0.22) < 1e-9,
+          sim_params["annual_volatility"])
+
+
+# ── SIM-E: switching assumption source doesn't reset other inputs ───────
+def test_sim_e_switching_assumption_source_preserves_inputs():
+    at = _setup_sim_page(current_portfolio=_SIM_FAKE_PORTFOLIO, assumption_source="Market Scenario", click_run=False)
+    exc = at.exception[0] if at.exception else None
+    check("SIM-E.no_exception", exc is None, str(exc))
+    if exc:
+        return
+
+    # Change the primary inputs away from their defaults first.
+    for w in at.number_input:
+        if w.key == "sim_initial_investment_val":
+            w.set_value(25000.0)
+        elif w.key == "sim_monthly_contribution_val":
+            w.set_value(1200.0)
+    for w in at.slider:
+        if w.key == "sim_investment_years_val":
+            w.set_value(15)
+    at.run()
+
+    for w in at.selectbox:
+        if w.key == "projection_assumption_source":
+            w.set_value("Custom Assumptions")
+    at.run()
+    for w in at.selectbox:
+        if w.key == "projection_assumption_source":
+            w.set_value("Portfolio Historical Statistics")
+    at.run()
+
+    exc2 = at.exception[0] if at.exception else None
+    check("SIM-E.no_exception_after_switches", exc2 is None, str(exc2))
+    if exc2:
+        return
+
+    def _val(kind, key):
+        for w in getattr(at, kind):
+            if w.key == key:
+                return w.value
+        return None
+
+    check("SIM-E.initial_investment_preserved", _val("number_input", "sim_initial_investment_val") == 25000.0,
+          _val("number_input", "sim_initial_investment_val"))
+    check("SIM-E.monthly_contribution_preserved", _val("number_input", "sim_monthly_contribution_val") == 1200.0,
+          _val("number_input", "sim_monthly_contribution_val"))
+    check("SIM-E.horizon_preserved", _val("slider", "sim_investment_years_val") == 15,
+          _val("slider", "sim_investment_years_val"))
+    cp_after = at.session_state["current_portfolio"]
+    check("SIM-E.portfolio_preserved", cp_after == _SIM_FAKE_PORTFOLIO, cp_after)
+
+
+# ── SIM-F: Historical Simulation -> placeholder only, no fake results ───
+def test_sim_f_historical_simulation_placeholder_only():
+    at = _setup_sim_page(simulation_mode="Historical Simulation")
+    exc = at.exception[0] if at.exception else None
+    check("SIM-F.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    check("SIM-F.no_run_button_rendered",
+          next((b for b in at.button if b.key == "sim_run_btn"), None) is None)
+    # _setup_sim_page's initial at.run() happens while simulation_mode still
+    # defaults to "Future Projection" -- the page's pre-existing (unchanged)
+    # "auto-run on first load" behavior legitimately populates sim_result
+    # with a REAL Future Projection result at that point, before we ever
+    # switch modes. That's expected and is not "fake historical data" --
+    # the real requirement is that switching TO Historical Simulation must
+    # not RENDER any results/KPIs, which is what this checks instead.
+    corpus = "\n".join(m.value for m in at.markdown)
+    check("SIM-F.no_results_section_rendered", "Simulation Results" not in corpus, corpus[:200])
+    check("SIM-F.no_kpi_cards_rendered", "kpi-card" not in corpus, "")
+    info_texts = "\n".join(i.value for i in at.info)
+    check("SIM-F.placeholder_shown", "backtest the portfolio using actual ETF price history" in info_texts,
+          info_texts[:300])
+
+
+# ── SIM-G: probability metric label matches its actual definition ───────
+def test_sim_g_probability_label_matches_definition():
+    at = _setup_sim_page(assumption_source="Market Scenario", scenario="Base Case")
+    exc = at.exception[0] if at.exception else None
+    check("SIM-G.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    sim_result = at.session_state["sim_result"]
+    summary = sim_result["summary"]
+    final_values = sim_result["all_final_values"]
+    manual_prob = float(np.mean(final_values > summary["total_contributed"]))
+    check("SIM-G.probability_is_final_value_over_contributions",
+          abs(summary["probability_profit"] - manual_prob) < 1e-9,
+          f"{summary['probability_profit']} vs {manual_prob}")
+    corpus = "\n".join(m.value for m in at.markdown)
+    check("SIM-G.label_states_exact_definition", "Probability of Ending Above Contributions" in corpus, "")
+    check("SIM-G.old_ambiguous_label_absent", "Probability of Profit" not in corpus, "")
+
+
+# ── SIM-H: Advanced Settings still affect the model correctly ───────────
+def test_sim_h_advanced_settings_affect_model():
+    at = _setup_sim_page(assumption_source="Market Scenario", scenario="Base Case", click_run=False)
+    exc = at.exception[0] if at.exception else None
+    check("SIM-H.no_exception", exc is None, str(exc))
+    if exc:
+        return
+
+    for w in at.slider:
+        if w.key == "sim_number_of_simulations_val":
+            w.set_value(2500)
+        elif w.key == "sim_annual_fee_pct_val":
+            w.set_value(1.5)
+        elif w.key == "sim_inflation_rate_pct_val":
+            w.set_value(4.0)
+    at.run()
+    run_btn = next((b for b in at.button if b.key == "sim_run_btn"), None)
+    run_btn.click()
+    at.run()
+
+    exc2 = at.exception[0] if at.exception else None
+    check("SIM-H.no_exception_after_run", exc2 is None, str(exc2))
+    if exc2:
+        return
+    sim_params = at.session_state["sim_params"]
+    check("SIM-H.n_simulations_applied", sim_params["n_simulations"] == 2500, sim_params["n_simulations"])
+    check("SIM-H.fee_applied", abs(sim_params["annual_fee"] - 0.015) < 1e-9, sim_params["annual_fee"])
+    check("SIM-H.inflation_applied", abs(sim_params["inflation_rate"] - 0.04) < 1e-9, sim_params["inflation_rate"])
+
+    sim_result = at.session_state["sim_result"]
+    check("SIM-H.path_count_matches_n_simulations", len(sim_result["all_final_values"]) == 2500,
+          len(sim_result["all_final_values"]))
+
+    # Cross-check against a direct engine call with the same inputs --
+    # confirms Advanced Settings values actually reach simulate_investment(),
+    # not just get stored in sim_params cosmetically.
+    direct = simulate_investment(
+        initial_investment=sim_params["initial_investment"], monthly_contribution=sim_params["monthly_contribution"],
+        years=sim_params["years"], annual_return=sim_params["annual_return"],
+        annual_volatility=sim_params["annual_volatility"], inflation_rate=0.04, annual_fee=0.015,
+        n_simulations=2500,
+    )
+    check("SIM-H.median_matches_direct_engine_call",
+          abs(sim_result["summary"]["median_final"] - direct["summary"]["median_final"]) < 1e-6,
+          f"{sim_result['summary']['median_final']} vs {direct['summary']['median_final']}")
+
+
+# ── SIM-I: zh-TW / English render correctly, no raw keys ────────────────
+def test_sim_i_i18n():
+    forbidden = ("sim_", "opt_advanced_settings_title", "handoff_", "_label", "_title", "_subtitle", "_desc")
+    for lang in ("zh-TW", "en"):
+        at = _setup_sim_page(lang=lang, current_portfolio=_SIM_FAKE_PORTFOLIO)
+        exc = at.exception[0] if at.exception else None
+        check(f"SIM-I.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        corpus_parts = [m.value for m in at.markdown]
+        corpus_parts += [c.value for c in at.caption]
+        corpus_parts += [i.value for i in at.info]
+        for kind in ("selectbox", "slider", "number_input", "button", "expander"):
+            for w in getattr(at, kind, []):
+                label = getattr(w, "label", None)
+                if label:
+                    corpus_parts.append(str(label))
+        corpus = "\n".join(corpus_parts)
+        hits = [frag for frag in forbidden if frag in corpus]
+        check(f"SIM-I.{lang}.no_forbidden_fragments", len(hits) == 0, str(hits))
+        expect_mode_label = "模擬模式" if lang == "zh-TW" else "Simulation Mode"
+        expect_prob_label = "期末價值高於投入本金機率" if lang == "zh-TW" else "Probability of Ending Above Contributions"
+        expect_setup_title = "推估設定" if lang == "zh-TW" else "Projection Setup"
+        check(f"SIM-I.{lang}.mode_label_translated", expect_mode_label in corpus, "")
+        check(f"SIM-I.{lang}.probability_label_translated", expect_prob_label in corpus, "")
+        check(f"SIM-I.{lang}.setup_title_translated", expect_setup_title in corpus, "")
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -1383,6 +1703,16 @@ def main():
     test_ph_g_language_switch_preserves_portfolio()
     test_ph_h_market_state_unchanged_through_handoff()
     test_ph_i_handoff_no_raw_keys()
+
+    test_sim_a_current_portfolio_arrives_intact()
+    test_sim_b_portfolio_historical_statistics_drives_simulation()
+    test_sim_c_market_scenario_drives_simulation()
+    test_sim_d_custom_assumptions_drive_simulation()
+    test_sim_e_switching_assumption_source_preserves_inputs()
+    test_sim_f_historical_simulation_placeholder_only()
+    test_sim_g_probability_label_matches_definition()
+    test_sim_h_advanced_settings_affect_model()
+    test_sim_i_i18n()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

@@ -12,6 +12,7 @@ from src.theme import COLORS, icon_svg
 from src.i18n import t, t_country, t_opt_method, language_selector, get_language
 from src.etf_database import get_countries, get_tickers_by_country
 from src.data_loader import DEFAULT_ETFS
+from src.financial_metrics import ACTIVE_POSITION_TOLERANCE
 
 # ── Global Market / Region Selector ─────────────────────────────────────────
 # Shared by every page that lets the user scope ETFs to a market (currently
@@ -523,13 +524,27 @@ def render_current_portfolio_handoff(empty_title: str, empty_description: str,
         empty_state(empty_title, empty_description, icon="layers")
         return False
 
+    # Active holdings shown prominently (largest first); zero-weight
+    # selected ETFs (e.g. Maximum Sharpe pinning some tickers to 0%) are
+    # summarized as a single de-emphasized count rather than listed
+    # individually, so a long tail of "0.00%" entries never dominates this
+    # compact preview. They stay part of the canonical portfolio -- never
+    # dropped, just not enumerated here.
     weights = portfolio.get("weights") or {}
     sorted_holdings = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)
-    shown = sorted_holdings[:max_holdings]
+    active_holdings = [(tk, w) for tk, w in sorted_holdings if w > ACTIVE_POSITION_TOLERANCE]
+    zero_holdings = [(tk, w) for tk, w in sorted_holdings if w <= ACTIVE_POSITION_TOLERANCE]
+
+    shown = active_holdings[:max_holdings]
     holdings_text = " &middot; ".join(f"{tk} {w:.2%}" for tk, w in shown)
-    remaining = len(sorted_holdings) - len(shown)
-    if remaining > 0:
-        holdings_text += f" &middot; +{remaining}"
+    remaining_active = len(active_holdings) - len(shown)
+    if remaining_active > 0:
+        holdings_text += f" &middot; +{remaining_active}"
+    if zero_holdings:
+        holdings_text += (
+            f' <span style="color:{COLORS["text_muted"]};font-weight:400;">'
+            f'({t("handoff_zero_weight_suffix", count=len(zero_holdings))})</span>'
+        )
 
     strategy_label = t_opt_method(portfolio.get("strategy", ""))
     amount = portfolio.get("investment_amount")
