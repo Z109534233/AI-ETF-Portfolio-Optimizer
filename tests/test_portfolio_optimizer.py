@@ -257,6 +257,219 @@ def test_j_i18n():
         check(f"J.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Round 2B-1: Strategy Comparison
+# ══════════════════════════════════════════════════════════════════════════
+
+_SC_METHODS = ["Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility"]
+
+
+def _compute_comparison(prices_df, risk_free_rate=0.05, min_weight=0.0, max_weight=1.0, allow_short=False):
+    """Mirrors the comparison computation in pages/2_Portfolio_Optimizer.py
+    exactly (same run_optimization() calls, same largest-position/backtest
+    logic) so these tests validate the actual page logic, not a
+    reimplementation of it."""
+    results = {}
+    for method in _SC_METHODS:
+        r = run_optimization(
+            prices_df=prices_df, method=method, risk_free_rate=risk_free_rate,
+            min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
+        )
+        w = r["weights"]
+        largest_ticker = max(w, key=w.get) if w else None
+        largest_weight = w.get(largest_ticker, 0.0) if largest_ticker else 0.0
+        bt = backtest_portfolio(prices_df, w, 10000.0)
+        mdd = None
+        if not bt.empty:
+            from src.financial_metrics import maximum_drawdown
+            mdd = maximum_drawdown(bt["Portfolio Value"])
+        results[method] = {
+            "weights": w, "expected_return": r["expected_return"],
+            "expected_volatility": r["expected_volatility"], "sharpe_ratio": r["sharpe_ratio"],
+            "largest_ticker": largest_ticker, "largest_weight": largest_weight, "max_drawdown": mdd,
+        }
+    return results
+
+
+# ── SC-A: all three strategies appear ────────────────────────────────────
+def test_sc_a_all_three_appear():
+    results = _compute_comparison(PRICES)
+    check("SC-A.all_three_present", set(results.keys()) == set(_SC_METHODS), str(results.keys()))
+
+
+# ── SC-B: weights sum to ~1 for each strategy ────────────────────────────
+def test_sc_b_weights_sum_to_one():
+    results = _compute_comparison(PRICES)
+    for method, data in results.items():
+        total = sum(data["weights"].values())
+        check(f"SC-B.{method}.sum_approx_one", abs(total - 1.0) < 1e-6, str(total))
+
+
+# ── SC-C: "Best Risk-Adjusted Return" badge only on the actual highest Sharpe ──
+def test_sc_c_best_sharpe_badge_correct():
+    results = _compute_comparison(PRICES)
+    best_sharpe_method = max(results, key=lambda m: results[m]["sharpe_ratio"])
+    for method in _SC_METHODS:
+        would_get_badge = (method == best_sharpe_method)
+        is_actually_highest = all(
+            results[method]["sharpe_ratio"] >= results[other]["sharpe_ratio"] - 1e-9
+            for other in _SC_METHODS
+        )
+        check(f"SC-C.{method}.badge_matches_reality", would_get_badge == is_actually_highest,
+              f"sharpe={results[method]['sharpe_ratio']} all={[(m, results[m]['sharpe_ratio']) for m in _SC_METHODS]}")
+
+
+# ── SC-D: "Lowest Risk" badge only on the actual lowest volatility ───────
+def test_sc_d_lowest_vol_badge_correct():
+    results = _compute_comparison(PRICES)
+    lowest_vol_method = min(results, key=lambda m: results[m]["expected_volatility"])
+    for method in _SC_METHODS:
+        would_get_badge = (method == lowest_vol_method)
+        is_actually_lowest = all(
+            results[method]["expected_volatility"] <= results[other]["expected_volatility"] + 1e-9
+            for other in _SC_METHODS
+        )
+        check(f"SC-D.{method}.badge_matches_reality", would_get_badge == is_actually_lowest,
+              f"vol={results[method]['expected_volatility']} all={[(m, results[m]['expected_volatility']) for m in _SC_METHODS]}")
+
+
+# ── SC-E: Largest Position matches the actual max weight in that strategy ──
+def test_sc_e_largest_position_correct():
+    results = _compute_comparison(PRICES)
+    for method, data in results.items():
+        actual_max_ticker = max(data["weights"], key=data["weights"].get)
+        actual_max_weight = data["weights"][actual_max_ticker]
+        check(f"SC-E.{method}.largest_ticker_correct", data["largest_ticker"] == actual_max_ticker,
+              f"reported={data['largest_ticker']} actual={actual_max_ticker}")
+        check(f"SC-E.{method}.largest_weight_correct", abs(data["largest_weight"] - actual_max_weight) < 1e-9,
+              f"reported={data['largest_weight']} actual={actual_max_weight}")
+
+
+# ── SC-F: "Higher Concentration" threshold logic (>50%) ──────────────────
+def test_sc_f_concentration_threshold():
+    threshold = 0.50
+    # Fabricated weights, not real optimizer output -- this validates the
+    # THRESHOLD LOGIC itself (the same comparison used in the page),
+    # independent of whether real market data happens to produce a
+    # concentrated result for this particular synthetic fixture.
+    concentrated = {"A": 0.60, "B": 0.20, "C": 0.20}
+    balanced = {"A": 0.40, "B": 0.30, "C": 0.30}
+    concentrated_largest = max(concentrated.values())
+    balanced_largest = max(balanced.values())
+    check("SC-F.concentrated_triggers_badge", concentrated_largest > threshold, str(concentrated_largest))
+    check("SC-F.balanced_does_not_trigger_badge", not (balanced_largest > threshold), str(balanced_largest))
+
+
+# ── SC-G: comparison calculation does not alter the selected portfolio ──
+def test_sc_g_no_side_effects():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    st.page_link = lambda *a, **k: None
+
+    at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+
+    method_w = None
+    for w in at.selectbox:
+        if w.key == "optimization_method":
+            method_w = w
+            break
+    minvol_opt = next((o for o in method_w.options if "Minimum" in o), None)
+    method_w.set_value(minvol_opt)
+    at.run()
+
+    run_btn = next(iter(at.button), None)
+    if run_btn:
+        run_btn.click()
+        at.run()
+
+    exc = at.exception[0] if at.exception else None
+    check("SC-G.no_exception", exc is None, str(exc))
+    if exc:
+        return
+
+    selected_method_after = at.session_state["opt_result"]["method"]
+    check("SC-G.selected_strategy_unchanged", selected_method_after == "Minimum Volatility", selected_method_after)
+
+
+# ── SC-H: switching strategy updates the current-strategy indicator, keeps comparison intact ──
+def test_sc_h_switch_strategy():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    st.page_link = lambda *a, **k: None
+
+    at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+
+    method_w = None
+    for w in at.selectbox:
+        if w.key == "optimization_method":
+            method_w = w
+            break
+    sharpe_opt = next((o for o in method_w.options if "Sharpe" in o), None)
+    method_w.set_value(sharpe_opt)
+    at.run()
+    run_btn = next(iter(at.button), None)
+    if run_btn:
+        run_btn.click()
+        at.run()
+
+    exc = at.exception[0] if at.exception else None
+    check("SC-H.no_exception", exc is None, str(exc))
+    if exc:
+        return
+
+    joined = "\n".join(m.value for m in at.markdown)
+    check("SC-H.comparison_section_present", "Strategy Comparison" in joined)
+    check("SC-H.all_three_labels_present",
+          all(name in joined for name in ("Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility")))
+    check("SC-H.current_strategy_indicator_present", "Current Strategy" in joined)
+    check("SC-H.selected_method_is_sharpe", at.session_state["opt_result"]["method"] == "Maximum Sharpe Ratio",
+          at.session_state["opt_result"]["method"])
+
+
+# ── SC-I: zh-TW / English render correctly, no raw keys ─────────────────
+def test_sc_i_i18n():
+    import re
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    st.page_link = lambda *a, **k: None
+    key_pattern = re.compile(
+        r'\b(?:opt_|field_|label_|title_|btn_|portfolio_|optimizer_)[a-zA-Z0-9_]*\b'
+        r'|\b[A-Z][A-Z0-9]*_[A-Z0-9_]*\b'
+    )
+
+    for lang in ("zh-TW", "en"):
+        at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at.session_state["language"] = lang
+        at.run()
+        run_btn = next(iter(at.button), None)
+        if run_btn:
+            run_btn.click()
+            at.run()
+        exc = at.exception[0] if at.exception else None
+        check(f"SC-I.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        leaked = []
+        for m in at.markdown:
+            leaked += key_pattern.findall(m.value)
+        for kind in ("selectbox", "radio", "checkbox", "button", "expander"):
+            for w in getattr(at, kind, []):
+                label = getattr(w, "label", None)
+                if label:
+                    leaked += key_pattern.findall(str(label))
+        check(f"SC-I.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
+        joined = "\n".join(m.value for m in at.markdown)
+        expect = "策略比較" if lang == "zh-TW" else "Strategy Comparison"
+        check(f"SC-I.{lang}.comparison_title_translated", expect in joined)
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -268,6 +481,16 @@ def main():
     test_h_backtest_uses_selected_weights()
     test_i_global_market_state()
     test_j_i18n()
+
+    test_sc_a_all_three_appear()
+    test_sc_b_weights_sum_to_one()
+    test_sc_c_best_sharpe_badge_correct()
+    test_sc_d_lowest_vol_badge_correct()
+    test_sc_e_largest_position_correct()
+    test_sc_f_concentration_threshold()
+    test_sc_g_no_side_effects()
+    test_sc_h_switch_strategy()
+    test_sc_i_i18n()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

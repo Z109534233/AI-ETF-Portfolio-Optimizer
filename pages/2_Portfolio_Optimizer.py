@@ -438,6 +438,121 @@ with col_right:
         fig_donut = allocation_donut_chart(weights, "")
         st.plotly_chart(fig_donut, use_container_width=True, key="opt_allocation_donut")
 
+# ── Strategy Comparison (Round 2B-1) ─────────────────────────────────────────
+# Informational decision-support only -- this section NEVER writes to
+# st.session_state.opt_result / opt_run_inputs / prices_df, so it cannot
+# alter the user's actual selected strategy. All three comparison results
+# live in a local `_comparison_results` dict computed fresh on every render.
+#
+# Reuses the SAME run_optimization() already verified in Round 2A (no
+# duplicated optimization math) on the SAME already-loaded `prices_df` (no
+# re-download, no extra network requests) -- the only "duplicate" work is
+# 3 extra in-memory scipy solves plus 3 extra backtest_portfolio() calls on
+# data already in memory, all sub-second for the ETF counts this app
+# supports.
+section_header(t("opt_strategy_comparison_title"), t("opt_strategy_comparison_subtitle"))
+
+_COMPARISON_METHODS = ["Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility"]
+_CONCENTRATION_THRESHOLD = 0.50
+_CARD_DESC_KEYS = {
+    "Equal Weight": "opt_card_desc_equal_weight",
+    "Maximum Sharpe Ratio": "opt_card_desc_max_sharpe",
+    "Minimum Volatility": "opt_card_desc_min_vol",
+}
+
+_comparison_results = {}
+for _cm in _COMPARISON_METHODS:
+    _cr = run_optimization(
+        prices_df=prices_df, method=_cm, risk_free_rate=risk_free_rate,
+        min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
+    )
+    _cw = _cr["weights"]
+    _largest_ticker = max(_cw, key=_cw.get) if _cw else None
+    _largest_weight = _cw.get(_largest_ticker, 0.0) if _largest_ticker else 0.0
+    _cbt = backtest_portfolio(prices_df, _cw, investment_amount)
+    _cmdd = maximum_drawdown(_cbt["Portfolio Value"]) if not _cbt.empty else None
+    _comparison_results[_cm] = {
+        "weights": _cw,
+        "expected_return": _cr["expected_return"],
+        "expected_volatility": _cr["expected_volatility"],
+        "sharpe_ratio": _cr["sharpe_ratio"],
+        "largest_ticker": _largest_ticker,
+        "largest_weight": _largest_weight,
+        "max_drawdown": _cmdd,
+    }
+
+# Winners are derived from the ACTUAL calculated values above -- never
+# assumed or hard-coded. If two methods tie, max()/min() picks the first
+# in _COMPARISON_METHODS order, which is fine (a badge on either tied
+# strategy is still a true statement).
+_best_sharpe_method = max(_comparison_results, key=lambda m: _comparison_results[m]["sharpe_ratio"])
+_lowest_vol_method = min(_comparison_results, key=lambda m: _comparison_results[m]["expected_volatility"])
+
+# Strategy cards: compact, one per method, current selection subtly marked
+_comp_cols = st.columns(3)
+for _idx, _cm in enumerate(_COMPARISON_METHODS):
+    _cdata = _comparison_results[_cm]
+    _is_current = (_cm == optimization_method)
+
+    _badges = []
+    if _cm == _best_sharpe_method:
+        _badges.append(t("opt_badge_best_sharpe"))
+    if _cm == _lowest_vol_method:
+        _badges.append(t("opt_badge_lowest_risk"))
+    if _cm == "Equal Weight":
+        _badges.append(t("opt_badge_balanced"))
+    if _cdata["largest_weight"] > _CONCENTRATION_THRESHOLD:
+        _badges.append(t("opt_badge_higher_concentration"))
+    _badge_html = "".join(
+        '<span style="display:inline-block;background:var(--surface-2);color:var(--text-secondary);'
+        f'font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;margin:2px 4px 0 0;">{b}</span>'
+        for b in _badges
+    )
+
+    _border = "border:1.5px solid var(--primary);" if _is_current else "border:1px solid var(--border);"
+    _current_tag = (
+        '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;'
+        f'letter-spacing:0.05em;margin-bottom:4px;">{t("opt_current_strategy_label")}</div>'
+    ) if _is_current else ""
+
+    with _comp_cols[_idx]:
+        st.markdown(
+            f'<div style="background:var(--surface);{_border}border-radius:var(--radius-lg);'
+            'padding:14px 16px;margin:4px 0;min-height:196px;">'
+            f'{_current_tag}'
+            f'<div style="color:var(--text);font-weight:800;font-size:14px;margin-bottom:6px;">{_opt_method_labels[_cm]}</div>'
+            f'<div style="color:var(--text-secondary);font-size:11.5px;line-height:1.5;margin-bottom:8px;">{t(_CARD_DESC_KEYS[_cm])}</div>'
+            '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:3px;">'
+            f'<span>{t("metric_expected_annual_return")}</span><span style="color:var(--text);font-weight:700;">{_cdata["expected_return"]:.2%}</span></div>'
+            '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:3px;">'
+            f'<span>{t("metric_sharpe_ratio")}</span><span style="color:var(--text);font-weight:700;">{_cdata["sharpe_ratio"]:.2f}</span></div>'
+            '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">'
+            f'<span>{t("opt_col_largest_position")}</span><span style="color:var(--text);font-weight:700;">{_cdata["largest_ticker"]} {_cdata["largest_weight"]:.2%}</span></div>'
+            f'<div>{_badge_html}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+# Dense comparison table (FINVIZ-style at-a-glance scan)
+with chart_card(t("opt_comparison_table_card")):
+    _table_rows = []
+    for _cm in _COMPARISON_METHODS:
+        _cdata = _comparison_results[_cm]
+        _strategy_display = _opt_method_labels[_cm] + (" ★" if _cm == optimization_method else "")
+        _row = {
+            t("opt_col_strategy"): _strategy_display,
+            t("metric_expected_annual_return"): f"{_cdata['expected_return']:.2%}",
+            t("metric_expected_volatility"): f"{_cdata['expected_volatility']:.2%}",
+            t("metric_sharpe_ratio"): f"{_cdata['sharpe_ratio']:.2f}",
+            t("opt_col_largest_position"): f"{_cdata['largest_ticker']} {_cdata['largest_weight']:.2%}",
+        }
+        if _cdata["max_drawdown"] is not None:
+            _row[t("metric_maximum_drawdown")] = f"{_cdata['max_drawdown']:.2%}"
+        _table_rows.append(_row)
+    _comparison_df = pd.DataFrame(_table_rows)
+    st.dataframe(_comparison_df.style.hide(axis="index"), use_container_width=True)
+    st.caption(f"★ {t('opt_current_strategy_label')}: {t_opt_method(optimization_method)}")
+
 # ── Efficient Frontier ────────────────────────────────────────────────────────
 section_header(t("opt_efficient_frontier_title"), t("opt_efficient_frontier_sub", count=f"{n_simulations:,}"))
 
