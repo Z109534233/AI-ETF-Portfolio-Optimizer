@@ -161,19 +161,26 @@ def return_distribution_chart(prices_df: pd.DataFrame) -> go.Figure:
     return apply_dark_theme(fig)
 
 
-def efficient_frontier_chart(mc_df: pd.DataFrame, optimal_weights: dict = None,
-                              min_vol_weights: dict = None,
+def efficient_frontier_chart(mc_df: pd.DataFrame, selected_weights: dict = None,
                               mean_returns: np.ndarray = None,
                               cov_matrix: np.ndarray = None,
                               method_label: str = None) -> go.Figure:
     """Efficient frontier with Monte Carlo scatter.
 
-    `method_label` names whichever strategy `optimal_weights` actually came
-    from (e.g. "Equal Weight" / "Minimum Volatility"), so the star marker's
-    legend and hover text reflect the real selected method instead of
-    always being captioned "Maximum Sharpe Ratio" regardless of what was
-    actually run. Defaults to the old hard-coded label for backward
-    compatibility if the caller doesn't pass one.
+    `selected_weights` is the SAME weights dict driving the allocation
+    table / donut / KPI cards / backtest -- the star marker's position is
+    always computed from it directly, never from an unrelated nearby Monte
+    Carlo point. `method_label` names whichever strategy those weights
+    actually came from (e.g. "Equal Weight" / "Minimum Volatility"), so the
+    marker's legend and hover text reflect the real selected method instead
+    of always being captioned "Maximum Sharpe Ratio" regardless of what was
+    actually run. `method_label` defaults to that legacy hard-coded string
+    only if the caller omits it.
+
+    (This used to also take an unused `min_vol_weights` parameter, always
+    passed as a positional `None` by the one caller in
+    pages/2_Portfolio_Optimizer.py and never read inside this function --
+    removed as dead, fragile call-site noise; call with keyword arguments.)
     """
     fig = go.Figure()
 
@@ -191,11 +198,11 @@ def efficient_frontier_chart(mc_df: pd.DataFrame, optimal_weights: dict = None,
     ))
 
     # Selected-strategy point (position always reflects the actual
-    # `optimal_weights` passed in; only the label is method_label-aware)
-    if optimal_weights is not None and mean_returns is not None and cov_matrix is not None:
+    # `selected_weights` passed in; only the label is method_label-aware)
+    if selected_weights is not None and mean_returns is not None and cov_matrix is not None:
         from src.financial_metrics import portfolio_return, portfolio_volatility
         label = method_label or t("chart_max_sharpe_ratio")
-        w = np.array(list(optimal_weights.values()))
+        w = np.array(list(selected_weights.values()))
         ret = portfolio_return(w, mean_returns) * 100
         vol = portfolio_volatility(w, cov_matrix) * 100
         fig.add_trace(go.Scatter(

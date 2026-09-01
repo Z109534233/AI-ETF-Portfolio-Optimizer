@@ -494,7 +494,13 @@ with st.spinner(t("msg_running_optimization")):
     mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
 
 with chart_card(t("opt_efficient_frontier_card")):
-    fig_ef = efficient_frontier_chart(mc_df, weights, None, mean_returns, cov, method_label=t_opt_method(optimization_method))
+    fig_ef = efficient_frontier_chart(
+        mc_df=mc_df,
+        selected_weights=weights,
+        mean_returns=mean_returns,
+        cov_matrix=cov,
+        method_label=t_opt_method(optimization_method),
+    )
     st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
