@@ -20,7 +20,7 @@ from src.portfolio_optimizer import (
 )
 from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
-    sharpe_ratio, maximum_drawdown, drawdown_series
+    sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis
 )
 from src.database import save_portfolio, init_database
 from src.report_generator import generate_portfolio_report
@@ -645,6 +645,64 @@ with chart_card(t("opt_how_to_read_title")):
         f'<div style="font-size:11px;color:var(--text-muted);">{t("opt_how_to_read_disclaimer")}</div>',
         unsafe_allow_html=True,
     )
+
+# ── Portfolio Diagnosis (Round 2B-3) ────────────────────────────────────────────
+# Diagnoses the SAME canonical `weights` dict (result["weights"]) already
+# driving KPI Cards / Allocation Table & Donut / Efficient Frontier /
+# Backtest below -- no separate portfolio is calculated here, and no
+# optimization math is touched. Purely structural: weights in, concentration
+# metrics out.
+section_header(t("opt_diagnosis_title"), t("opt_diagnosis_subtitle"))
+st.caption(t("opt_diag_current_strategy", method=t_opt_method(optimization_method)))
+
+_diag = portfolio_diagnosis(weights)
+_DIAG_LEVEL_KEY = {
+    "low": "opt_diag_concentration_low",
+    "moderate": "opt_diag_concentration_moderate",
+    "high": "opt_diag_concentration_high",
+}
+_DIAG_LEVEL_COLOR = {
+    "low": COLORS["success"], "moderate": COLORS["warning"], "high": COLORS["danger"],
+}
+_DIAG_SUMMARY_KEY = {
+    "concentrated": "opt_diag_summary_concentrated",
+    "balanced": "opt_diag_summary_balanced",
+    "moderate": "opt_diag_summary_moderate",
+}
+
+dcol1, dcol2, dcol3, dcol4, dcol5 = st.columns(5)
+with dcol1:
+    st.markdown(metric_card_html(
+        t("opt_diag_concentration_level_label"), t(_DIAG_LEVEL_KEY[_diag["concentration_level"]]),
+        color=_DIAG_LEVEL_COLOR[_diag["concentration_level"]],
+    ), unsafe_allow_html=True)
+with dcol2:
+    st.markdown(metric_card_html(
+        t("opt_col_largest_position"), f"{_diag['largest_ticker']} {_diag['largest_weight']:.2%}",
+        color=COLORS["primary"],
+    ), unsafe_allow_html=True)
+with dcol3:
+    st.markdown(metric_card_html(
+        t("opt_diag_top2_concentration"), f"{_diag['top2_concentration']:.2%}", color=COLORS["purple"],
+    ), unsafe_allow_html=True)
+with dcol4:
+    st.markdown(metric_card_html(
+        t("opt_diag_effective_holdings"), f"{_diag['effective_holdings']:.2f} / {_diag['selected_holdings']}",
+        color=COLORS["cyan"],
+    ), unsafe_allow_html=True)
+with dcol5:
+    st.markdown(metric_card_html(
+        t("opt_diag_active_etfs"), f"{_diag['active_holdings']} / {_diag['selected_holdings']}",
+        color=COLORS["warning"],
+    ), unsafe_allow_html=True)
+
+_diag_summary_key = _DIAG_SUMMARY_KEY[_diag["case"]]
+_diag_summary = (
+    t(_diag_summary_key, count=_diag["selected_holdings"])
+    if _diag["case"] == "concentrated" else t(_diag_summary_key)
+)
+st.markdown(f"**{t('opt_diag_insight_title')}**  \n{_diag_summary}")
+st.caption(t("opt_diag_weight_disclaimer"))
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
 section_header(t("opt_backtest_title"), t("opt_backtest_sub", method=t_opt_method(optimization_method)))

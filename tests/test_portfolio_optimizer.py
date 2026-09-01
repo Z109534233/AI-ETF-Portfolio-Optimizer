@@ -25,7 +25,11 @@ from src.portfolio_optimizer import (
     run_optimization, validate_weight_constraints, backtest_portfolio,
     compute_efficient_frontier,
 )
-from src.financial_metrics import portfolio_return, portfolio_volatility, covariance_matrix
+from src.financial_metrics import (
+    portfolio_return, portfolio_volatility, covariance_matrix,
+    portfolio_diagnosis, effective_number_of_holdings, active_position_count,
+    top_n_concentration, concentration_level,
+)
 from src.i18n import t
 
 
@@ -550,8 +554,14 @@ def _setup_ef_page(method=None, lang="en", tickers=None):
             at.run()
 
     if method:
+        # NOTE: w.options on a format_func selectbox returns the
+        # TRANSLATED display labels (e.g. zh-TW "最大夏普比率"),
+        # not the canonical option values -- `method in w.options` silently
+        # fails for any non-English language, leaving the method unswitched
+        # with no error. set_value()/`.value` operate on the canonical
+        # value regardless of display language, so match on w.key alone.
         for w in at.selectbox:
-            if w.key == "optimization_method" and method in w.options:
+            if w.key == "optimization_method":
                 w.set_value(method)
                 at.run()
                 break
@@ -815,7 +825,7 @@ def test_ef_j_switch_strategy_no_side_effects():
     before = snapshot(at)
 
     for w in at.selectbox:
-        if w.key == "optimization_method" and "Minimum Volatility" in w.options:
+        if w.key == "optimization_method":
             w.set_value("Minimum Volatility")
             at.run()
             break
@@ -833,6 +843,163 @@ def test_ef_j_switch_strategy_no_side_effects():
     check("EF-J.method_actually_switched",
           at.session_state["opt_result"]["method"] == "Minimum Volatility",
           at.session_state["opt_result"]["method"])
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Round 2B-3: Portfolio Diagnosis
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── PD-A: Equal Weight -- exact, data-independent expectations ──────────
+def test_pd_a_equal_weight():
+    tickers = ["VOO", "VTI", "QQQ", "SPY", "SCHD"]
+    weights = {tk: 1.0 / len(tickers) for tk in tickers}
+    diag = portfolio_diagnosis(weights)
+    check("PD-A.largest_weight_approx_20pct", abs(diag["largest_weight"] - 0.20) < 1e-9, str(diag["largest_weight"]))
+    check("PD-A.top2_approx_40pct", abs(diag["top2_concentration"] - 0.40) < 1e-9, str(diag["top2_concentration"]))
+    check("PD-A.effective_holdings_approx_5", abs(diag["effective_holdings"] - 5.0) < 1e-6, str(diag["effective_holdings"]))
+    check("PD-A.active_etfs_5_of_5", diag["active_holdings"] == 5 and diag["selected_holdings"] == 5,
+          f"{diag['active_holdings']}/{diag['selected_holdings']}")
+    check("PD-A.concentration_not_high", diag["concentration_level"] != "high", diag["concentration_level"])
+    check("PD-A.case_is_balanced", diag["case"] == "balanced", diag["case"])
+
+
+def _check_diag_internally_consistent(prefix, weights, diag):
+    """Shared formula/consistency checks reused by PD-B/PD-C: verifies the
+    portfolio_diagnosis() output matches an independent manual calculation
+    from the SAME weights, rather than asserting fixture-specific numbers
+    that would be brittle against whatever the optimizer actually returns."""
+    manual_active = sum(1 for w in weights.values() if w > 0.001)
+    check(f"{prefix}.active_holdings_matches_tolerance_rule", diag["active_holdings"] == manual_active,
+          f"reported={diag['active_holdings']} manual={manual_active}")
+    manual_largest_ticker = max(weights, key=weights.get)
+    check(f"{prefix}.largest_ticker_correct", diag["largest_ticker"] == manual_largest_ticker,
+          f"reported={diag['largest_ticker']} actual={manual_largest_ticker}")
+    manual_level = ("low" if weights[manual_largest_ticker] <= 0.30
+                     else "moderate" if weights[manual_largest_ticker] <= 0.50 else "high")
+    check(f"{prefix}.concentration_level_matches_threshold_rule", diag["concentration_level"] == manual_level,
+          f"reported={diag['concentration_level']} expected={manual_level} largest={weights[manual_largest_ticker]}")
+    check(f"{prefix}.selected_holdings_equals_dict_len", diag["selected_holdings"] == len(weights),
+          f"{diag['selected_holdings']} vs {len(weights)}")
+
+
+# ── PD-B: Maximum Sharpe -- structural/formula self-consistency on actual optimized weights ──
+def test_pd_b_max_sharpe_structural():
+    result = run_optimization(PRICES, method="Maximum Sharpe Ratio", risk_free_rate=0.03)
+    weights = result["weights"]
+    diag = portfolio_diagnosis(weights)
+    _check_diag_internally_consistent("PD-B", weights, diag)
+    if diag["largest_weight"] > 0.50:
+        check("PD-B.high_concentration_when_largest_over_50pct", diag["concentration_level"] == "high",
+              f"largest={diag['largest_weight']} level={diag['concentration_level']}")
+        check("PD-B.effective_holdings_below_selected", diag["effective_holdings"] < diag["selected_holdings"],
+              f"effective={diag['effective_holdings']} selected={diag['selected_holdings']}")
+
+
+# ── PD-C: Minimum Volatility -- same structural checks ───────────────────
+def test_pd_c_min_vol_structural():
+    result = run_optimization(PRICES, method="Minimum Volatility")
+    weights = result["weights"]
+    diag = portfolio_diagnosis(weights)
+    _check_diag_internally_consistent("PD-C", weights, diag)
+
+
+# ── PD-D: Effective Holdings formula == 1 / sum(w_i^2) on actual canonical weights ──
+def test_pd_d_effective_holdings_formula():
+    for method in ("Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility"):
+        result = run_optimization(PRICES, method=method)
+        weights = result["weights"]
+        expected = 1.0 / sum(w ** 2 for w in weights.values())
+        actual = effective_number_of_holdings(weights)
+        check(f"PD-D.{method}.effective_holdings_formula", abs(actual - expected) < 1e-9,
+              f"actual={actual} expected={expected}")
+
+
+# ── PD-E: rendering the diagnosis section doesn't change optimizer weights/metrics ──
+def test_pd_e_no_side_effects_on_rerender():
+    at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("PD-E.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    before = dict(at.session_state["opt_result"])
+    at.run()  # re-render only -- no widget changes, diagnosis section renders again
+    exc2 = at.exception[0] if at.exception else None
+    check("PD-E.no_exception_on_rerender", exc2 is None, str(exc2))
+    if exc2:
+        return
+    after = dict(at.session_state["opt_result"])
+    check("PD-E.weights_unchanged", before["weights"] == after["weights"],
+          f"{before['weights']} vs {after['weights']}")
+    check("PD-E.metrics_unchanged",
+          before["expected_return"] == after["expected_return"] and
+          before["expected_volatility"] == after["expected_volatility"] and
+          before["sharpe_ratio"] == after["sharpe_ratio"],
+          f"before={before} after={after}")
+
+
+# ── PD-F: switching strategy updates the diagnosis to the new selected portfolio ──
+def test_pd_f_switch_strategy_updates_diagnosis():
+    at = _setup_ef_page(method="Equal Weight", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("PD-F.no_exception", exc is None, str(exc))
+    if exc:
+        return
+
+    for method in ("Maximum Sharpe Ratio", "Minimum Volatility", "Equal Weight"):
+        for w in at.selectbox:
+            if w.key == "optimization_method":
+                w.set_value(method)
+                at.run()
+                break
+        exc = at.exception[0] if at.exception else None
+        check(f"PD-F.{method}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        weights = at.session_state["opt_result"]["weights"]
+        diag = portfolio_diagnosis(weights)
+        corpus = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+        expected_largest = f"{diag['largest_ticker']} {diag['largest_weight']:.2%}"
+        expected_effective = f"{diag['effective_holdings']:.2f} / {diag['selected_holdings']}"
+        expected_active = f"{diag['active_holdings']} / {diag['selected_holdings']}"
+        check(f"PD-F.{method}.largest_position_shown", expected_largest in corpus,
+              f"expected {expected_largest!r} in corpus")
+        check(f"PD-F.{method}.effective_holdings_shown", expected_effective in corpus,
+              f"expected {expected_effective!r} in corpus")
+        check(f"PD-F.{method}.active_etfs_shown", expected_active in corpus,
+              f"expected {expected_active!r} in corpus")
+
+
+# ── PD-G: zh-TW renders the diagnosis section with no raw translation keys ──
+def test_pd_g_zh_no_raw_keys():
+    forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
+    at = _setup_ef_page(lang="zh-TW")
+    exc = at.exception[0] if at.exception else None
+    check("PD-G.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    hits = [frag for frag in forbidden if frag in corpus]
+    check("PD-G.no_forbidden_fragments", len(hits) == 0, str(hits))
+    check("PD-G.diagnosis_title_translated", "投資組合診斷" in corpus, "")
+    check("PD-G.insight_title_translated", "配置結構洞察" in corpus, "")
+    check("PD-G.weight_disclaimer_translated", "此處評估的是配置權重分散程度" in corpus, "")
+
+
+# ── PD-H: English renders the diagnosis section with no raw translation keys ──
+def test_pd_h_en_no_raw_keys():
+    forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
+    at = _setup_ef_page(lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("PD-H.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    hits = [frag for frag in forbidden if frag in corpus]
+    check("PD-H.no_forbidden_fragments", len(hits) == 0, str(hits))
+    check("PD-H.diagnosis_title_translated", "Portfolio Diagnosis" in corpus, "")
+    check("PD-H.insight_title_translated", "Portfolio Structure Insight" in corpus, "")
+    check("PD-H.weight_disclaimer_translated",
+          "This diagnosis evaluates allocation-weight diversification" in corpus, "")
 
 
 def main():
@@ -869,6 +1036,15 @@ def main():
     test_ef_h_zh_no_raw_keys()
     test_ef_i_en_no_raw_keys()
     test_ef_j_switch_strategy_no_side_effects()
+
+    test_pd_a_equal_weight()
+    test_pd_b_max_sharpe_structural()
+    test_pd_c_min_vol_structural()
+    test_pd_d_effective_holdings_formula()
+    test_pd_e_no_side_effects_on_rerender()
+    test_pd_f_switch_strategy_updates_diagnosis()
+    test_pd_g_zh_no_raw_keys()
+    test_pd_h_en_no_raw_keys()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

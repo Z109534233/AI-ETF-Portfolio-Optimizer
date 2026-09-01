@@ -344,3 +344,122 @@ def monthly_returns_table(prices) -> pd.DataFrame:
         return pivot
     except Exception:
         return empty_result
+
+
+# ── Portfolio Diagnosis (Round 2B-3) ─────────────────────────────────────
+# Pure structural/concentration diagnostics computed directly from a
+# {ticker: weight} dict -- always the SAME canonical weights already used
+# by Optimization Results / Allocation Table / Efficient Frontier /
+# Backtest, never a separately recalculated portfolio. No optimization
+# math lives here.
+
+ACTIVE_POSITION_TOLERANCE = 0.001  # weights <= this are floating-point noise, not real positions
+
+
+def largest_position(weights: dict):
+    """Return (ticker, weight) for the single largest holding, or (None, 0.0) if empty."""
+    if not weights:
+        return None, 0.0
+    ticker = max(weights, key=weights.get)
+    return ticker, float(weights[ticker])
+
+
+def top_n_concentration(weights: dict, n: int = 2) -> float:
+    """Sum of the n largest weights (e.g. n=2 -> Top 2 Concentration)."""
+    if not weights:
+        return 0.0
+    sorted_weights = sorted(weights.values(), reverse=True)
+    return float(sum(sorted_weights[:n]))
+
+
+def herfindahl_index(weights: dict) -> float:
+    """HHI = sum(w_i^2), the mathematical basis for Effective Holdings below."""
+    if not weights:
+        return 0.0
+    return float(sum(w ** 2 for w in weights.values()))
+
+
+def effective_number_of_holdings(weights: dict) -> float:
+    """Inverse-HHI effective holdings count: 1 / sum(w_i^2).
+
+    5 ETFs at 20% each -> HHI=0.20, effective holdings=5 (fully spread out).
+    One ETF near 100% -> HHI approaches 1, effective holdings approaches 1
+    regardless of how many ETFs are merely SELECTED. This is what separates
+    "5 ETFs chosen" from "5 ETFs actually diversifying the portfolio".
+    """
+    hhi = herfindahl_index(weights)
+    if hhi <= 0:
+        return 0.0
+    return float(1.0 / hhi)
+
+
+def active_position_count(weights: dict, tolerance: float = ACTIVE_POSITION_TOLERANCE) -> int:
+    """Count of holdings with a materially non-zero weight (> tolerance).
+
+    A weight of 1e-8 left over from optimizer/floating-point noise must
+    not be counted as a real position -- see ACTIVE_POSITION_TOLERANCE.
+    """
+    if not weights:
+        return 0
+    return sum(1 for w in weights.values() if w > tolerance)
+
+
+def concentration_level(largest_weight: float) -> str:
+    """Bucket the largest single position into "low"/"moderate"/"high".
+
+    These thresholds (<=30% / 30-50% / >50%) are simple PRODUCT diagnostics
+    for this app's UI, not a regulatory or academic standard of any kind.
+    Returns a canonical (untranslated) bucket key; callers translate it
+    for display via i18n.
+    """
+    if largest_weight <= 0.30:
+        return "low"
+    if largest_weight <= 0.50:
+        return "moderate"
+    return "high"
+
+
+def diagnosis_case(diag: dict) -> str:
+    """Classify a portfolio_diagnosis() result into one of three
+    deterministic, rule-based summary cases:
+
+    "concentrated" -- largest position > 50% AND the effective holdings
+        count sits substantially below the selected ETF count (< 70% of
+        it) -- i.e. the portfolio LOOKS diversified by ETF count but
+        isn't, structurally.
+    "balanced"     -- largest position is in the "low" concentration
+        bucket (<= 30%).
+    "moderate"     -- everything else (moderate concentration, or high
+        concentration without a meaningful effective-holdings gap, e.g.
+        very few ETFs were selected to begin with).
+
+    Purely rule-based on already-calculated weight structure -- no
+    generative text, no investment recommendation, no reference to
+    strategy name/goal/risk tolerance (see Round 2B-3 spec sections 8, 13, 14).
+    """
+    selected = diag.get("selected_holdings", 0)
+    effective = diag.get("effective_holdings", 0.0)
+    largest = diag.get("largest_weight", 0.0)
+    has_effective_gap = selected > 0 and effective < selected * 0.7
+    if largest > 0.50 and has_effective_gap:
+        return "concentrated"
+    if diag.get("concentration_level") == "low":
+        return "balanced"
+    return "moderate"
+
+
+def portfolio_diagnosis(weights: dict, tolerance: float = ACTIVE_POSITION_TOLERANCE) -> dict:
+    """Bundle all Portfolio Diagnosis metrics for a single canonical weights dict."""
+    ticker, weight = largest_position(weights)
+    diag = {
+        "largest_ticker": ticker,
+        "largest_weight": weight,
+        "top2_concentration": top_n_concentration(weights, 2),
+        "hhi": herfindahl_index(weights),
+        "effective_holdings": effective_number_of_holdings(weights),
+        "selected_holdings": len(weights),
+        "active_holdings": active_position_count(weights, tolerance),
+        "concentration_level": concentration_level(weight),
+    }
+    diag["case"] = diagnosis_case(diag)
+    return diag
