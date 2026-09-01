@@ -164,8 +164,17 @@ def return_distribution_chart(prices_df: pd.DataFrame) -> go.Figure:
 def efficient_frontier_chart(mc_df: pd.DataFrame, optimal_weights: dict = None,
                               min_vol_weights: dict = None,
                               mean_returns: np.ndarray = None,
-                              cov_matrix: np.ndarray = None) -> go.Figure:
-    """Efficient frontier with Monte Carlo scatter."""
+                              cov_matrix: np.ndarray = None,
+                              method_label: str = None) -> go.Figure:
+    """Efficient frontier with Monte Carlo scatter.
+
+    `method_label` names whichever strategy `optimal_weights` actually came
+    from (e.g. "Equal Weight" / "Minimum Volatility"), so the star marker's
+    legend and hover text reflect the real selected method instead of
+    always being captioned "Maximum Sharpe Ratio" regardless of what was
+    actually run. Defaults to the old hard-coded label for backward
+    compatibility if the caller doesn't pass one.
+    """
     fig = go.Figure()
 
     # Monte Carlo scatter
@@ -181,17 +190,19 @@ def efficient_frontier_chart(mc_df: pd.DataFrame, optimal_weights: dict = None,
         hovertemplate=f"{t('chart_volatility')}: %{{x:.2f}}%<br>{t('chart_return')}: %{{y:.2f}}%<br>{t('chart_sharpe')}: %{{marker.color:.2f}}<extra></extra>"
     ))
 
-    # Max Sharpe point
+    # Selected-strategy point (position always reflects the actual
+    # `optimal_weights` passed in; only the label is method_label-aware)
     if optimal_weights is not None and mean_returns is not None and cov_matrix is not None:
         from src.financial_metrics import portfolio_return, portfolio_volatility
+        label = method_label or t("chart_max_sharpe_ratio")
         w = np.array(list(optimal_weights.values()))
         ret = portfolio_return(w, mean_returns) * 100
         vol = portfolio_volatility(w, cov_matrix) * 100
         fig.add_trace(go.Scatter(
             x=[vol], y=[ret], mode="markers",
             marker=dict(color=COLORS["accent"], size=14, symbol="star"),
-            name=t("chart_max_sharpe_ratio"),
-            hovertemplate=f"<b>{t('chart_max_sharpe_ratio')}</b><br>{t('chart_volatility')}: {vol:.2f}%<br>{t('chart_return')}: {ret:.2f}%<extra></extra>"
+            name=label,
+            hovertemplate=f"<b>{label}</b><br>{t('chart_volatility')}: {vol:.2f}%<br>{t('chart_return')}: {ret:.2f}%<extra></extra>"
         ))
 
     fig.update_layout(

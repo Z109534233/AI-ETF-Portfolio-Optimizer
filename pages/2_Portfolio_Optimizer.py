@@ -366,7 +366,30 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
             target_return=target_return_pct
         )
 
-        if result.get("error"):
+        # Infeasible min/max weight constraints are a configuration problem,
+        # not a data problem -- stop with a clear validation message rather
+        # than showing "results" for a request that can't possibly be
+        # satisfied (see validate_weight_constraints() in
+        # src/portfolio_optimizer.py). optimizer_failed (SLSQP genuinely
+        # didn't converge for otherwise-feasible settings) stays a warning,
+        # since the equal-weight fallback is still a reasonable number to
+        # show alongside a clear "this isn't the real optimized result" note.
+        _err_code = result.get("error_code")
+        if _err_code == "infeasible_min_weight":
+            error_state(
+                t("opt_error_title"),
+                t("opt_error_infeasible_min_weight", n=len(selected_etfs), min=f"{min_weight:.0%}"),
+            )
+            st.stop()
+        elif _err_code == "infeasible_max_weight":
+            error_state(
+                t("opt_error_title"),
+                t("opt_error_infeasible_max_weight", n=len(selected_etfs), max=f"{max_weight:.0%}"),
+            )
+            st.stop()
+        elif _err_code == "optimizer_failed":
+            st.warning(t("opt_error_optimizer_failed", method=t_opt_method(optimization_method)))
+        elif result.get("error"):
             st.warning(t("opt_note_prefix", error=result["error"]))
 
         st.session_state.opt_result = result
@@ -471,7 +494,7 @@ with st.spinner(t("msg_running_optimization")):
     mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
 
 with chart_card(t("opt_efficient_frontier_card")):
-    fig_ef = efficient_frontier_chart(mc_df, weights, None, mean_returns, cov)
+    fig_ef = efficient_frontier_chart(mc_df, weights, None, mean_returns, cov, method_label=t_opt_method(optimization_method))
     st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
