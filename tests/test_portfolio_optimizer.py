@@ -28,7 +28,7 @@ from src.portfolio_optimizer import (
 from src.financial_metrics import (
     portfolio_return, portfolio_volatility, covariance_matrix,
     portfolio_diagnosis, effective_number_of_holdings, active_position_count,
-    top_n_concentration, concentration_level,
+    top_n_concentration, concentration_level, top2_concentration_status,
 )
 from src.i18n import t
 
@@ -1002,6 +1002,72 @@ def test_pd_h_en_no_raw_keys():
           "This diagnosis evaluates allocation-weight diversification" in corpus, "")
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Round 2B-3 polish pass: tooltips, concentration status color, Top-2
+# status, and the rewritten deterministic summary wording.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── PD-I: metric tooltips render (native HTML title= attribute) in both languages ──
+def test_pd_i_tooltips_present():
+    import html as _html
+    from src.i18n import TRANSLATIONS
+    for lang, key in (("zh-TW", "zh-TW"), ("en", "en")):
+        at = _setup_ef_page(lang=lang)
+        exc = at.exception[0] if at.exception else None
+        check(f"PD-I.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        corpus = "\n".join(m.value for m in at.markdown)
+        for tk in (
+            "opt_diag_tooltip_concentration_level", "opt_diag_tooltip_largest_position",
+            "opt_diag_tooltip_top2_concentration", "opt_diag_tooltip_effective_holdings",
+            "opt_diag_tooltip_active_etfs",
+        ):
+            # The page embeds tooltips via title="..." with html.escape(quote=True),
+            # which also encodes apostrophes (e.g. "portfolio's" -> "portfolio&#x27;s")
+            # -- compare against the SAME escaped form, not the raw translation.
+            tooltip_text = _html.escape(TRANSLATIONS[key][tk], quote=True)
+            check(f"PD-I.{lang}.{tk}_present", tooltip_text in corpus, f"missing tooltip text for {tk}")
+
+
+# ── PD-J: Top-2 Concentration status thresholds (<=50 / 50-75 / >75) ────
+def test_pd_j_top2_status_thresholds():
+    check("PD-J.at_50pct_is_distributed", top2_concentration_status(0.50) == "distributed")
+    check("PD-J.just_above_50pct_is_moderate", top2_concentration_status(0.5001) == "moderate")
+    check("PD-J.at_75pct_is_moderate", top2_concentration_status(0.75) == "moderate")
+    check("PD-J.just_above_75pct_is_concentrated", top2_concentration_status(0.7501) == "concentrated")
+    check("PD-J.low_value_is_distributed", top2_concentration_status(0.30) == "distributed")
+    check("PD-J.near_100pct_is_concentrated", top2_concentration_status(0.99) == "concentrated")
+
+
+# ── PD-K: rewritten "concentrated" summary correctly interpolates the
+# actual ticker/values (Test C from the polish spec: "summary updates
+# using actual ticker and values") ──────────────────────────────────────
+def test_pd_k_concentrated_summary_interpolation():
+    weights = {"AAA": 0.70, "BBB": 0.10, "CCC": 0.10, "DDD": 0.10}
+    diag = portfolio_diagnosis(weights)
+    check("PD-K.case_is_concentrated", diag["case"] == "concentrated", diag["case"])
+    if diag["case"] != "concentrated":
+        return
+    kwargs = dict(
+        selected_count=diag["selected_holdings"],
+        effective_holdings=f"{diag['effective_holdings']:.2f}",
+        largest_ticker=diag["largest_ticker"],
+        largest_weight=f"{diag['largest_weight']:.2%}",
+    )
+    # t() reads the CURRENT language from session_state via get_language();
+    # exercise both languages directly against TRANSLATIONS to avoid
+    # depending on Streamlit session state outside an AppTest context.
+    from src.i18n import TRANSLATIONS
+    for lang in ("zh-TW", "en"):
+        text = TRANSLATIONS[lang]["opt_diag_summary_concentrated"].format(**kwargs)
+        check(f"PD-K.{lang}.contains_ticker", diag["largest_ticker"] in text, text)
+        check(f"PD-K.{lang}.contains_largest_weight", f"{diag['largest_weight']:.2%}" in text, text)
+        check(f"PD-K.{lang}.contains_effective_holdings", f"{diag['effective_holdings']:.2f}" in text, text)
+        check(f"PD-K.{lang}.contains_selected_count", str(diag["selected_holdings"]) in text, text)
+        check(f"PD-K.{lang}.no_unresolved_placeholder", "{" not in text and "}" not in text, text)
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -1045,6 +1111,9 @@ def main():
     test_pd_f_switch_strategy_updates_diagnosis()
     test_pd_g_zh_no_raw_keys()
     test_pd_h_en_no_raw_keys()
+    test_pd_i_tooltips_present()
+    test_pd_j_top2_status_thresholds()
+    test_pd_k_concentrated_summary_interpolation()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

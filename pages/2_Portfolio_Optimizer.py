@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import sys
 import os
+import html as _html
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -36,6 +37,7 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
     region_selector, region_etf_options, region_etf_multiselect,
+    kpi_card,
 )
 from src.theme import COLORS
 from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
@@ -646,12 +648,13 @@ with chart_card(t("opt_how_to_read_title")):
         unsafe_allow_html=True,
     )
 
-# ── Portfolio Diagnosis (Round 2B-3) ────────────────────────────────────────────
+# ── Portfolio Diagnosis (Round 2B-3, polished) ──────────────────────────────────
 # Diagnoses the SAME canonical `weights` dict (result["weights"]) already
 # driving KPI Cards / Allocation Table & Donut / Efficient Frontier /
 # Backtest below -- no separate portfolio is calculated here, and no
 # optimization math is touched. Purely structural: weights in, concentration
-# metrics out.
+# metrics out. This polish pass only changes presentation (tooltips, status
+# color/badges, summary wording) -- no metric/threshold/formula changed.
 section_header(t("opt_diagnosis_title"), t("opt_diagnosis_subtitle"))
 st.caption(t("opt_diag_current_strategy", method=t_opt_method(optimization_method)))
 
@@ -664,43 +667,82 @@ _DIAG_LEVEL_KEY = {
 _DIAG_LEVEL_COLOR = {
     "low": COLORS["success"], "moderate": COLORS["warning"], "high": COLORS["danger"],
 }
+_DIAG_TOP2_STATUS_KEY = {
+    "distributed": "opt_diag_top2_status_distributed",
+    "moderate": "opt_diag_top2_status_moderate",
+    "concentrated": "opt_diag_top2_status_concentrated",
+}
+_DIAG_TOP2_STATUS_COLOR = {
+    "distributed": COLORS["success"], "moderate": COLORS["warning"], "concentrated": COLORS["danger"],
+}
 _DIAG_SUMMARY_KEY = {
     "concentrated": "opt_diag_summary_concentrated",
     "balanced": "opt_diag_summary_balanced",
     "moderate": "opt_diag_summary_moderate",
 }
 
+
+def _diag_label(label: str, tooltip: str) -> str:
+    """Metric label + a small native-HTML hover tooltip (`title` attribute
+    -- no extra library, renders inside the existing dark KPI card markup
+    unchanged). Kept to a short "info glyph" so it never dominates the card."""
+    safe_tooltip = _html.escape(tooltip, quote=True)
+    return (
+        f'{label}<span title="{safe_tooltip}" style="cursor:help;opacity:0.55;'
+        f'margin-left:4px;font-size:11px;">&#9432;</span>'
+    )
+
+
+_level_color = _DIAG_LEVEL_COLOR[_diag["concentration_level"]]
+_level_text = t(_DIAG_LEVEL_KEY[_diag["concentration_level"]])
+_top2_status = _diag["top2_status"]
+_top2_status_color = _DIAG_TOP2_STATUS_COLOR[_top2_status]
+_top2_status_text = t(_DIAG_TOP2_STATUS_KEY[_top2_status])
+
 dcol1, dcol2, dcol3, dcol4, dcol5 = st.columns(5)
 with dcol1:
-    st.markdown(metric_card_html(
-        t("opt_diag_concentration_level_label"), t(_DIAG_LEVEL_KEY[_diag["concentration_level"]]),
-        color=_DIAG_LEVEL_COLOR[_diag["concentration_level"]],
+    st.markdown(kpi_card(
+        _diag_label(t("opt_diag_concentration_level_label"), t("opt_diag_tooltip_concentration_level")),
+        f'<span style="color:{_level_color};">&#9679;</span> {_level_text}',
+        color=_level_color, icon="shield",
     ), unsafe_allow_html=True)
 with dcol2:
-    st.markdown(metric_card_html(
-        t("opt_col_largest_position"), f"{_diag['largest_ticker']} {_diag['largest_weight']:.2%}",
-        color=COLORS["primary"],
+    st.markdown(kpi_card(
+        _diag_label(t("opt_col_largest_position"), t("opt_diag_tooltip_largest_position")),
+        f"{_diag['largest_ticker']} {_diag['largest_weight']:.2%}",
+        color=COLORS["primary"], icon="target",
     ), unsafe_allow_html=True)
 with dcol3:
-    st.markdown(metric_card_html(
-        t("opt_diag_top2_concentration"), f"{_diag['top2_concentration']:.2%}", color=COLORS["purple"],
+    st.markdown(kpi_card(
+        _diag_label(t("opt_diag_top2_concentration"), t("opt_diag_tooltip_top2_concentration")),
+        f"{_diag['top2_concentration']:.2%}",
+        sub=f'<span style="color:{_top2_status_color};font-weight:600;">{_top2_status_text}</span>',
+        color=COLORS["purple"], icon="pie-chart",
     ), unsafe_allow_html=True)
 with dcol4:
-    st.markdown(metric_card_html(
-        t("opt_diag_effective_holdings"), f"{_diag['effective_holdings']:.2f} / {_diag['selected_holdings']}",
-        color=COLORS["cyan"],
+    st.markdown(kpi_card(
+        _diag_label(t("opt_diag_effective_holdings"), t("opt_diag_tooltip_effective_holdings")),
+        f"{_diag['effective_holdings']:.2f} / {_diag['selected_holdings']}",
+        color=COLORS["cyan"], icon="layers",
     ), unsafe_allow_html=True)
 with dcol5:
-    st.markdown(metric_card_html(
-        t("opt_diag_active_etfs"), f"{_diag['active_holdings']} / {_diag['selected_holdings']}",
-        color=COLORS["warning"],
+    st.markdown(kpi_card(
+        _diag_label(t("opt_diag_active_etfs"), t("opt_diag_tooltip_active_etfs")),
+        f"{_diag['active_holdings']} / {_diag['selected_holdings']}",
+        color=COLORS["warning"], icon="bar-chart",
     ), unsafe_allow_html=True)
 
 _diag_summary_key = _DIAG_SUMMARY_KEY[_diag["case"]]
-_diag_summary = (
-    t(_diag_summary_key, count=_diag["selected_holdings"])
-    if _diag["case"] == "concentrated" else t(_diag_summary_key)
-)
+if _diag["case"] == "concentrated":
+    _diag_summary = t(
+        _diag_summary_key,
+        selected_count=_diag["selected_holdings"],
+        effective_holdings=f"{_diag['effective_holdings']:.2f}",
+        largest_ticker=_diag["largest_ticker"],
+        largest_weight=f"{_diag['largest_weight']:.2%}",
+    )
+else:
+    _diag_summary = t(_diag_summary_key)
 st.markdown(f"**{t('opt_diag_insight_title')}**  \n{_diag_summary}")
 st.caption(t("opt_diag_weight_disclaimer"))
 

@@ -419,6 +419,22 @@ def concentration_level(largest_weight: float) -> str:
     return "high"
 
 
+def top2_concentration_status(top2_weight: float) -> str:
+    """Bucket the Top-2 Concentration metric into "distributed"/"moderate"/
+    "concentrated" -- an optional, compact status label (Round 2B-3 polish).
+
+    Like concentration_level() above, these thresholds (<=50% / 50-75% /
+    >75%) are simple PRODUCT interpretation buckets for this app's UI, not
+    an academic or regulatory concentration standard. Returns a canonical
+    (untranslated) bucket key; callers translate it for display via i18n.
+    """
+    if top2_weight <= 0.50:
+        return "distributed"
+    if top2_weight <= 0.75:
+        return "moderate"
+    return "concentrated"
+
+
 def diagnosis_case(diag: dict) -> str:
     """Classify a portfolio_diagnosis() result into one of three
     deterministic, rule-based summary cases:
@@ -461,5 +477,6 @@ def portfolio_diagnosis(weights: dict, tolerance: float = ACTIVE_POSITION_TOLERA
         "active_holdings": active_position_count(weights, tolerance),
         "concentration_level": concentration_level(weight),
     }
+    diag["top2_status"] = top2_concentration_status(diag["top2_concentration"])
     diag["case"] = diagnosis_case(diag)
     return diag
