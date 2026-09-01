@@ -16,7 +16,10 @@ from src.simulator import simulate_investment, compound_growth_projection, scena
 from src.database import save_simulation, init_database
 from src.charts import monte_carlo_paths_chart, future_value_distribution_chart, apply_dark_theme
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, dataframe_to_csv
-from src.ui import render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer
+from src.ui import (
+    render_sidebar_nav, render_sidebar_footer, section_header, chart_card,
+    render_footer, render_current_portfolio_handoff,
+)
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, MARKET_SCENARIO_KEYS
 
@@ -30,6 +33,14 @@ load_css()
 init_database()
 
 page_header(t("sim_title"), t("sim_subtitle"))
+
+# ── Current Portfolio handoff (Round 2B-4) ───────────────────────────────────
+# Proof-of-handoff preview only -- the rest of this page (below) remains
+# fully self-contained and never requires a current_portfolio to exist;
+# see render_current_portfolio_handoff() in src/ui.py.
+render_current_portfolio_handoff(
+    t("handoff_empty_state_title"), t("handoff_empty_state_body_sim"),
+)
 
 st.info(t("sim_projection_disclaimer"))
 

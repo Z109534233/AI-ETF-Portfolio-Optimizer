@@ -31,6 +31,7 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, style_signed_columns,
     region_selector, region_etf_options, region_etf_multiselect,
+    render_current_portfolio_handoff,
 )
 from src.theme import COLORS
 from src.i18n import t, t_country
@@ -44,6 +45,14 @@ st.set_page_config(
 load_css()
 
 page_header(t("risk_title"), t("risk_subtitle"))
+
+# ── Current Portfolio handoff (Round 2B-4) ───────────────────────────────────
+# Proof-of-handoff preview only -- the rest of this page (below) remains
+# fully self-contained and never requires a current_portfolio to exist;
+# see render_current_portfolio_handoff() in src/ui.py.
+render_current_portfolio_handoff(
+    t("handoff_empty_state_title"), t("handoff_empty_state_body_risk"),
+)
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:

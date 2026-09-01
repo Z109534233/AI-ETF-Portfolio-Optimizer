@@ -9,6 +9,8 @@ import numpy as np
 import sys
 import os
 import html as _html
+import uuid
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -233,7 +235,8 @@ with st.sidebar:
         st.session_state[_nsk] = n_simulations
 
     # ── Primary Action ────────────────────────────────────────────────────
-    run_btn = st.button(t("btn_run_optimization"), type="primary", use_container_width=True)
+    run_btn = st.button(t("btn_run_optimization"), type="primary", use_container_width=True,
+                        key="opt_run_optimization_btn")
 
     render_sidebar_footer()
 
@@ -397,6 +400,14 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
         st.session_state.opt_result = result
         st.session_state.prices_df = prices_df
         st.session_state.opt_run_inputs = run_inputs
+        # Fresh id/timestamp only when a NEW successful build actually
+        # happens here (this line is only reached after the infeasibility
+        # st.stop() guards above) -- stable across simple reruns (e.g.
+        # language switch) that don't change run_inputs, so
+        # current_portfolio's identity below only changes when the
+        # underlying portfolio genuinely does.
+        st.session_state.opt_portfolio_id = uuid.uuid4().hex[:12]
+        st.session_state.opt_generated_at = datetime.now(timezone.utc).isoformat()
 
 result = st.session_state.opt_result
 prices_df = st.session_state.prices_df
@@ -753,6 +764,49 @@ backtest_df = backtest_portfolio(prices_df, weights, investment_amount)
 equal_weights = {tk: 1.0 / len(weights) for tk in weights.keys()}
 equal_backtest_df = backtest_portfolio(prices_df, equal_weights, investment_amount)
 
+# ── Canonical Current Portfolio (Round 2B-4) ────────────────────────────────────
+# The ONE session-level object representing the current successfully-built
+# portfolio. Every field below is read from the SAME variables already
+# driving KPI Cards / Allocation Table / Strategy Comparison / Efficient
+# Frontier / Portfolio Diagnosis above -- never a second, independently
+# computed portfolio. Downstream pages (Investment Simulator, Risk
+# Analytics) and Save Portfolio below all consume THIS object, so there is
+# exactly one source of truth for "what portfolio is this".
+#
+# Future-database note (do not implement yet -- see src/database.py's
+# existing Portfolio / PortfolioHolding models): strategy / market /
+# investment_amount / expected_return / expected_volatility / sharpe_ratio
+# / notes already map directly onto the existing `portfolios` table;
+# tickers+weights map onto the existing `portfolio_holdings` table
+# (one row per ticker, exactly as save_portfolio() already does below).
+# Fields with no existing table yet -- investment_goal / risk_tolerance /
+# investment_horizon / max_drawdown / largest_position / effective_holdings
+# / historical_start_date / historical_end_date / generated_at -- would
+# belong to a future `optimization_runs` table (one row per optimizer run,
+# richer than a saved portfolio snapshot), not built this round.
+_cp_max_drawdown = maximum_drawdown(backtest_df["Portfolio Value"]) if not backtest_df.empty else None
+st.session_state.current_portfolio = {
+    "portfolio_id": st.session_state.get("opt_portfolio_id"),
+    "strategy": optimization_method,
+    "market": selected_region,
+    "tickers": list(weights.keys()),
+    "weights": dict(weights),
+    "investment_amount": investment_amount,
+    "investment_goal": investment_goal,
+    "risk_tolerance": risk_tolerance,
+    "investment_horizon": investment_horizon,
+    "expected_return": exp_ret,
+    "volatility": exp_vol,
+    "sharpe_ratio": sharpe,
+    "max_drawdown": _cp_max_drawdown,
+    "largest_position": {"ticker": _diag["largest_ticker"], "weight": _diag["largest_weight"]},
+    "effective_holdings": _diag["effective_holdings"],
+    "historical_start_date": str(start_date),
+    "historical_end_date": str(end_date),
+    "generated_at": st.session_state.get("opt_generated_at"),
+}
+current_portfolio = st.session_state.current_portfolio
+
 if not backtest_df.empty:
     import plotly.graph_objects as go
     with chart_card(t("opt_backtest_card")):
@@ -799,27 +853,72 @@ if not backtest_df.empty:
         with cols[i]:
             st.metric(k, v)
 
+# ── Next Steps (Round 2B-4: Portfolio Handoff) ───────────────────────────────────
+# Compact workflow actions, not landing-page CTAs -- default (secondary)
+# buttons in a 3-column row. Navigation uses st.switch_page() (the same
+# programmatic-navigation mechanism already used in app.py / src/ui.py),
+# which preserves the whole st.session_state -- including
+# current_portfolio, selected_region, and selected_etfs_<region> -- across
+# the page switch automatically, since it's the same session.
+section_header(t("opt_next_steps_title"))
+ns_col1, ns_col2, ns_col3 = st.columns(3)
+with ns_col1:
+    if st.button(t("opt_next_steps_run_simulation"), use_container_width=True, key="opt_next_run_sim"):
+        st.switch_page("pages/3_Investment_Simulator.py")
+with ns_col2:
+    if st.button(t("opt_next_steps_analyze_risk"), use_container_width=True, key="opt_next_analyze_risk"):
+        st.switch_page("pages/4_Risk_Analytics.py")
+with ns_col3:
+    if st.button(t("btn_save_portfolio"), use_container_width=True, key="opt_next_quick_save"):
+        # One-click save with an auto-generated name (canonical English
+        # strategy value, matching the existing naming convention below --
+        # never a translated string, so it stays consistent regardless of
+        # which language was active when saved). The named/annotated Save
+        # & Export form below remains for users who want to customize the
+        # name or add notes -- this is a fast default, not a replacement.
+        _quick_name = (
+            f"{current_portfolio['strategy'].replace(' ', '_')}_"
+            f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+        )
+        _quick_success = save_portfolio(
+            name=_quick_name,
+            weights=current_portfolio["weights"],
+            investment_amount=current_portfolio["investment_amount"],
+            optimization_method=current_portfolio["strategy"],
+            expected_return=current_portfolio["expected_return"],
+            expected_volatility=current_portfolio["volatility"],
+            sharpe_ratio=current_portfolio["sharpe_ratio"],
+            notes="",
+        )
+        if _quick_success:
+            st.success(t("opt_portfolio_saved_success", name=_quick_name))
+        else:
+            st.error(t("opt_portfolio_save_failed"))
+
 # ── Save & Download ───────────────────────────────────────────────────────────
 section_header(t("opt_save_export_title"))
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    portfolio_name = st.text_input(t("field_portfolio_name"), value=f"Portfolio_{optimization_method.replace(' ', '_')}")
+    portfolio_name = st.text_input(t("field_portfolio_name"), value=f"Portfolio_{current_portfolio['strategy'].replace(' ', '_')}")
     notes = st.text_area(t("field_notes_optional"), height=80)
-    if st.button(t("btn_save_portfolio"), type="primary"):
-        # NOTE: optimization_method is stored in English (the raw selectbox
-        # value) so it stays consistent regardless of which language was
-        # active when saved; it is translated only at display time via
-        # t_opt_method() wherever it is shown (e.g. Portfolio History page).
+    if st.button(t("btn_save_portfolio"), type="primary", key="opt_save_export_btn"):
+        # Sourced from the canonical current_portfolio object (built above,
+        # right after Backtest) -- not independently recomputed locals --
+        # so this can never drift from what Diagnosis / Efficient Frontier
+        # / Strategy Comparison are showing for the same run. Strategy is
+        # stored in English (the canonical value) regardless of which
+        # language was active when saved; translated only at display time
+        # via t_opt_method() wherever it's shown (e.g. Portfolio History).
         success = save_portfolio(
             name=portfolio_name,
-            weights=weights,
-            investment_amount=investment_amount,
-            optimization_method=optimization_method,
-            expected_return=exp_ret,
-            expected_volatility=exp_vol,
-            sharpe_ratio=sharpe,
+            weights=current_portfolio["weights"],
+            investment_amount=current_portfolio["investment_amount"],
+            optimization_method=current_portfolio["strategy"],
+            expected_return=current_portfolio["expected_return"],
+            expected_volatility=current_portfolio["volatility"],
+            sharpe_ratio=current_portfolio["sharpe_ratio"],
             notes=notes
         )
         if success:

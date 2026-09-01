@@ -63,6 +63,22 @@ def check(name: str, condition: bool, detail: str = ""):
     print(f"[{status}] {name}" + (f" -- {detail}" if detail and status == "FAIL" else ""))
 
 
+def _find_run_button(at):
+    """Find the "Build Optimized Portfolio" button by its stable key
+    (pages/2_Portfolio_Optimizer.py: key="opt_run_optimization_btn") rather
+    than `next(iter(at.button), None)` -- that grabbed whichever button
+    happens to render first, which broke once Round 2B-4 added more
+    main-content buttons (Next Steps: Run Simulation / Analyze Risk /
+    Quick Save) that can render before this one in at.button's enumeration
+    order, silently clicking the wrong widget (e.g. triggering
+    st.switch_page(), which AppTest cannot resolve when testing a single
+    page in isolation, unrelated to any real bug in the page)."""
+    for b in at.button:
+        if b.key == "opt_run_optimization_btn":
+            return b
+    return next(iter(at.button), None)
+
+
 # ── Test A: Equal Weight ─────────────────────────────────────────────────
 def test_a_equal_weight():
     result = run_optimization(PRICES, method="Equal Weight")
@@ -386,7 +402,7 @@ def test_sc_g_no_side_effects():
     method_w.set_value(minvol_opt)
     at.run()
 
-    run_btn = next(iter(at.button), None)
+    run_btn = _find_run_button(at)
     if run_btn:
         run_btn.click()
         at.run()
@@ -419,7 +435,7 @@ def test_sc_h_switch_strategy():
     sharpe_opt = next((o for o in method_w.options if "Sharpe" in o), None)
     method_w.set_value(sharpe_opt)
     at.run()
-    run_btn = next(iter(at.button), None)
+    run_btn = _find_run_button(at)
     if run_btn:
         run_btn.click()
         at.run()
@@ -454,7 +470,7 @@ def test_sc_i_i18n():
         at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
         at.session_state["language"] = lang
         at.run()
-        run_btn = next(iter(at.button), None)
+        run_btn = _find_run_button(at)
         if run_btn:
             run_btn.click()
             at.run()
@@ -489,7 +505,7 @@ def test_sc_j_render_output_no_raw_keys():
         at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
         at.session_state["language"] = lang
         at.run()
-        run_btn = next(iter(at.button), None)
+        run_btn = _find_run_button(at)
         if run_btn:
             run_btn.click()
             at.run()
@@ -566,7 +582,7 @@ def _setup_ef_page(method=None, lang="en", tickers=None):
                 at.run()
                 break
 
-    run_btn = next(iter(at.button), None)
+    run_btn = _find_run_button(at)
     if run_btn:
         run_btn.click()
         at.run()
@@ -829,7 +845,7 @@ def test_ef_j_switch_strategy_no_side_effects():
             w.set_value("Minimum Volatility")
             at.run()
             break
-    run_btn = next(iter(at.button), None)
+    run_btn = _find_run_button(at)
     if run_btn:
         run_btn.click()
         at.run()
@@ -1068,6 +1084,249 @@ def test_pd_k_concentrated_summary_interpolation():
         check(f"PD-K.{lang}.no_unresolved_placeholder", "{" not in text and "}" not in text, text)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Round 2B-4: Portfolio Handoff & Next Actions
+#
+# st.switch_page() cannot actually be exercised by clicking the Next Steps
+# buttons here: AppTest tests ONE page file in isolation and has no
+# multipage registry to switch into (the same pre-existing limitation that
+# already required monkeypatching st.page_link everywhere in this suite --
+# confirmed directly: clicking a switch_page button under AppTest raises
+# StreamlitAPIException "Could not find page", unrelated to any bug in the
+# app). Since st.switch_page's only job is to change pages WITHOUT
+# clearing st.session_state, these tests instead verify the actual
+# contract: (1) Portfolio Optimizer builds current_portfolio correctly,
+# and (2) a receiving page that finds current_portfolio already in
+# st.session_state (exactly what switch_page leaves behind) renders it
+# correctly. That is what "receives the exact same weights" means in
+# practice, without needing to execute the navigation call itself.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _build_current_portfolio_via_optimizer(method, lang="en", tickers=None):
+    """Run Portfolio Optimizer to completion for the given method; return
+    (at, current_portfolio) -- the canonical handoff object exactly as the
+    real page builds it in st.session_state."""
+    at = _setup_ef_page(method=method, lang=lang, tickers=tickers)
+    exc = at.exception[0] if at.exception else None
+    if exc:
+        return at, None
+    try:
+        cp = at.session_state["current_portfolio"]
+    except Exception:
+        cp = None
+    return at, cp
+
+
+def _run_receiving_page(page_path, current_portfolio, lang="en", extra_session=None):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+    at = AppTest.from_file(page_path, default_timeout=180)
+    at.session_state["language"] = lang
+    if current_portfolio is not None:
+        at.session_state["current_portfolio"] = current_portfolio
+    for k, v in (extra_session or {}).items():
+        at.session_state[k] = v
+    at.run()
+    return at
+
+
+# ── PH-A: Equal Weight build -> Simulator receives exact equal weights ──
+def test_ph_a_equal_weight_handoff_to_simulator():
+    at, cp = _build_current_portfolio_via_optimizer("Equal Weight")
+    check("PH-A.optimizer_no_exception", not at.exception, str(at.exception))
+    check("PH-A.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    opt_weights = at.session_state["opt_result"]["weights"]
+    check("PH-A.weights_match_opt_result", cp["weights"] == opt_weights, f"{cp['weights']} vs {opt_weights}")
+    check("PH-A.strategy_is_equal_weight", cp["strategy"] == "Equal Weight", cp["strategy"])
+
+    sim_at = _run_receiving_page("pages/3_Investment_Simulator.py", cp)
+    exc2 = sim_at.exception[0] if sim_at.exception else None
+    check("PH-A.simulator_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    corpus = "\n".join(m.value for m in sim_at.markdown)
+    for tk, w in cp["weights"].items():
+        check(f"PH-A.simulator_shows_{tk}", f"{tk} {w:.2%}" in corpus, f"expected {tk} {w:.2%} in corpus")
+
+
+# ── PH-B: Maximum Sharpe build -> Simulator receives exact weights ───────
+def test_ph_b_max_sharpe_handoff_to_simulator():
+    at, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("PH-B.optimizer_no_exception", not at.exception, str(at.exception))
+    check("PH-B.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    opt_weights = at.session_state["opt_result"]["weights"]
+    check("PH-B.weights_match_opt_result", cp["weights"] == opt_weights, f"{cp['weights']} vs {opt_weights}")
+
+    sim_at = _run_receiving_page("pages/3_Investment_Simulator.py", cp)
+    exc2 = sim_at.exception[0] if sim_at.exception else None
+    check("PH-B.simulator_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    corpus = "\n".join(m.value for m in sim_at.markdown)
+    # Handoff preview shows at most the 5 largest holdings -- verify
+    # against exactly that same truncation rule, not every ticker.
+    top_holdings = sorted(cp["weights"].items(), key=lambda kv: kv[1], reverse=True)[:5]
+    for tk, w in top_holdings:
+        check(f"PH-B.simulator_shows_{tk}", f"{tk} {w:.2%}" in corpus, f"expected {tk} {w:.2%} in corpus")
+
+
+# ── PH-C: Minimum Volatility build -> Risk Analytics receives exact weights ──
+def test_ph_c_min_vol_handoff_to_risk_analytics():
+    at, cp = _build_current_portfolio_via_optimizer("Minimum Volatility")
+    check("PH-C.optimizer_no_exception", not at.exception, str(at.exception))
+    check("PH-C.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    opt_weights = at.session_state["opt_result"]["weights"]
+    check("PH-C.weights_match_opt_result", cp["weights"] == opt_weights, f"{cp['weights']} vs {opt_weights}")
+    check("PH-C.strategy_is_min_vol", cp["strategy"] == "Minimum Volatility", cp["strategy"])
+
+    risk_at = _run_receiving_page("pages/4_Risk_Analytics.py", cp)
+    exc2 = risk_at.exception[0] if risk_at.exception else None
+    check("PH-C.risk_analytics_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    corpus = "\n".join(m.value for m in risk_at.markdown)
+    top_holdings = sorted(cp["weights"].items(), key=lambda kv: kv[1], reverse=True)[:5]
+    for tk, w in top_holdings:
+        check(f"PH-C.risk_analytics_shows_{tk}", f"{tk} {w:.2%}" in corpus, f"expected {tk} {w:.2%} in corpus")
+    check("PH-C.risk_analytics_shows_strategy",
+          "Minimum Volatility" in corpus, corpus[:0])
+
+
+# ── PH-D: current_portfolio remains available across a plain rerun
+# (proxy for "navigate away and back" within one session) ───────────────
+def test_ph_d_current_portfolio_persists_across_rerun():
+    at, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("PH-D.no_exception", not at.exception, str(at.exception))
+    check("PH-D.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    at.run()  # re-render only, no widget changes
+    exc2 = at.exception[0] if at.exception else None
+    check("PH-D.no_exception_after_rerender", exc2 is None, str(exc2))
+    if exc2:
+        return
+    cp_after = at.session_state["current_portfolio"]
+    check("PH-D.current_portfolio_still_present", cp_after is not None)
+    check("PH-D.current_portfolio_unchanged", cp_after == cp, f"{cp} vs {cp_after}")
+
+
+# ── PH-E: Simulator opened with no current_portfolio -- empty state, no crash ──
+def test_ph_e_simulator_empty_state():
+    for lang in ("zh-TW", "en"):
+        at = _run_receiving_page("pages/3_Investment_Simulator.py", None, lang=lang)
+        exc = at.exception[0] if at.exception else None
+        check(f"PH-E.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        corpus = "\n".join(m.value for m in at.markdown)
+        expect = "尚未建立投資組合" if lang == "zh-TW" else "No portfolio selected"
+        check(f"PH-E.{lang}.empty_state_shown", expect in corpus, corpus[:200])
+
+
+# ── PH-F: Risk Analytics opened with no current_portfolio -- empty state ──
+def test_ph_f_risk_analytics_empty_state():
+    for lang in ("zh-TW", "en"):
+        at = _run_receiving_page("pages/4_Risk_Analytics.py", None, lang=lang)
+        exc = at.exception[0] if at.exception else None
+        check(f"PH-F.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        corpus = "\n".join(m.value for m in at.markdown)
+        expect = "尚未建立投資組合" if lang == "zh-TW" else "No portfolio selected"
+        check(f"PH-F.{lang}.empty_state_shown", expect in corpus, corpus[:200])
+
+
+# ── PH-G: language switch does not alter portfolio state ────────────────
+def test_ph_g_language_switch_preserves_portfolio():
+    _, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("PH-G.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+
+    zh_at = _run_receiving_page("pages/3_Investment_Simulator.py", cp, lang="zh-TW")
+    exc1 = zh_at.exception[0] if zh_at.exception else None
+    check("PH-G.zh_no_exception", exc1 is None, str(exc1))
+
+    en_at = _run_receiving_page("pages/3_Investment_Simulator.py", cp, lang="en")
+    exc2 = en_at.exception[0] if en_at.exception else None
+    check("PH-G.en_no_exception", exc2 is None, str(exc2))
+    if exc1 or exc2:
+        return
+
+    zh_cp = zh_at.session_state["current_portfolio"]
+    en_cp = en_at.session_state["current_portfolio"]
+    check("PH-G.portfolio_identical_across_languages", zh_cp == en_cp == cp,
+          f"zh={zh_cp} en={en_cp} original={cp}")
+
+
+# ── PH-H: global market/ETF state unchanged through the handoff ─────────
+def test_ph_h_market_state_unchanged_through_handoff():
+    at = _setup_ef_page(method="Minimum Volatility", lang="en")
+    region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
+    region_w.set_value("Taiwan")
+    at.run()
+    run_btn = _find_run_button(at)
+    if run_btn:
+        run_btn.click()
+        at.run()
+    exc = at.exception[0] if at.exception else None
+    check("PH-H.optimizer_no_exception", exc is None, str(exc))
+    if exc:
+        return
+    try:
+        cp = at.session_state["current_portfolio"]
+    except Exception:
+        cp = None
+    check("PH-H.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    check("PH-H.market_field_is_taiwan", cp["market"] == "Taiwan", cp["market"])
+
+    # Seed Risk Analytics exactly as st.switch_page would leave the
+    # session -- current_portfolio AND the shared selected_region key.
+    risk_at = _run_receiving_page(
+        "pages/4_Risk_Analytics.py", cp, extra_session={"selected_region": "Taiwan"},
+    )
+    exc2 = risk_at.exception[0] if risk_at.exception else None
+    check("PH-H.risk_analytics_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    region_w2 = next((w for w in risk_at.selectbox if w.key == "selected_region"), None)
+    check("PH-H.risk_analytics_region_still_taiwan",
+          region_w2 is not None and region_w2.value == "Taiwan",
+          str(region_w2.value if region_w2 else None))
+
+
+# ── PH-I: no raw i18n keys in the handoff preview or empty state, both languages ──
+def test_ph_i_handoff_no_raw_keys():
+    forbidden = ("opt_", "OPT_", "handoff_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
+    _, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("PH-I.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    for page_path, name in (
+        ("pages/3_Investment_Simulator.py", "simulator"),
+        ("pages/4_Risk_Analytics.py", "risk"),
+    ):
+        for portfolio, state_label in ((cp, "with_portfolio"), (None, "empty_state")):
+            for lang in ("zh-TW", "en"):
+                at = _run_receiving_page(page_path, portfolio, lang=lang)
+                exc = at.exception[0] if at.exception else None
+                check(f"PH-I.{name}.{state_label}.{lang}.no_exception", exc is None, str(exc))
+                if exc:
+                    continue
+                corpus = "\n".join(m.value for m in at.markdown)
+                hits = [frag for frag in forbidden if frag in corpus]
+                check(f"PH-I.{name}.{state_label}.{lang}.no_forbidden_fragments", len(hits) == 0, str(hits))
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -1114,6 +1373,16 @@ def main():
     test_pd_i_tooltips_present()
     test_pd_j_top2_status_thresholds()
     test_pd_k_concentrated_summary_interpolation()
+
+    test_ph_a_equal_weight_handoff_to_simulator()
+    test_ph_b_max_sharpe_handoff_to_simulator()
+    test_ph_c_min_vol_handoff_to_risk_analytics()
+    test_ph_d_current_portfolio_persists_across_rerun()
+    test_ph_e_simulator_empty_state()
+    test_ph_f_risk_analytics_empty_state()
+    test_ph_g_language_switch_preserves_portfolio()
+    test_ph_h_market_state_unchanged_through_handoff()
+    test_ph_i_handoff_no_raw_keys()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

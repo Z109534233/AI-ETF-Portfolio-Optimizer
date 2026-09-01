@@ -9,7 +9,7 @@ import contextlib
 import streamlit as st
 
 from src.theme import COLORS, icon_svg
-from src.i18n import t, t_country, language_selector, get_language
+from src.i18n import t, t_country, t_opt_method, language_selector, get_language
 from src.etf_database import get_countries, get_tickers_by_country
 from src.data_loader import DEFAULT_ETFS
 
@@ -500,6 +500,56 @@ def error_state(title: str, description: str) -> None:
         <div class="state-desc">{description}</div>
     </div>
     """, unsafe_allow_html=True)
+
+
+def render_current_portfolio_handoff(empty_title: str, empty_description: str,
+                                      max_holdings: int = 5) -> bool:
+    """Compact 'Current Portfolio' preview for pages that receive a
+    portfolio built in Portfolio Optimizer, via the ONE canonical
+    st.session_state["current_portfolio"] object (Round 2B-4).
+
+    Shows strategy / top holdings / investment amount when a current
+    portfolio exists; otherwise renders the shared empty_state() with the
+    caller-supplied text. This is a proof-of-handoff preview only -- it
+    never calls st.stop(), so the calling page's own existing controls and
+    logic keep working standalone regardless of whether a portfolio was
+    ever built in Portfolio Optimizer.
+
+    Returns True if a portfolio was found and previewed, False if the
+    empty state was shown.
+    """
+    portfolio = st.session_state.get("current_portfolio")
+    if not portfolio:
+        empty_state(empty_title, empty_description, icon="layers")
+        return False
+
+    weights = portfolio.get("weights") or {}
+    sorted_holdings = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)
+    shown = sorted_holdings[:max_holdings]
+    holdings_text = " &middot; ".join(f"{tk} {w:.2%}" for tk, w in shown)
+    remaining = len(sorted_holdings) - len(shown)
+    if remaining > 0:
+        holdings_text += f" &middot; +{remaining}"
+
+    strategy_label = t_opt_method(portfolio.get("strategy", ""))
+    amount = portfolio.get("investment_amount")
+    amount_text = f"${amount:,.0f}" if amount is not None else "—"
+
+    st.markdown(f"""
+    <div style="background:{COLORS['surface']};border-left:3px solid {COLORS['primary']};
+                border-radius:var(--radius-lg);padding:14px 18px;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:700;color:{COLORS['primary']};
+                    text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
+            {t('handoff_current_portfolio_title')}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 28px;font-size:13px;color:{COLORS['text_secondary']};">
+            <div><b style="color:{COLORS['text']};">{t('handoff_strategy_label')}:</b> {strategy_label}</div>
+            <div><b style="color:{COLORS['text']};">{t('handoff_holdings_label')}:</b> {holdings_text}</div>
+            <div><b style="color:{COLORS['text']};">{t('handoff_investment_amount_label')}:</b> {amount_text}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    return True
 
 
 # ── Tables ──────────────────────────────────────────────────────────────────────
