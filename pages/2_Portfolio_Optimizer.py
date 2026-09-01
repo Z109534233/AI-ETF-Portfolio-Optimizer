@@ -38,7 +38,7 @@ from src.ui import (
     region_selector, region_etf_options, region_etf_multiselect,
 )
 from src.theme import COLORS
-from src.i18n import t, t_opt_method, t_country, OPTIMIZATION_METHOD_KEYS
+from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
 
 st.set_page_config(
     page_title="Portfolio Optimizer | AI ETF Portfolio Optimizer",
@@ -597,3 +597,16 @@ with col3:
 
 disclaimer_box()
 render_footer()
+
+# ── TEMPORARY DIAGNOSTIC (deployment-mismatch investigation) ────────────────
+# Literal string, deliberately NOT routed through t() -- this is the
+# ground-truth marker for confirming which commit Streamlit Cloud is
+# actually executing. Remove once the deployment mismatch is confirmed.
+st.caption("BUILD: OPT-R1-I18N-20260901-A")
+st.caption(
+    f"I18N TEST: lang={get_language()} | "
+    f"strategy={t('opt_strategy_title')} | "
+    f"goal={t('opt_goal_growth')} | "
+    f"risk={t('opt_risk_balanced')} | "
+    f"horizon={t('opt_horizon_5y')}"
+)
