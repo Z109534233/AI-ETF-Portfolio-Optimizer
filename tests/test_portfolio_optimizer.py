@@ -470,6 +470,45 @@ def test_sc_i_i18n():
         check(f"SC-I.{lang}.comparison_title_translated", expect in joined)
 
 
+# ── SC-J: rendered-output corpus (markdown+captions+table columns+widget
+#          labels+card HTML) must never contain a raw i18n key fragment ──
+def test_sc_j_render_output_no_raw_keys():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    st.page_link = lambda *a, **k: None
+    forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
+
+    for lang in ("zh-TW", "en"):
+        at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at.session_state["language"] = lang
+        at.run()
+        run_btn = next(iter(at.button), None)
+        if run_btn:
+            run_btn.click()
+            at.run()
+        exc = at.exception[0] if at.exception else None
+        check(f"SC-J.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+
+        corpus_parts = [m.value for m in at.markdown]
+        corpus_parts += [c.value for c in at.caption]
+        for kind in ("selectbox", "radio", "checkbox", "button", "expander", "multiselect"):
+            for w in getattr(at, kind, []):
+                label = getattr(w, "label", None)
+                if label:
+                    corpus_parts.append(str(label))
+        for dfw in at.dataframe:
+            val = dfw.value
+            cols = list(val.data.columns) if hasattr(val, "data") else list(val.columns)
+            corpus_parts += [str(c) for c in cols]
+
+        corpus = "\n".join(corpus_parts)
+        hits = [frag for frag in forbidden if frag in corpus]
+        check(f"SC-J.{lang}.no_forbidden_fragments", len(hits) == 0, str(hits))
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -491,6 +530,7 @@ def main():
     test_sc_g_no_side_effects()
     test_sc_h_switch_strategy()
     test_sc_i_i18n()
+    test_sc_j_render_output_no_raw_keys()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")
