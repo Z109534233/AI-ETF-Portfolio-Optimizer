@@ -23,8 +23,10 @@ import pandas as pd
 
 from src.portfolio_optimizer import (
     run_optimization, validate_weight_constraints, backtest_portfolio,
+    compute_efficient_frontier,
 )
-from src.financial_metrics import portfolio_return, portfolio_volatility
+from src.financial_metrics import portfolio_return, portfolio_volatility, covariance_matrix
+from src.i18n import t
 
 
 def make_synthetic_prices(seed: int = 42, n_days: int = 300) -> pd.DataFrame:
@@ -509,6 +511,297 @@ def test_sc_j_render_output_no_raw_keys():
         check(f"SC-J.{lang}.no_forbidden_fragments", len(hits) == 0, str(hits))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Round 2B-2: Efficient Frontier Visualization & Decision Support
+# ══════════════════════════════════════════════════════════════════════════
+
+_EF_TEST_TICKERS = ["VOO", "VTI", "QQQ", "SPY", "SCHD"]
+
+
+def _ef_mean_cov(prices_df=PRICES):
+    mean_returns = prices_df.pct_change(fill_method=None).dropna(how="all").mean().values
+    cov = covariance_matrix(prices_df).values
+    return mean_returns, cov
+
+
+def _setup_ef_page(method=None, lang="en", tickers=None):
+    """Run pages/2_Portfolio_Optimizer.py via AppTest with the given
+    language, ETF selection (default VOO/VTI/QQQ/SPY/SCHD per Round 2B-2's
+    test ticket), and optimization method, then click Run."""
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    st.page_link = lambda *a, **k: None
+    tickers = tickers if tickers is not None else _EF_TEST_TICKERS
+
+    at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at.session_state["language"] = lang
+    at.run()
+
+    ms = None
+    for w in at.multiselect:
+        if w.key and w.key.startswith("selected_etfs_"):
+            ms = w
+            break
+    if ms:
+        available = [tk for tk in tickers if tk in ms.options]
+        if available:
+            ms.set_value(available)
+            at.run()
+
+    if method:
+        for w in at.selectbox:
+            if w.key == "optimization_method" and method in w.options:
+                w.set_value(method)
+                at.run()
+                break
+
+    run_btn = next(iter(at.button), None)
+    if run_btn:
+        run_btn.click()
+        at.run()
+    return at
+
+
+# ── EF-A: Equal Weight selected -- highlighted as current, all 3 markers appear ──
+def test_ef_a_equal_weight_current():
+    from src.charts import efficient_frontier_chart
+    from src.portfolio_optimizer import monte_carlo_simulation
+
+    strategy_results = _compute_comparison(PRICES)
+    mean_returns, cov = _ef_mean_cov()
+    mc_df = monte_carlo_simulation(mean_returns, cov, 200, 0.05)
+    fig = efficient_frontier_chart(
+        mc_df=mc_df, frontier_df=None, strategy_results=strategy_results,
+        strategy_labels={m: m for m in _SC_METHODS}, current_method="Equal Weight",
+    )
+    strategy_traces = {tr.name: tr for tr in fig.data if tr.name in _SC_METHODS}
+    check("EF-A.all_three_markers_present", set(strategy_traces.keys()) == set(_SC_METHODS),
+          str(list(strategy_traces.keys())))
+    ew = strategy_traces.get("Equal Weight")
+    other_sizes = [strategy_traces[m].marker.size for m in _SC_METHODS if m != "Equal Weight"]
+    check("EF-A.equal_weight_marker_emphasized",
+          ew is not None and all(ew.marker.size > s for s in other_sizes),
+          f"ew_size={ew.marker.size if ew else None} others={other_sizes}")
+
+
+# ── EF-B: Maximum Sharpe selected -- current + exactly matches Strategy Comparison ──
+def test_ef_b_max_sharpe_current_matches_comparison():
+    from src.charts import efficient_frontier_chart
+    from src.portfolio_optimizer import monte_carlo_simulation
+
+    strategy_results = _compute_comparison(PRICES)
+    mean_returns, cov = _ef_mean_cov()
+    mc_df = monte_carlo_simulation(mean_returns, cov, 200, 0.05)
+    fig = efficient_frontier_chart(
+        mc_df=mc_df, frontier_df=None, strategy_results=strategy_results,
+        strategy_labels={m: m for m in _SC_METHODS}, current_method="Maximum Sharpe Ratio",
+    )
+    strategy_traces = {tr.name: tr for tr in fig.data if tr.name in _SC_METHODS}
+    ms_trace = strategy_traces.get("Maximum Sharpe Ratio")
+    expected = strategy_results["Maximum Sharpe Ratio"]
+    check("EF-B.marker_present", ms_trace is not None)
+    if ms_trace is None:
+        return
+    other_sizes = [strategy_traces[m].marker.size for m in _SC_METHODS if m != "Maximum Sharpe Ratio"]
+    check("EF-B.marker_emphasized", all(ms_trace.marker.size > s for s in other_sizes),
+          f"size={ms_trace.marker.size} others={other_sizes}")
+    check("EF-B.x_matches_comparison_volatility",
+          abs(ms_trace.x[0] / 100 - expected["expected_volatility"]) < 1e-9,
+          f"chart_x={ms_trace.x[0]} comparison_vol={expected['expected_volatility']}")
+    check("EF-B.y_matches_comparison_return",
+          abs(ms_trace.y[0] / 100 - expected["expected_return"]) < 1e-9,
+          f"chart_y={ms_trace.y[0]} comparison_ret={expected['expected_return']}")
+    check("EF-B.hover_contains_matching_sharpe",
+          f"{expected['sharpe_ratio']:.2f}" in ms_trace.hovertemplate,
+          ms_trace.hovertemplate)
+
+
+# ── EF-C: Minimum Volatility selected -- current + volatility matches Strategy Comparison ──
+def test_ef_c_min_vol_current_matches_comparison():
+    from src.charts import efficient_frontier_chart
+    from src.portfolio_optimizer import monte_carlo_simulation
+
+    strategy_results = _compute_comparison(PRICES)
+    mean_returns, cov = _ef_mean_cov()
+    mc_df = monte_carlo_simulation(mean_returns, cov, 200, 0.05)
+    fig = efficient_frontier_chart(
+        mc_df=mc_df, frontier_df=None, strategy_results=strategy_results,
+        strategy_labels={m: m for m in _SC_METHODS}, current_method="Minimum Volatility",
+    )
+    strategy_traces = {tr.name: tr for tr in fig.data if tr.name in _SC_METHODS}
+    mv_trace = strategy_traces.get("Minimum Volatility")
+    expected = strategy_results["Minimum Volatility"]
+    check("EF-C.marker_present", mv_trace is not None)
+    if mv_trace is None:
+        return
+    other_sizes = [strategy_traces[m].marker.size for m in _SC_METHODS if m != "Minimum Volatility"]
+    check("EF-C.marker_emphasized", all(mv_trace.marker.size > s for s in other_sizes),
+          f"size={mv_trace.marker.size} others={other_sizes}")
+    check("EF-C.x_matches_comparison_volatility",
+          abs(mv_trace.x[0] / 100 - expected["expected_volatility"]) < 1e-9,
+          f"chart_x={mv_trace.x[0]} comparison_vol={expected['expected_volatility']}")
+
+
+# ── EF-D: Efficient Frontier curve contains only feasible optimized portfolios ──
+def test_ef_d_frontier_only_feasible():
+    mean_returns, cov = _ef_mean_cov()
+    n_requested = 30
+    normal_df = compute_efficient_frontier(mean_returns, cov, n_points=n_requested)
+    check("EF-D.normal_case_has_points", len(normal_df) >= 1, str(len(normal_df)))
+    check("EF-D.never_exceeds_requested_grid", len(normal_df) <= n_requested,
+          f"{len(normal_df)} > {n_requested}")
+
+    # A deliberately near-impossible per-asset weight box (26%-27% on 4
+    # tickers) is feasible for sum(weights)==1 in isolation but infeasible
+    # for almost every target return in the grid -- if infeasible targets
+    # were silently included (the old behavior), this would still return
+    # n_requested rows. Expecting far fewer proves infeasible targets are
+    # being skipped, not papered over.
+    tight_df = compute_efficient_frontier(mean_returns, cov, n_points=n_requested,
+                                           min_weight=0.26, max_weight=0.27)
+    check("EF-D.infeasible_targets_are_skipped", len(tight_df) < n_requested,
+          f"{len(tight_df)} rows out of {n_requested} requested -- expected fewer")
+
+
+# ── EF-E: All frontier weights satisfy current constraints ──────────────
+def test_ef_e_frontier_respects_constraints():
+    import numpy as np
+    mean_returns, cov = _ef_mean_cov()
+
+    bounded_df = compute_efficient_frontier(mean_returns, cov, n_points=30,
+                                             min_weight=0.10, max_weight=0.40)
+    if len(bounded_df) == 0:
+        check("EF-E.bounded_case_has_points", False, "0 feasible points -- cannot verify bounds")
+    else:
+        w = np.array(bounded_df["Weights"].tolist())
+        check("EF-E.weights_sum_to_one", bool(np.allclose(w.sum(axis=1), 1.0, atol=1e-6)), str(w.sum(axis=1)))
+        check("EF-E.weights_within_min_max", bool(np.all(w >= 0.10 - 1e-4) and np.all(w <= 0.40 + 1e-4)),
+              f"min={w.min()} max={w.max()}")
+
+    short_df = compute_efficient_frontier(mean_returns, cov, n_points=30,
+                                           max_weight=0.5, allow_short=True)
+    if len(short_df) == 0:
+        check("EF-E.short_case_has_points", False, "0 feasible points -- cannot verify short bounds")
+    else:
+        w2 = np.array(short_df["Weights"].tolist())
+        check("EF-E.short_weights_within_symmetric_bounds",
+              bool(np.all(w2 >= -0.5 - 1e-4) and np.all(w2 <= 0.5 + 1e-4)),
+              f"min={w2.min()} max={w2.max()}")
+
+
+# ── EF-F: Monte Carlo points remain visible but visually secondary ──────
+def test_ef_f_monte_carlo_visually_secondary():
+    from src.charts import efficient_frontier_chart
+    from src.portfolio_optimizer import monte_carlo_simulation
+
+    strategy_results = _compute_comparison(PRICES)
+    mean_returns, cov = _ef_mean_cov()
+    mc_df = monte_carlo_simulation(mean_returns, cov, 200, 0.05)
+    fig = efficient_frontier_chart(
+        mc_df=mc_df, frontier_df=None, strategy_results=strategy_results,
+        strategy_labels={m: m for m in _SC_METHODS}, current_method="Equal Weight",
+    )
+    mc_trace = fig.data[0]
+    check("EF-F.mc_trace_present", mc_trace.name == t("chart_monte_carlo_portfolios"), mc_trace.name)
+    strategy_sizes = [tr.marker.size for tr in fig.data if tr.name in _SC_METHODS]
+    check("EF-F.mc_markers_smaller_than_strategy_markers",
+          all(mc_trace.marker.size < s for s in strategy_sizes),
+          f"mc_size={mc_trace.marker.size} strategy_sizes={strategy_sizes}")
+    check("EF-F.mc_markers_have_transparency", mc_trace.marker.opacity < 1.0, str(mc_trace.marker.opacity))
+
+
+# ── EF-G: No overlapping duplicate strategy labels in the legend ────────
+def test_ef_g_no_duplicate_legend_labels():
+    from src.charts import efficient_frontier_chart
+    from src.portfolio_optimizer import monte_carlo_simulation
+
+    strategy_results = _compute_comparison(PRICES)
+    mean_returns, cov = _ef_mean_cov()
+    mc_df = monte_carlo_simulation(mean_returns, cov, 200, 0.05)
+    frontier_df = compute_efficient_frontier(mean_returns, cov, n_points=20)
+    fig = efficient_frontier_chart(
+        mc_df=mc_df, frontier_df=frontier_df, strategy_results=strategy_results,
+        strategy_labels={m: m for m in _SC_METHODS}, current_method="Maximum Sharpe Ratio",
+    )
+    names = [tr.name for tr in fig.data]
+    check("EF-G.no_duplicate_trace_names", len(names) == len(set(names)), str(names))
+
+
+# ── EF-H: zh-TW render contains no raw opt_* keys ────────────────────────
+def test_ef_h_zh_no_raw_keys():
+    forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
+    at = _setup_ef_page(lang="zh-TW")
+    exc = at.exception[0] if at.exception else None
+    check("EF-H.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    hits = [frag for frag in forbidden if frag in corpus]
+    check("EF-H.no_forbidden_fragments", len(hits) == 0, str(hits))
+    check("EF-H.how_to_read_panel_translated", "如何閱讀這張圖" in corpus, "")
+    check("EF-H.disclaimer_translated", "歷史風險與報酬不代表未來結果" in corpus, "")
+
+
+# ── EF-I: English render contains no raw opt_* keys ──────────────────────
+def test_ef_i_en_no_raw_keys():
+    forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
+    at = _setup_ef_page(lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("EF-I.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    hits = [frag for frag in forbidden if frag in corpus]
+    check("EF-I.no_forbidden_fragments", len(hits) == 0, str(hits))
+    check("EF-I.how_to_read_panel_translated", "How to Read This Chart" in corpus, "")
+    check("EF-I.disclaimer_translated", "Historical risk and return do not guarantee future results." in corpus, "")
+
+
+# ── EF-J: switching strategy doesn't recalculate/reset unrelated state ──
+def test_ef_j_switch_strategy_no_side_effects():
+    at = _setup_ef_page(method="Equal Weight", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("EF-J.no_exception", exc is None, str(exc))
+    if exc:
+        return
+
+    def _sget(a, k):
+        try:
+            return a.session_state[k]
+        except Exception:
+            return None
+
+    def snapshot(a):
+        keys = ["selected_region", "investment_goal", "risk_tolerance", "investment_horizon"]
+        snap = {k: _sget(a, k) for k in keys}
+        ms = next((w for w in a.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+        snap["etfs"] = sorted(ms.value) if ms else None
+        return snap
+
+    before = snapshot(at)
+
+    for w in at.selectbox:
+        if w.key == "optimization_method" and "Minimum Volatility" in w.options:
+            w.set_value("Minimum Volatility")
+            at.run()
+            break
+    run_btn = next(iter(at.button), None)
+    if run_btn:
+        run_btn.click()
+        at.run()
+
+    exc2 = at.exception[0] if at.exception else None
+    check("EF-J.no_exception_after_switch", exc2 is None, str(exc2))
+    if exc2:
+        return
+    after = snapshot(at)
+    check("EF-J.unrelated_state_unchanged", before == after, f"before={before} after={after}")
+    check("EF-J.method_actually_switched",
+          at.session_state["opt_result"]["method"] == "Minimum Volatility",
+          at.session_state["opt_result"]["method"])
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -531,6 +824,17 @@ def main():
     test_sc_h_switch_strategy()
     test_sc_i_i18n()
     test_sc_j_render_output_no_raw_keys()
+
+    test_ef_a_equal_weight_current()
+    test_ef_b_max_sharpe_current_matches_comparison()
+    test_ef_c_min_vol_current_matches_comparison()
+    test_ef_d_frontier_only_feasible()
+    test_ef_e_frontier_respects_constraints()
+    test_ef_f_monte_carlo_visually_secondary()
+    test_ef_g_no_duplicate_legend_labels()
+    test_ef_h_zh_no_raw_keys()
+    test_ef_i_en_no_raw_keys()
+    test_ef_j_switch_strategy_no_side_effects()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

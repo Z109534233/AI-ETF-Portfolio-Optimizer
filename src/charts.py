@@ -161,61 +161,112 @@ def return_distribution_chart(prices_df: pd.DataFrame) -> go.Figure:
     return apply_dark_theme(fig)
 
 
-def efficient_frontier_chart(mc_df: pd.DataFrame, selected_weights: dict = None,
-                              mean_returns: np.ndarray = None,
-                              cov_matrix: np.ndarray = None,
-                              method_label: str = None) -> go.Figure:
-    """Efficient frontier with Monte Carlo scatter.
+# Distinct shape+color per core strategy so the three markers never rely on
+# color alone to be told apart (Round 2B-2 requirement); any method key not
+# in this map (shouldn't happen -- callers only ever pass the 3 core
+# strategies) falls back to a plain circle.
+_STRATEGY_MARKER_STYLE = {
+    "Equal Weight": {"symbol": "circle", "color": COLORS["purple"]},
+    "Maximum Sharpe Ratio": {"symbol": "star", "color": COLORS["success"]},
+    "Minimum Volatility": {"symbol": "diamond", "color": COLORS["primary"]},
+}
 
-    `selected_weights` is the SAME weights dict driving the allocation
-    table / donut / KPI cards / backtest -- the star marker's position is
-    always computed from it directly, never from an unrelated nearby Monte
-    Carlo point. `method_label` names whichever strategy those weights
-    actually came from (e.g. "Equal Weight" / "Minimum Volatility"), so the
-    marker's legend and hover text reflect the real selected method instead
-    of always being captioned "Maximum Sharpe Ratio" regardless of what was
-    actually run. `method_label` defaults to that legacy hard-coded string
-    only if the caller omits it.
 
-    (This used to also take an unused `min_vol_weights` parameter, always
-    passed as a positional `None` by the one caller in
-    pages/2_Portfolio_Optimizer.py and never read inside this function --
-    removed as dead, fragile call-site noise; call with keyword arguments.)
+def efficient_frontier_chart(mc_df: pd.DataFrame,
+                              frontier_df: pd.DataFrame = None,
+                              strategy_results: dict = None,
+                              strategy_labels: dict = None,
+                              current_method: str = None) -> go.Figure:
+    """Efficient frontier decision-support chart (Round 2B-2).
+
+    `strategy_results` must be the SAME dict Strategy Comparison already
+    computes (one entry per core method -- Equal Weight / Maximum Sharpe
+    Ratio / Minimum Volatility -- each with expected_return/
+    expected_volatility/sharpe_ratio/largest_ticker/largest_weight). This
+    function never recalculates those numbers itself, so the markers here
+    can never drift from the Strategy Comparison table (single source of
+    truth). `frontier_df` is the deterministic constrained-optimization
+    curve from compute_efficient_frontier() -- the Monte Carlo cloud is
+    background context only and is never treated as the frontier itself.
+    `current_method` marks whichever of the three core methods (if any) is
+    the user's actual current selection; that marker is emphasized in
+    place rather than duplicated as a 4th point.
     """
     fig = go.Figure()
 
-    # Monte Carlo scatter
+    # Monte Carlo cloud -- background context only: small, semi-transparent
+    # markers so it never visually competes with the frontier curve or the
+    # strategy markers on top of it.
     fig.add_trace(go.Scatter(
         x=mc_df["Volatility"] * 100, y=mc_df["Return"] * 100,
         mode="markers",
         marker=dict(
             color=mc_df["Sharpe"], colorscale="Viridis",
-            size=4, opacity=0.6,
-            colorbar=dict(title=t("metric_sharpe_ratio"), tickfont=dict(color=COLORS["text"]))
+            size=3.5, opacity=0.45,
+            colorbar=dict(
+                title=t("metric_sharpe_ratio"), tickfont=dict(color=COLORS["text"]),
+                thickness=12, len=0.4, y=0.18, yanchor="bottom", x=1.02,
+            ),
         ),
         name=t("chart_monte_carlo_portfolios"),
         hovertemplate=f"{t('chart_volatility')}: %{{x:.2f}}%<br>{t('chart_return')}: %{{y:.2f}}%<br>{t('chart_sharpe')}: %{{marker.color:.2f}}<extra></extra>"
     ))
 
-    # Selected-strategy point (position always reflects the actual
-    # `selected_weights` passed in; only the label is method_label-aware)
-    if selected_weights is not None and mean_returns is not None and cov_matrix is not None:
-        from src.financial_metrics import portfolio_return, portfolio_volatility
-        label = method_label or t("chart_max_sharpe_ratio")
-        w = np.array(list(selected_weights.values()))
-        ret = portfolio_return(w, mean_returns) * 100
-        vol = portfolio_volatility(w, cov_matrix) * 100
+    # Deterministic Efficient Frontier curve -- NOT the outer edge of the
+    # random Monte Carlo cloud; only drawn once there are enough feasible
+    # points to look like a curve rather than a single dot.
+    if frontier_df is not None and len(frontier_df) >= 2:
+        frontier_sorted = frontier_df.sort_values("Volatility")
         fig.add_trace(go.Scatter(
-            x=[vol], y=[ret], mode="markers",
-            marker=dict(color=COLORS["accent"], size=14, symbol="star"),
-            name=label,
-            hovertemplate=f"<b>{label}</b><br>{t('chart_volatility')}: {vol:.2f}%<br>{t('chart_return')}: {ret:.2f}%<extra></extra>"
+            x=frontier_sorted["Volatility"] * 100, y=frontier_sorted["Return"] * 100,
+            mode="lines",
+            line=dict(color=COLORS["text"], width=2.5),
+            name=t("opt_efficient_frontier_card"),
+            hovertemplate=f"{t('chart_volatility')}: %{{x:.2f}}%<br>{t('chart_return')}: %{{y:.2f}}%<extra></extra>"
         ))
+
+    # Three core strategy markers, sourced from strategy_results -- never
+    # independently recomputed here.
+    if strategy_results:
+        for method_key, data in strategy_results.items():
+            style = _STRATEGY_MARKER_STYLE.get(method_key, {"symbol": "circle", "color": COLORS["text_secondary"]})
+            label = (strategy_labels or {}).get(method_key, method_key)
+            is_current = method_key == current_method
+            ret = data["expected_return"] * 100
+            vol = data["expected_volatility"] * 100
+            current_line = f"{t('opt_current_strategy_label')}<br>" if is_current else ""
+            largest_line = ""
+            if data.get("largest_ticker"):
+                largest_line = f"<br>{t('opt_col_largest_position')}: {data['largest_ticker']} {data['largest_weight']:.2%}"
+            fig.add_trace(go.Scatter(
+                x=[vol], y=[ret], mode="markers",
+                marker=dict(
+                    symbol=style["symbol"], color=style["color"],
+                    size=22 if is_current else 15,
+                    line=dict(
+                        width=3 if is_current else 1.5,
+                        color=COLORS["warning"] if is_current else COLORS["text"],
+                    ),
+                ),
+                name=label,
+                hovertemplate=(
+                    f"<b>{label}</b><br>{current_line}"
+                    f"{t('metric_expected_annual_return')}: {ret / 100:.2%}<br>"
+                    f"{t('metric_expected_volatility')}: {vol / 100:.2%}<br>"
+                    f"{t('metric_sharpe_ratio')}: {data['sharpe_ratio']:.2f}"
+                    f"{largest_line}<extra></extra>"
+                ),
+            ))
 
     fig.update_layout(
         title=t("chart_efficient_frontier_mc"),
         xaxis_title=t("chart_annualized_volatility_pct"),
-        yaxis_title=t("chart_annualized_return_pct")
+        yaxis_title=t("chart_ef_yaxis_return"),
+        # Legend pinned to the upper portion of the right-side column,
+        # colorbar (set above) pinned to the lower portion -- non-overlapping
+        # y-bands so the two never collide regardless of how many strategy
+        # markers are in the legend.
+        legend=dict(x=1.02, y=1, xanchor="left", yanchor="top"),
     )
     return apply_dark_theme(fig)
 

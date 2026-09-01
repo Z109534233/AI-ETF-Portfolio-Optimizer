@@ -146,8 +146,19 @@ def optimize_min_volatility(mean_returns: np.ndarray, cov_matrix: np.ndarray,
 
 def optimize_target_return(mean_returns: np.ndarray, cov_matrix: np.ndarray,
                             target_return: float,
-                            min_weight: float = 0.0, max_weight: float = 1.0) -> np.ndarray:
-    """Minimize volatility subject to a target return constraint."""
+                            min_weight: float = 0.0, max_weight: float = 1.0,
+                            allow_short: bool = False):
+    """Minimize volatility subject to a target return constraint.
+
+    Returns (weights, success) -- see optimize_max_sharpe() docstring for
+    what success=False means and why callers must not hide it. `allow_short`
+    now mirrors the bounds logic in optimize_max_sharpe()/
+    optimize_min_volatility() (symmetric +/-max_weight bounds instead of
+    always clamping to non-negative weights); previously this parameter
+    didn't exist here at all, so the Target Return strategy silently
+    ignored the Allow Short Selling setting even though every other
+    strategy respected it.
+    """
     n = len(mean_returns)
     init_weights = np.array([1.0 / n] * n)
 
@@ -158,7 +169,10 @@ def optimize_target_return(mean_returns: np.ndarray, cov_matrix: np.ndarray,
         {"type": "eq", "fun": lambda w: np.sum(w) - 1},
         {"type": "eq", "fun": lambda w: portfolio_return(w, mean_returns) - target_return}
     ]
-    bounds = tuple((min_weight, max_weight) for _ in range(n))
+    if allow_short:
+        bounds = tuple((-max_weight, max_weight) for _ in range(n))
+    else:
+        bounds = tuple((min_weight, max_weight) for _ in range(n))
 
     result = minimize(
         port_vol, init_weights,
@@ -170,12 +184,12 @@ def optimize_target_return(mean_returns: np.ndarray, cov_matrix: np.ndarray,
 
     if result.success:
         weights = np.array(result.x)
-        weights = np.clip(weights, 0, max_weight)
+        weights = np.clip(weights, -max_weight if allow_short else 0, max_weight)
         total = weights.sum()
         if total != 0:
             weights /= total
-        return weights
-    return init_weights
+        return _clean_weights(weights, allow_short), True
+    return init_weights, False
 
 
 def optimize_risk_parity(cov_matrix: np.ndarray) -> np.ndarray:
@@ -237,24 +251,43 @@ def monte_carlo_simulation(mean_returns: np.ndarray, cov_matrix: np.ndarray,
 
 
 def compute_efficient_frontier(mean_returns: np.ndarray, cov_matrix: np.ndarray,
-                                n_points: int = 50,
+                                n_points: int = 40,
                                 min_weight: float = 0.0,
-                                max_weight: float = 1.0) -> pd.DataFrame:
+                                max_weight: float = 1.0,
+                                allow_short: bool = False) -> pd.DataFrame:
     """
-    Compute the efficient frontier by solving for minimum volatility at each target return.
+    Deterministic Efficient Frontier (Round 2B-2): for a grid of target
+    annual returns spanning the range of individual asset returns, minimize
+    portfolio volatility subject to sum(weights) == 1, portfolio_return ==
+    target, and the SAME min/max weight + allow_short bounds used by every
+    other strategy in this module. A target return that SLSQP cannot solve
+    feasibly is skipped entirely (not included with a fallback/garbage
+    point) -- callers should treat "too few rows returned" as "too few
+    feasible portfolios under these constraints" rather than a bug.
+
+    Returns a DataFrame with columns Return, Volatility, Weights (the last
+    is a list aligned to mean_returns' column order, so callers can verify
+    every frontier point actually respects the requested constraints).
     """
     min_ret = float(np.min(mean_returns) * 252)
     max_ret = float(np.max(mean_returns) * 252)
+    if not np.isfinite([min_ret, max_ret]).all() or min_ret >= max_ret:
+        return pd.DataFrame(columns=["Return", "Volatility", "Weights"])
+
     target_returns = np.linspace(min_ret, max_ret, n_points)
 
     frontier_points = []
     for target in target_returns:
-        weights = optimize_target_return(mean_returns, cov_matrix, target, min_weight, max_weight)
+        weights, success = optimize_target_return(
+            mean_returns, cov_matrix, target, min_weight, max_weight, allow_short
+        )
+        if not success:
+            continue
         ret = portfolio_return(weights, mean_returns)
         vol = portfolio_volatility(weights, cov_matrix)
-        frontier_points.append({"Return": ret, "Volatility": vol})
+        frontier_points.append({"Return": ret, "Volatility": vol, "Weights": weights.tolist()})
 
-    return pd.DataFrame(frontier_points)
+    return pd.DataFrame(frontier_points, columns=["Return", "Volatility", "Weights"])
 
 
 def run_optimization(prices_df: pd.DataFrame, method: str,
@@ -361,7 +394,7 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             optimizer_failed = not converged
         elif method == "Target Return":
             tr = target_return if target_return is not None else float(np.mean(mean_returns) * 252)
-            weights = optimize_target_return(mean_returns, cov_array, tr, min_weight, max_weight)
+            weights, _ = optimize_target_return(mean_returns, cov_array, tr, min_weight, max_weight, allow_short)
         elif method == "Risk Parity":
             weights = optimize_risk_parity(cov_array)
         else:

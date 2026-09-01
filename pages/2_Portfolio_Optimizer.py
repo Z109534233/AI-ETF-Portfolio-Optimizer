@@ -608,15 +608,43 @@ with st.spinner(t("msg_running_optimization")):
 
     mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
 
+    # Deterministic Efficient Frontier (Round 2B-2) -- NOT the outer edge of
+    # the Monte Carlo cloud above; a separate constrained optimization per
+    # target return, respecting the same min/max weight + allow-short
+    # settings as every other strategy. ~40 points, within the 30-60 range
+    # called for, kept cheap since each point is one small SLSQP solve on
+    # already-loaded data (no re-download).
+    _EF_FRONTIER_POINTS = 40
+    frontier_df = compute_efficient_frontier(
+        mean_returns, cov, n_points=_EF_FRONTIER_POINTS,
+        min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
+    )
+
 with chart_card(t("opt_efficient_frontier_card")):
     fig_ef = efficient_frontier_chart(
         mc_df=mc_df,
-        selected_weights=weights,
-        mean_returns=mean_returns,
-        cov_matrix=cov,
-        method_label=t_opt_method(optimization_method),
+        frontier_df=frontier_df,
+        strategy_results=_comparison_results,
+        strategy_labels=_opt_method_labels,
+        current_method=optimization_method,
     )
     st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
+    if frontier_df is None or len(frontier_df) < 2:
+        st.info(t("opt_frontier_insufficient_points"))
+
+with chart_card(t("opt_how_to_read_title")):
+    st.markdown(
+        '<div style="display:flex;flex-wrap:wrap;gap:6px 28px;font-size:12px;'
+        'color:var(--text-secondary);margin-bottom:6px;">'
+        f'<div><b style="color:var(--text);">{t("opt_how_to_read_left_label")}</b> — {t("opt_how_to_read_left_desc")}</div>'
+        f'<div><b style="color:var(--text);">{t("opt_how_to_read_up_label")}</b> — {t("opt_how_to_read_up_desc")}</div>'
+        f'<div><b style="color:var(--text);">{t_opt_method("Maximum Sharpe Ratio")}</b> — {t("opt_how_to_read_max_sharpe_desc")}</div>'
+        f'<div><b style="color:var(--text);">{t_opt_method("Minimum Volatility")}</b> — {t("opt_how_to_read_min_vol_desc")}</div>'
+        f'<div><b style="color:var(--text);">{t_opt_method("Equal Weight")}</b> — {t("opt_how_to_read_equal_weight_desc")}</div>'
+        '</div>'
+        f'<div style="font-size:11px;color:var(--text-muted);">{t("opt_how_to_read_disclaimer")}</div>',
+        unsafe_allow_html=True,
+    )
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
 section_header(t("opt_backtest_title"), t("opt_backtest_sub", method=t_opt_method(optimization_method)))
