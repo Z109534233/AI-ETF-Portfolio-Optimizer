@@ -40,6 +40,10 @@ from src.etf_database import (
     ETF_DATABASE, get_tickers_by_country, get_etf, search_etfs, to_yahoo_symbol,
     validate_etf_database, ETFRecord,
 )
+from src.holdings import (
+    get_etf_holdings, itemized_holdings, total_disclosed_weight, search_holdings,
+    STATUS_UPDATED, STATUS_CACHED, STATUS_UNAVAILABLE, STATUS_NOT_SUPPORTED,
+)
 
 
 def make_synthetic_prices(seed: int = 42, n_days: int = 300) -> pd.DataFrame:
@@ -2307,6 +2311,297 @@ def test_taf_k_market_state_unchanged_during_search():
               region_w2 is not None and region_w2.value == "Taiwan", region_w2.value if region_w2 else None)
 
 
+# ── ETF Holdings & Exposure (Round 1) ────────────────────────────────────────
+# All tests mock src.holdings._fetch_yahoo_topholdings_raw -- the ONE
+# function that ever touches the network -- with fixture payloads shaped
+# exactly like Yahoo Finance's real quoteSummary "topHoldings" response.
+# These fixtures exist ONLY to make the tests deterministic without live
+# internet access (mirroring test_twu_h's mocking of yf.download); they are
+# never used as production data anywhere in src/holdings.py or the UI --
+# production always calls the real source, and shows an explicit
+# unavailable/not-supported state when it can't reach it (never a guess).
+import src.holdings as _hld_mod
+
+
+def _hld_reset():
+    """Clear both the st.cache_data-memoized fetch and the process-local
+    last-known-good snapshot store, so each test starts from a clean slate
+    regardless of what earlier tests (or earlier calls with the same
+    ticker) already populated."""
+    _hld_mod._cached_fetch_raw.clear()
+    _hld_mod._LAST_GOOD_SNAPSHOT.clear()
+
+
+# Fixture: a plausible equity ETF response shaped like Yahoo's real
+# quoteSummary "topHoldings" module. Weights are test fixture data only.
+_HLD_FIXTURE_0050 = {
+    "topHoldings": {
+        "cashPosition": {"raw": 0.0041},
+        "stockPosition": {"raw": 0.9959},
+        "holdings": [
+            {"symbol": "2330.TW", "holdingName": "台積電", "holdingPercent": {"raw": 0.5686}},
+            {"symbol": "2454.TW", "holdingName": "聯發科", "holdingPercent": {"raw": 0.0614}},
+            {"symbol": "2308.TW", "holdingName": "台達電", "holdingPercent": {"raw": 0.0326}},
+            {"symbol": "2317.TW", "holdingName": "鴻海", "holdingPercent": {"raw": 0.0298}},
+            {"symbol": "2382.TW", "holdingName": "廣達", "holdingPercent": {"raw": 0.0201}},
+            {"symbol": "2881.TW", "holdingName": "富邦金", "holdingPercent": {"raw": 0.0187}},
+            {"symbol": "2891.TW", "holdingName": "中信金", "holdingPercent": {"raw": 0.0165}},
+            {"symbol": "2886.TW", "holdingName": "兆豐金", "holdingPercent": {"raw": 0.0142}},
+            {"symbol": "1301.TW", "holdingName": "台塑", "holdingPercent": {"raw": 0.0121}},
+            {"symbol": "2884.TW", "holdingName": "玉山金", "holdingPercent": {"raw": 0.0109}},
+        ],
+    },
+}
+
+# Fixture: a distinct Active ETF response (different holdings/weights from
+# 0050 above, proving the mechanism is generic and not special-cased to a
+# single ticker).
+_HLD_FIXTURE_00981A = {
+    "topHoldings": {
+        "cashPosition": {"raw": 0.02},
+        "holdings": [
+            {"symbol": "2330.TW", "holdingName": "台積電", "holdingPercent": {"raw": 0.12}},
+            {"symbol": "2454.TW", "holdingName": "聯發科", "holdingPercent": {"raw": 0.08}},
+            {"symbol": "3711.TW", "holdingName": "日月光投控", "holdingPercent": {"raw": 0.05}},
+        ],
+    },
+}
+
+# Fixture: a non-equity fund -- no itemized "holdings" list at all, only
+# fund-level aggregate composition (Test G: the normalized model must not
+# assume every row is a stock).
+_HLD_FIXTURE_BOND = {
+    "topHoldings": {
+        "bondPosition": {"raw": 0.85},
+        "cashPosition": {"raw": 0.10},
+        "otherPosition": {"raw": 0.03},
+        "holdings": [],
+    },
+}
+
+
+def _hld_mock_fetch(fixture_by_symbol, default=None):
+    """Build a _fetch_yahoo_topholdings_raw replacement returning
+    (fixture, True) for known symbols, or `default` for anything else."""
+    def _fetch(yahoo_symbol):
+        if yahoo_symbol in fixture_by_symbol:
+            return fixture_by_symbol[yahoo_symbol], True
+        return default if default is not None else (None, True)
+    return _fetch
+
+
+# ── Test A: 0050 holdings load, 2330/台積電 present, weights numeric+sorted ──
+def test_hld_a_0050_holdings_load():
+    from unittest.mock import patch
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"0050.TW": _HLD_FIXTURE_0050})):
+        snap = get_etf_holdings("0050")
+    check("HLD-A.status_updated", snap.status == STATUS_UPDATED, snap.status)
+    check("HLD-A.holdings_non_empty", len(snap.holdings) > 0, len(snap.holdings))
+    tsmc = next((h for h in snap.holdings if h.holding_ticker == "2330"), None)
+    check("HLD-A.2330_present", tsmc is not None)
+    check("HLD-A.2330_name_is_tsmc_zh", tsmc.holding_name == "台積電" if tsmc else False,
+          tsmc.holding_name if tsmc else None)
+    weights = [h.weight for h in snap.holdings]
+    check("HLD-A.weights_all_numeric", all(isinstance(w, float) for w in weights))
+    check("HLD-A.weights_sorted_descending", weights == sorted(weights, reverse=True), weights)
+
+
+# ── Test B: search by ticker and by Chinese name return the same holding ──
+def test_hld_b_search_ticker_and_name():
+    from unittest.mock import patch
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"0050.TW": _HLD_FIXTURE_0050})):
+        snap = get_etf_holdings("0050")
+    by_ticker = search_holdings(snap, "2330")
+    by_name = search_holdings(snap, "台積電")
+    check("HLD-B.search_by_ticker_finds_tsmc",
+          len(by_ticker) == 1 and by_ticker[0].holding_ticker == "2330", [h.holding_ticker for h in by_ticker])
+    check("HLD-B.search_by_name_finds_same_holding",
+          len(by_name) == 1 and by_name[0].holding_ticker == "2330", [h.holding_ticker for h in by_name])
+    check("HLD-B.no_match_returns_empty", search_holdings(snap, "NOSUCHTICKERXYZ") == [])
+
+
+# ── Test C: Top 10 contains exactly the 10 highest-weight holdings ──────────
+def test_hld_c_top10_exact():
+    from unittest.mock import patch
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"0050.TW": _HLD_FIXTURE_0050})):
+        snap = get_etf_holdings("0050")
+    items = itemized_holdings(snap)
+    top10 = items[:10]
+    expected_top10_tickers = sorted(
+        [h.holding_ticker for h in items], key=lambda tk: next(x.weight for x in items if x.holding_ticker == tk),
+        reverse=True,
+    )[:10]
+    check("HLD-C.top10_matches_highest_weights",
+          [h.holding_ticker for h in top10] == expected_top10_tickers,
+          ([h.holding_ticker for h in top10], expected_top10_tickers))
+
+
+# ── Test D: concentration formulas (largest / top5 / top10) ─────────────────
+def test_hld_d_concentration_formulas():
+    from unittest.mock import patch
+    from src.financial_metrics import largest_position, top_n_concentration
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"0050.TW": _HLD_FIXTURE_0050})):
+        snap = get_etf_holdings("0050")
+    weights = {h.holding_ticker: h.weight for h in itemized_holdings(snap)}
+    ticker, w = largest_position(weights)
+    sorted_w = sorted(weights.values(), reverse=True)
+    check("HLD-D.largest_is_max_weight", w == max(weights.values()), (w, max(weights.values())))
+    check("HLD-D.top5_is_sum_of_5_largest", top_n_concentration(weights, 5) == sum(sorted_w[:5]))
+    check("HLD-D.top10_is_sum_of_10_largest", top_n_concentration(weights, 10) == sum(sorted_w[:10]))
+
+
+# ── Test E: a visible holdings data date is always present when data exists ──
+def test_hld_e_data_date_present():
+    from unittest.mock import patch
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"0050.TW": _HLD_FIXTURE_0050})):
+        snap = get_etf_holdings("0050")
+    check("HLD-E.data_date_present", bool(snap.data_date), snap.data_date)
+    import re
+    check("HLD-E.data_date_is_iso_format", bool(re.match(r"^\d{4}-\d{2}-\d{2}$", snap.data_date or "")),
+          snap.data_date)
+
+
+# ── Test F: Active ETF (00981A) holdings work through the same code path ────
+def test_hld_f_active_etf_00981a():
+    from unittest.mock import patch
+    _hld_reset()
+    record = get_etf("00981A")
+    check("HLD-F.00981a_is_active_management_style",
+          record is not None and record.management_style == "Active", record.management_style if record else None)
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"00981A.TW": _HLD_FIXTURE_00981A})):
+        snap = get_etf_holdings("00981A")
+    check("HLD-F.status_updated", snap.status == STATUS_UPDATED, snap.status)
+    _fixture_0050_weights = {row["holdingPercent"]["raw"] for row in _HLD_FIXTURE_0050["topHoldings"]["holdings"]}
+    check("HLD-F.holdings_not_hardcoded_from_0050_fixture",
+          {h.weight for h in snap.holdings} != _fixture_0050_weights,
+          ({h.weight for h in snap.holdings}, _fixture_0050_weights))
+    check("HLD-F.holdings_present", len(snap.holdings) > 0, len(snap.holdings))
+
+
+# ── Test G: non-equity asset handling (no itemized stock rows) ──────────────
+def test_hld_g_non_equity_asset_handling():
+    from unittest.mock import patch
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"TESTBOND": _HLD_FIXTURE_BOND})):
+        snap = get_etf_holdings("TESTBOND")
+    check("HLD-G.no_itemized_equity_rows", len(itemized_holdings(snap)) == 0, len(itemized_holdings(snap)))
+    check("HLD-G.aggregate_rows_present", len(snap.holdings) == 3, len(snap.holdings))
+    asset_types = {h.asset_type for h in snap.holdings}
+    check("HLD-G.asset_types_are_not_equity", asset_types == {"Bond", "Cash", "Other"}, asset_types)
+    check("HLD-G.all_rows_marked_aggregate", all(h.is_aggregate for h in snap.holdings))
+    check("HLD-G.coverage_reflects_bond_fund", abs(total_disclosed_weight(snap) - 0.98) < 1e-9,
+          total_disclosed_weight(snap))
+
+
+# ── Test H: repeated calls with the same ticker don't re-hit the source ─────
+def test_hld_h_cache_avoids_repeat_fetch():
+    from unittest.mock import patch
+    _hld_reset()
+    call_count = {"n": 0}
+    real_fixture_fetch = _hld_mock_fetch({"0050.TW": _HLD_FIXTURE_0050})
+
+    def _counting_fetch(yahoo_symbol):
+        call_count["n"] += 1
+        return real_fixture_fetch(yahoo_symbol)
+
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw", _counting_fetch):
+        get_etf_holdings("0050")
+        get_etf_holdings("0050")
+        get_etf_holdings("0050")
+    check("HLD-H.source_fetched_exactly_once_across_3_calls", call_count["n"] == 1, call_count["n"])
+
+
+# ── Test I: source unavailable -- cached snapshot or clean state, never fabricated ──
+def test_hld_i_source_unavailable_handling():
+    from unittest.mock import patch
+    _hld_reset()
+    # First: source fails outright, no prior snapshot -> clean "unavailable"
+    # state, zero holdings, never a guessed number.
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw", lambda sym: (None, False)):
+        snap_first = get_etf_holdings("0050")
+    check("HLD-I.no_prior_snapshot_is_unavailable", snap_first.status == STATUS_UNAVAILABLE, snap_first.status)
+    check("HLD-I.no_fabricated_holdings_when_unavailable", snap_first.holdings == [])
+
+    # Now: source succeeds once (populates the last-known-good snapshot).
+    # st.cache_data cached the FIRST call's (None, False) result for
+    # "0050.TW" above -- must clear it, or this call would just replay
+    # that stale cached failure instead of actually re-fetching.
+    _hld_mod._cached_fetch_raw.clear()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"0050.TW": _HLD_FIXTURE_0050})):
+        snap_ok = get_etf_holdings("0050")
+    check("HLD-I.first_success_is_updated", snap_ok.status == STATUS_UPDATED, snap_ok.status)
+
+    # ...then fails again on a later call -- must fall back to that exact
+    # cached snapshot, not fabricate new numbers.
+    _hld_mod._cached_fetch_raw.clear()  # force a fresh fetch attempt, bypassing st.cache_data
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw", lambda sym: (None, False)):
+        snap_cached = get_etf_holdings("0050")
+    check("HLD-I.falls_back_to_cached_status", snap_cached.status == STATUS_CACHED, snap_cached.status)
+    check("HLD-I.cached_holdings_match_last_good_snapshot",
+          [h.weight for h in snap_cached.holdings] == [h.weight for h in snap_ok.holdings])
+
+    # A structurally-empty-but-reachable response (Status D) is distinct
+    # from a network failure (Status C).
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw", lambda sym: ({"topHoldings": {}}, True)):
+        snap_unsupported = get_etf_holdings("NOFUNDDATA")
+    check("HLD-I.reached_but_empty_is_not_supported", snap_unsupported.status == STATUS_NOT_SUPPORTED,
+          snap_unsupported.status)
+
+
+# ── Test J: bilingual rendering, no raw i18n keys leak ───────────────────────
+def test_hld_j_i18n():
+    import re
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    from unittest.mock import patch
+    st.page_link = lambda *a, **k: None
+
+    _hld_reset()
+    key_pattern = re.compile(r"\betf_holdings_[a-zA-Z0-9_]*\b")
+
+    for lang in ("zh-TW", "en"):
+        _hld_mod._cached_fetch_raw.clear()
+        with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                           lambda sym: (_HLD_FIXTURE_0050, True)):
+            at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+            at.session_state["language"] = lang
+            at.run()
+        exc = at.exception[0] if at.exception else None
+        check(f"HLD-J.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        leaked = []
+        for m in at.markdown:
+            leaked += key_pattern.findall(m.value)
+        for kind in ("selectbox", "checkbox", "text_input"):
+            for w in getattr(at, kind, []):
+                label = getattr(w, "label", None)
+                if label:
+                    leaked += key_pattern.findall(str(label))
+        check(f"HLD-J.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
+        # t() reads session_state OUTSIDE this AppTest's own isolated
+        # session -- compare against TRANSLATIONS directly for this lang
+        # (same approach as test_pd_k_concentrated_summary_interpolation).
+        from src.i18n import TRANSLATIONS
+        expected_label = TRANSLATIONS[lang]["etf_show_holdings"]
+        holdings_checkbox = next((w for w in at.checkbox if w.label == expected_label), None)
+        check(f"HLD-J.{lang}.holdings_checkbox_present", holdings_checkbox is not None)
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -2407,6 +2702,17 @@ def main():
     test_taf_i_no_integer_ticker_conversion()
     test_taf_j_leading_zeros_intact()
     test_taf_k_market_state_unchanged_during_search()
+
+    test_hld_a_0050_holdings_load()
+    test_hld_b_search_ticker_and_name()
+    test_hld_c_top10_exact()
+    test_hld_d_concentration_formulas()
+    test_hld_e_data_date_present()
+    test_hld_f_active_etf_00981a()
+    test_hld_g_non_equity_asset_handling()
+    test_hld_h_cache_avoids_repeat_fetch()
+    test_hld_i_source_unavailable_handling()
+    test_hld_j_i18n()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

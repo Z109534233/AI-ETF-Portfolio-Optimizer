@@ -28,7 +28,7 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, error_state,
+    chart_card, render_footer, error_state, kpi_card,
     region_selector, region_etf_options, region_etf_multiselect,
 )
 from src.i18n import t, t_country, get_language
@@ -101,6 +101,7 @@ with st.sidebar:
     show_returns = st.checkbox(t("etf_show_returns"), value=True)
     show_risk = st.checkbox(t("etf_show_risk"), value=True)
     show_correlation = st.checkbox(t("etf_show_correlation"), value=True)
+    show_holdings = st.checkbox(t("etf_show_holdings"), value=True)
 
     render_sidebar_footer()
 
@@ -1379,6 +1380,153 @@ if show_correlation:
             st.dataframe(cov.style.format("{:.6f}"), use_container_width=True)
     else:
         st.info(t("msg_select_2_correlation"))
+
+# ── Holdings & Exposure (Round 1: single ETF) ───────────────────────────────────
+# What does this ETF actually own? Reads from src/holdings.py's central
+# holdings data service (Yahoo Finance topHoldings, cached, never
+# fabricated) for whichever single ETF the user picks from the currently
+# selected set -- entirely independent of the price data loaded above, so
+# a holdings-source outage never affects Price/Return/Risk/Correlation.
+# Portfolio-level look-through exposure across multiple ETFs is explicitly
+# OUT of scope for this round (see Round 2 of this feature).
+if show_holdings:
+    import html as _hld_html
+    from src.holdings import (
+        get_etf_holdings, itemized_holdings, total_disclosed_weight, search_holdings,
+        STATUS_UPDATED, STATUS_CACHED, STATUS_NOT_SUPPORTED,
+    )
+    from src.financial_metrics import largest_position, top_n_concentration, effective_number_of_holdings
+    from src.theme import COLORS as _HLD_C
+
+    section_header(t("etf_holdings_title"), t("etf_holdings_subtitle"))
+
+    _hld_ticker = st.selectbox(
+        t("etf_holdings_select_etf"), etf_prices.columns.tolist(), key="holdings_ticker",
+    )
+    _hld_snapshot = get_etf_holdings(_hld_ticker)
+
+    # Data date is ALWAYS shown, regardless of status -- never present
+    # weights without a date (PRODUCT SPEC section 5).
+    if _hld_snapshot.data_date:
+        st.caption(t("etf_holdings_data_as_of", date=_hld_snapshot.data_date))
+    st.caption(
+        f"{t('etf_holdings_source_label', source=_hld_snapshot.source)} · "
+        f"[{t('etf_holdings_view_source')}]({_hld_snapshot.source_url})"
+    )
+
+    if _hld_snapshot.status == STATUS_CACHED:
+        st.info(t("etf_holdings_status_cached"))
+    elif _hld_snapshot.status == STATUS_NOT_SUPPORTED:
+        error_state(t("etf_holdings_status_not_supported_title"), t("etf_holdings_status_not_supported_desc"))
+    elif not _hld_snapshot.holdings:
+        error_state(t("etf_holdings_status_unavailable_title"), t("etf_holdings_status_unavailable_desc"))
+
+    if _hld_snapshot.holdings:
+        _hld_items = itemized_holdings(_hld_snapshot)
+        _hld_weights = {h.holding_ticker: h.weight for h in _hld_items}
+
+        # ── Concentration Metrics (reuses the exact same formulas as
+        # Portfolio Diagnosis in src/financial_metrics.py -- computed here
+        # over this ETF's OWN holdings, not portfolio-level weights). ──────
+        _hld_largest_ticker, _hld_largest_weight = largest_position(_hld_weights)
+        _hld_top5 = top_n_concentration(_hld_weights, 5)
+        _hld_top10 = top_n_concentration(_hld_weights, 10)
+        _hld_effective = effective_number_of_holdings(_hld_weights)
+
+        def _hld_label(label: str, tooltip: str) -> str:
+            safe = _hld_html.escape(tooltip, quote=True)
+            return (
+                f'{label}<span title="{safe}" style="cursor:help;opacity:0.55;'
+                f'margin-left:4px;font-size:11px;">&#9432;</span>'
+            )
+
+        mcol1, mcol2, mcol3, mcol4, mcol5 = st.columns(5)
+        with mcol1:
+            st.markdown(kpi_card(
+                _hld_label(t("etf_holdings_metric_largest"), t("etf_holdings_tooltip_largest")),
+                f"{_hld_largest_ticker} {_hld_largest_weight:.2%}" if _hld_largest_ticker else "—",
+                color=_HLD_C["primary"], icon="target",
+            ), unsafe_allow_html=True)
+        with mcol2:
+            st.markdown(kpi_card(
+                _hld_label(t("etf_holdings_metric_top5"), t("etf_holdings_tooltip_top5")),
+                f"{_hld_top5:.2%}", color=_HLD_C["purple"], icon="pie-chart",
+            ), unsafe_allow_html=True)
+        with mcol3:
+            st.markdown(kpi_card(
+                _hld_label(t("etf_holdings_metric_top10"), t("etf_holdings_tooltip_top10")),
+                f"{_hld_top10:.2%}", color=_HLD_C["cyan"], icon="pie-chart",
+            ), unsafe_allow_html=True)
+        with mcol4:
+            st.markdown(kpi_card(
+                _hld_label(t("etf_holdings_metric_count"), t("etf_holdings_tooltip_count")),
+                str(len(_hld_items)), color=_HLD_C["warning"], icon="layers",
+            ), unsafe_allow_html=True)
+        with mcol5:
+            st.markdown(kpi_card(
+                _hld_label(t("etf_holdings_metric_effective"), t("etf_holdings_tooltip_effective")),
+                f"{_hld_effective:.2f}" if _hld_effective else "—",
+                color=_HLD_C["success"], icon="layers",
+            ), unsafe_allow_html=True)
+
+        # ── Holdings Coverage ────────────────────────────────────────────
+        _hld_coverage = total_disclosed_weight(_hld_snapshot)
+        st.markdown(
+            f"**{t('etf_holdings_coverage_label')}: {_hld_coverage:.1%}**  \n"
+            f"<span style='color:var(--text-muted);font-size:12px;'>{t('etf_holdings_coverage_note')}</span>",
+            unsafe_allow_html=True,
+        )
+
+        # ── Top 10 Holdings (compact horizontal bars, not a donut chart) ──
+        with chart_card(t("etf_holdings_top10_title"), t("etf_holdings_top10_subtitle")):
+            _hld_top10_rows = _hld_items[:10]
+            _hld_bar_html = "".join(
+                '<div style="margin-bottom:10px;">'
+                '<div style="display:flex;justify-content:space-between;font-size:12.5px;'
+                f'color:var(--text);margin-bottom:4px;"><span><b>{h.holding_ticker}</b> {h.holding_name}</span>'
+                f'<span style="font-weight:700;">{h.weight:.2%}</span></div>'
+                '<div style="background:var(--border);border-radius:999px;height:8px;overflow:hidden;">'
+                f'<div style="background:{_HLD_C["primary"]};width:{min(100.0, h.weight * 100):.2f}%;'
+                'height:100%;border-radius:999px;"></div></div></div>'
+                for h in _hld_top10_rows
+            )
+            st.markdown(_hld_bar_html or f"<div>{t('etf_holdings_empty_no_holdings')}</div>", unsafe_allow_html=True)
+
+        # ── Search Holdings + All Holdings ────────────────────────────────
+        with chart_card(t("etf_holdings_all_title"), t("etf_holdings_all_subtitle")):
+            _hld_query = st.text_input(
+                t("etf_holdings_search_label"), placeholder=t("etf_holdings_search_placeholder"),
+                key="holdings_search",
+            )
+            _hld_matches = search_holdings(_hld_snapshot, _hld_query)
+
+            if _hld_query and not _hld_matches:
+                st.info(t("etf_holdings_search_no_match", query=_hld_query))
+            else:
+                _hld_asset_type_key = {
+                    "Equity": "etf_holdings_asset_type_equity", "Cash": "etf_holdings_asset_type_cash",
+                    "Bond": "etf_holdings_asset_type_bond", "Other": "etf_holdings_asset_type_other",
+                    "Preferred": "etf_holdings_asset_type_preferred",
+                    "Convertible": "etf_holdings_asset_type_convertible",
+                }
+                _hld_table_rows = [
+                    {
+                        t("etf_holdings_col_ticker"): h.holding_ticker,
+                        t("etf_holdings_col_name"): (
+                            f"{h.holding_name} ({t('etf_holdings_aggregate_note')})" if h.is_aggregate else h.holding_name
+                        ),
+                        t("etf_holdings_col_weight"): h.weight,
+                        t("etf_holdings_col_asset_type"): t(_hld_asset_type_key.get(h.asset_type, "etf_holdings_asset_type_other")),
+                    }
+                    for h in sorted(_hld_matches, key=lambda h: h.weight, reverse=True)
+                ]
+                _hld_df = pd.DataFrame(_hld_table_rows)
+                st.dataframe(
+                    _hld_df, use_container_width=True, hide_index=True,
+                    column_config={
+                        t("etf_holdings_col_weight"): st.column_config.NumberColumn(format="percent"),
+                    },
+                )
 
 # ── Downloads ─────────────────────────────────────────────────────────────────
 section_header(t("etf_download_data_title"))
