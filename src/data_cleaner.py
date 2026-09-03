@@ -118,11 +118,38 @@ def remove_outliers(returns: pd.DataFrame, z_threshold: float = 5.0) -> pd.DataF
 
 
 def get_common_date_range(prices: pd.DataFrame) -> tuple:
-    """Return the common start and end date across all columns."""
-    if prices.empty:
+    """Return (common_start, common_end) -- the widest date range over
+    which EVERY column has at least one valid (non-NaN) price.
+    common_start = the LATEST "first valid date" across columns (a later
+    ETF inception date pushes this later, per market-data reliability
+    fix section 7 -- a late-inception ETF is NOT "unavailable", the
+    analysis range just needs to start from its inception onward).
+    common_end = the EARLIEST "last valid date" across columns.
+
+    Returns (None, None) if `prices` has no columns, or if ANY column has
+    ZERO valid data anywhere (a fully-failed ticker) -- callers must treat
+    that as "no common range exists," not silently compute a range that
+    ignores the missing column entirely (a column of all-NaN produces NaT
+    for both its own first/last valid date, which pandas' max()/min()
+    skip by default -- so naively taking max()/min() across columns would
+    otherwise silently return a "common range" that never actually
+    included the missing ticker at all).
+    """
+    if prices.empty or prices.shape[1] == 0:
         return None, None
-    start = prices.apply(lambda col: col.dropna().index.min()).max()
-    end = prices.apply(lambda col: col.dropna().index.max()).min()
+    first_valid = []
+    last_valid = []
+    for col in prices.columns:
+        fv = prices[col].first_valid_index()
+        lv = prices[col].last_valid_index()
+        if fv is None or lv is None:
+            return None, None
+        first_valid.append(fv)
+        last_valid.append(lv)
+    start = max(first_valid)
+    end = min(last_valid)
+    if start > end:
+        return None, None
     return start, end
 
 

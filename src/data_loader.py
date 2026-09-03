@@ -9,6 +9,7 @@ import yfinance as yf
 import streamlit as st
 from datetime import datetime, timedelta
 import os
+import time
 
 from src.etf_database import get_tickers_by_country
 
@@ -18,6 +19,65 @@ from src.etf_database import get_tickers_by_country
 # there. Non-US pages read other countries via get_tickers_by_country()
 # directly instead of this US-only constant.
 DEFAULT_ETFS = get_tickers_by_country("United States")
+
+# Market-data reliability fix: a single failed yf.download() call is
+# ambiguous -- it could mean the ticker genuinely has no data (Case C), or
+# Yahoo Finance transiently rate-limited this one request among several
+# sequential ones (Case B, the common case on Streamlit Cloud). Retrying a
+# few times with backoff turns most Case B failures into successes without
+# retrying indefinitely; a ticker that still fails after this is reported
+# to the caller as genuinely unavailable.
+_DOWNLOAD_MAX_ATTEMPTS = 3
+_DOWNLOAD_BACKOFF_BASE_SECONDS = 0.5
+
+
+def _download_single_ticker(ticker: str, start_date: str, end_date: str,
+                             price_field: str = "Close"):
+    """Attempt to download one ticker's price series, retrying up to
+    _DOWNLOAD_MAX_ATTEMPTS times with exponential backoff (0.5s, 1s, ...)
+    between attempts. Returns a cleaned (non-empty, NaN-dropped) price
+    Series on success, or None if every attempt failed -- never raises.
+    """
+    for attempt in range(_DOWNLOAD_MAX_ATTEMPTS):
+        try:
+            raw = yf.download(
+                tickers=ticker,
+                start=start_date,
+                end=end_date,
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+            )
+        except Exception:
+            raw = None
+
+        if raw is not None and not raw.empty:
+            # A single-ticker yfinance download always has flat columns
+            # (Open/High/Low/Close/Volume) -- there is no MultiIndex
+            # ambiguity to resolve here, unlike batch multi-ticker
+            # downloads (see download_etf_data()'s docstring for why this
+            # module downloads per-ticker rather than in batch).
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+
+            if price_field in raw.columns:
+                col = raw[price_field]
+            elif "Close" in raw.columns:
+                col = raw["Close"]
+            else:
+                col = None
+
+            if col is not None:
+                if isinstance(col, pd.DataFrame):
+                    col = col.iloc[:, 0]
+                col = col.dropna()
+                if not col.empty:
+                    return col
+
+        if attempt < _DOWNLOAD_MAX_ATTEMPTS - 1:
+            time.sleep(_DOWNLOAD_BACKOFF_BASE_SECONDS * (2 ** attempt))
+
+    return None
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -40,11 +100,13 @@ def download_etf_data(tickers: list, start_date: str, end_date: str, price_field
     yfinance response always has a flat, predictable column structure.
 
     Returns a DataFrame with dates as index and tickers as columns.
-    Tickers that fail to download (no data, or a network/API error) are
-    OMITTED from the result and reported via st.warning() -- callers must
-    check which of their requested tickers are actually present in the
-    returned columns. Falls back to fully simulated sample data only if
-    *every* requested ticker fails to download.
+    Tickers that still have no usable data after retrying (see
+    _download_single_ticker() -- this is what turns a transient Yahoo
+    Finance rate-limit into a successful download instead of a permanent
+    exclusion) are OMITTED from the result and reported via st.warning()
+    -- callers must check which of their requested tickers are actually
+    present in the returned columns. Falls back to fully simulated sample
+    data only if *every* requested ticker fails to download.
     """
     if not tickers:
         return pd.DataFrame()
@@ -53,47 +115,11 @@ def download_etf_data(tickers: list, start_date: str, end_date: str, price_field
     failed = []
 
     for ticker in tickers:
-        try:
-            raw = yf.download(
-                tickers=ticker,
-                start=start_date,
-                end=end_date,
-                auto_adjust=True,
-                progress=False,
-                threads=False,
-            )
-        except Exception:
-            raw = None
-
-        if raw is None or raw.empty:
+        col = _download_single_ticker(ticker, start_date, end_date, price_field)
+        if col is None:
             failed.append(ticker)
-            continue
-
-        # A single-ticker yfinance download always has flat columns
-        # (Open/High/Low/Close/Volume) -- there is no MultiIndex ambiguity
-        # to resolve here, unlike batch multi-ticker downloads.
-        if isinstance(raw.columns, pd.MultiIndex):
-            # Some yfinance versions still return a MultiIndex even for a
-            # single ticker; flatten to the first (and only) ticker level.
-            raw.columns = raw.columns.get_level_values(0)
-
-        if price_field in raw.columns:
-            col = raw[price_field]
-        elif "Close" in raw.columns:
-            col = raw["Close"]
         else:
-            failed.append(ticker)
-            continue
-
-        if isinstance(col, pd.DataFrame):
-            col = col.iloc[:, 0]
-        col = col.dropna()
-
-        if col.empty:
-            failed.append(ticker)
-            continue
-
-        series[ticker] = col
+            series[ticker] = col
 
     if not series:
         # Every single ticker failed -- fall back to simulated sample data

@@ -6,6 +6,8 @@ Monte Carlo simulation for long-term investment projections.
 import numpy as np
 import pandas as pd
 
+from src.data_cleaner import get_common_date_range
+
 
 MARKET_SCENARIOS = {
     "Bull Market": {"return": 0.15, "volatility": 0.12},
@@ -149,28 +151,17 @@ def find_common_data_range(prices_df: pd.DataFrame):
     """Return (common_start, common_end) -- the widest date range over
     which EVERY column in `prices_df` has a valid (non-NaN) price.
 
+    Thin wrapper around src.data_cleaner.get_common_date_range() (the
+    market-data reliability fix's single central implementation of this
+    logic, also used directly by Portfolio Optimizer) -- kept here under
+    its existing name so callers of this module don't need to change.
     common_start = the LATEST "first valid date" across columns (an ETF
     with a later inception date pushes this later). common_end = the
     EARLIEST "last valid date" across columns. Returns (None, None) if
     `prices_df` has no columns or any column is entirely NaN (no common
     range exists at all).
     """
-    if prices_df.empty or prices_df.shape[1] == 0:
-        return None, None
-    first_valid = []
-    last_valid = []
-    for col in prices_df.columns:
-        fv = prices_df[col].first_valid_index()
-        lv = prices_df[col].last_valid_index()
-        if fv is None or lv is None:
-            return None, None
-        first_valid.append(fv)
-        last_valid.append(lv)
-    common_start = max(first_valid)
-    common_end = min(last_valid)
-    if common_start > common_end:
-        return None, None
-    return common_start, common_end
+    return get_common_date_range(prices_df)
 
 
 def prepare_historical_prices(prices_df: pd.DataFrame, start, end) -> pd.DataFrame:

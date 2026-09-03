@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.data_loader import download_etf_data, DEFAULT_ETFS
-from src.data_cleaner import clean_price_data
+from src.data_cleaner import clean_price_data, get_common_date_range
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
@@ -312,23 +312,56 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
             error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
             st.stop()
 
+        raw_prices = rename_yahoo_columns(raw_prices)
+        raw_prices = raw_prices[[tk for tk in selected_etfs if tk in raw_prices.columns]]
+
+        # ── CRITICAL SAFETY RULE (market-data reliability fix) ───────────
+        # download_etf_data() already retries each ticker individually
+        # with backoff before giving up (src/data_loader.py), so a ticker
+        # missing here means it genuinely failed after retries -- Case B
+        # (transient) exhausted its retries, or Case C (genuinely no
+        # data). Either way, a user who selected N ETFs must NEVER
+        # unknowingly get an optimization result computed from fewer than
+        # N -- so this STOPS instead of silently continuing on whichever
+        # subset happened to succeed. No "continue with available ETFs"
+        # shortcut is offered: the default (and only) behavior is STOP,
+        # per the fix spec's explicit fallback instruction.
+        missing_tickers = [tk for tk in selected_etfs if tk not in raw_prices.columns]
+        if missing_tickers:
+            _sep = "、" if get_language() == "zh-TW" else ", "
+            error_state(
+                t("opt_partial_data_title"),
+                t("opt_partial_data_desc", tickers=_sep.join(missing_tickers)),
+            )
+            with st.expander(t("opt_data_retrieval_details_title")):
+                for _tk in missing_tickers:
+                    st.caption(f"{to_yahoo_symbol(_tk)} — {t('opt_request_failed_after_retry')}")
+            st.stop()
+
+        # ── Common-start-date handling ────────────────────────────────
+        # A later-inception ETF (Case A) is NOT unavailable -- it just has
+        # less history. Determine the true common valid-data range from
+        # the RAW (not yet ffill/bfill-cleaned) prices and slice to it
+        # BEFORE clean_price_data() runs, so its back-fill never fabricates
+        # a flat price for any ETF before it actually existed. get_common_
+        # date_range() (src/data_cleaner.py) also returns (None, None) if
+        # any column somehow has zero valid data anywhere -- defensive,
+        # since download_etf_data()/the missing_tickers check above should
+        # already guarantee every remaining column has SOME valid data.
+        common_start, common_end = get_common_date_range(raw_prices)
+        if common_start is None:
+            error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
+            st.stop()
+        if common_start.date() > start_date:
+            st.info(t("opt_common_start_notice", date=common_start.strftime("%Y-%m-%d")))
+        raw_prices = raw_prices.loc[(raw_prices.index >= common_start) & (raw_prices.index <= common_end)]
+
         prices_df = clean_price_data(raw_prices)
-        prices_df = rename_yahoo_columns(prices_df)
         prices_df = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
 
         # ── Validate prices_df ──────────────────────────────────────────
-        # clean_price_data() now drops any ticker with zero valid data, so
-        # a ticker that failed to download (common on Streamlit Cloud when
-        # Yahoo Finance rate-limits cloud IPs) is silently absent from
-        # prices_df.columns rather than lingering as an all-NaN column.
-        # Report exactly which requested tickers are missing.
-        missing_tickers = [tk for tk in selected_etfs if tk not in prices_df.columns]
-        if missing_tickers:
-            st.warning(
-                f"No usable price data for: {', '.join(missing_tickers)}. "
-                "These tickers were excluded from the optimization."
-            )
-
+        # Defensive fallback only -- the checks above should already
+        # guarantee every selected ticker survives with valid data.
         if prices_df.empty or len(prices_df.columns) < 2:
             error_state(
                 t("msg_no_price_data_title"),
