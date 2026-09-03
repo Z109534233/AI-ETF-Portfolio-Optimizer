@@ -36,6 +36,10 @@ from src.simulator import (
     simulate_investment, MARKET_SCENARIOS,
     historical_backtest, find_common_data_range, prepare_historical_prices, xirr,
 )
+from src.etf_database import (
+    ETF_DATABASE, get_tickers_by_country, get_etf, search_etfs, to_yahoo_symbol,
+    validate_etf_database, ETFRecord,
+)
 
 
 def make_synthetic_prices(seed: int = 42, n_days: int = 300) -> pd.DataFrame:
@@ -1887,6 +1891,243 @@ def test_hist_k_cross_page_handoff_unchanged():
     check("HIST-K.tickers_unchanged", cp_in_simulator["tickers"] == cp["tickers"], cp_in_simulator["tickers"])
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Taiwan ETF Universe expansion. Pure data/architecture tests (TWU-*) need
+# no network access -- src/etf_database.py is a static in-memory snapshot
+# by design (section 12 of the spec: no page load may scrape TWSE/TPEx
+# live). AppTest tests verify the shared universe is actually wired into
+# the page-level selectors, and guard against the specific multiselect
+# state-corruption bug found and fixed while building this (see
+# _build_etf_label_map()'s docstring in src/ui.py).
+# ══════════════════════════════════════════════════════════════════════════
+
+_OLD_HARDCODED_TAIWAN_TICKERS = {"0050", "0056", "006208", "00878", "00919", "00929"}
+
+
+# ── TWU data validation: zero structural issues in the master universe ──
+def test_twu_data_validation():
+    report = validate_etf_database()
+    check("TWU-data.no_issues", report["issues"] == [], report["issues"])
+    check("TWU-data.no_duplicate_tickers", report["duplicate_tickers"] == [], report["duplicate_tickers"])
+    check("TWU-data.all_yahoo_status_valid", report["yahoo_status_counts"]["valid"] == report["total_records"],
+          report["yahoo_status_counts"])
+
+
+# ── Test A: Taiwan selector contains far more than the old ~6 ETFs ──────
+def test_twu_a_taiwan_universe_much_larger():
+    tw_tickers = set(get_tickers_by_country("Taiwan"))
+    check("TWU-A.far_more_than_old_list", len(tw_tickers) > len(_OLD_HARDCODED_TAIWAN_TICKERS) * 3,
+          f"{len(tw_tickers)} tickers vs old list of {len(_OLD_HARDCODED_TAIWAN_TICKERS)}")
+    check("TWU-A.old_tickers_still_present", _OLD_HARDCODED_TAIWAN_TICKERS.issubset(tw_tickers),
+          _OLD_HARDCODED_TAIWAN_TICKERS - tw_tickers)
+
+
+# ── Test B: 0050 remains searchable ──────────────────────────────────────
+def test_twu_b_0050_searchable():
+    results = {r.ticker for r in search_etfs("0050", "Taiwan")}
+    check("TWU-B.0050_found_by_ticker_search", "0050" in results, results)
+
+
+# ── Test C: a Taiwan ETF outside the old 5/6-ticker default is searchable ──
+def test_twu_c_new_etf_searchable_by_name_and_issuer():
+    # By Chinese name keyword ("高股息" = "high dividend")
+    by_name = {r.ticker for r in search_etfs("高股息", "Taiwan")}
+    check("TWU-C.search_by_zh_name_finds_new_dividend_etfs",
+          len(by_name - _OLD_HARDCODED_TAIWAN_TICKERS) > 0, by_name)
+    # By issuer keyword ("元大" = Yuanta)
+    by_issuer = {r.ticker for r in search_etfs("元大", "Taiwan")}
+    check("TWU-C.search_by_issuer_finds_multiple", len(by_issuer) >= 3, by_issuer)
+    # By category-adjacent keyword ("bond") -- English search term against issuer/name
+    by_category_kw = {r.ticker for r in search_etfs("bond", "Taiwan")}
+    check("TWU-C.search_by_category_keyword_finds_bond_etfs", len(by_category_kw) > 0, by_category_kw)
+
+
+# ── Test D: Bond ETFs are included ───────────────────────────────────────
+def test_twu_d_bond_etfs_included():
+    tw_records = ETF_DATABASE.by_country("Taiwan")
+    bond_records = [r for r in tw_records if r.category == "Fixed Income"]
+    check("TWU-D.bond_etfs_present", len(bond_records) > 0, len(bond_records))
+    check("TWU-D.bond_etfs_flagged_standard_return_type",
+          all(r.return_type == "Standard" for r in bond_records), [r.ticker for r in bond_records])
+
+
+# ── Test E: Active-ETF ARCHITECTURE is supported (see end-of-round report
+# for why zero real Active tickers are populated this round -- confidence/
+# accuracy, not a missing feature) ───────────────────────────────────────
+def test_twu_e_active_management_style_architecture():
+    synthetic_active = ETFRecord(
+        ticker="TESTACTIVE", name="Test Active Fund", region="Asia Pacific", country="Taiwan",
+        currency="TWD", exchange="Taiwan Stock Exchange (TWSE)", category="Equity", sector="Broad Market",
+        benchmark="N/A", asset_type="Equity ETF", investment_style="Blend", yahoo_symbol="TESTACTIVE.TW",
+        management_style="Active", return_type="Standard",
+    )
+    test_db = type(ETF_DATABASE)(ETF_DATABASE.all() + [synthetic_active])
+    active_records = [r for r in test_db.by_country("Taiwan") if r.management_style == "Active"]
+    check("TWU-E.management_style_field_filterable", len(active_records) == 1, active_records)
+    real_active = [r for r in ETF_DATABASE.by_country("Taiwan") if r.management_style == "Active"]
+    check("TWU-E.no_fabricated_active_tickers_in_real_data", len(real_active) == 0,
+          "expected 0 -- see report for why Active coverage is a known, flagged gap this round")
+
+
+# ── Test F: Leveraged/inverse products are included and identified ──────
+def test_twu_f_leveraged_inverse_identified():
+    tw_records = ETF_DATABASE.by_country("Taiwan")
+    leveraged = [r for r in tw_records if r.return_type == "Leveraged"]
+    inverse = [r for r in tw_records if r.return_type == "Inverse"]
+    check("TWU-F.leveraged_products_present", len(leveraged) > 0, len(leveraged))
+    check("TWU-F.inverse_products_present", len(inverse) > 0, len(inverse))
+    check("TWU-F.leveraged_not_blocked_from_lookup", get_etf(leveraged[0].ticker) is not None)
+    check("TWU-F.return_type_never_inferred_from_ticker_alone",
+          all(r.return_type in ("Standard", "Leveraged", "Inverse") for r in tw_records),
+          "all records have an explicit return_type field, not a suffix guess")
+
+
+# ── Test G: TWSE / TPEx Yahoo mappings are not conflated ────────────────
+def test_twu_g_twse_tpex_mapping_distinct():
+    from src.etf_database import _tw_etf
+    twse_record = _tw_etf("TESTTWSE", "Test TWSE Fund", "測試TWSE", "Equity", "Broad Market",
+                           "N/A", "Equity ETF", "Test", exchange="TWSE")
+    tpex_record = _tw_etf("TESTTPEX", "Test TPEx Fund", "測試TPEx", "Equity", "Broad Market",
+                           "N/A", "Equity ETF", "Test", exchange="TPEx")
+    check("TWU-G.twse_uses_dot_tw", twse_record.yahoo_symbol == "TESTTWSE.TW", twse_record.yahoo_symbol)
+    check("TWU-G.tpex_uses_dot_two", tpex_record.yahoo_symbol == "TESTTPEX.TWO", tpex_record.yahoo_symbol)
+    check("TWU-G.exchange_field_distinct",
+          twse_record.exchange != tpex_record.exchange, (twse_record.exchange, tpex_record.exchange))
+    # Every currently-populated Taiwan record uses the correct suffix for
+    # its OWN recorded exchange (no hand-typed suffix ever drifts from
+    # what _tw_etf() would have produced for that exchange).
+    for r in ETF_DATABASE.by_country("Taiwan"):
+        expected_suffix = ".TWO" if "TPEx" in r.exchange else ".TW"
+        check(f"TWU-G.{r.ticker}.suffix_matches_exchange", r.yahoo_symbol.endswith(expected_suffix),
+              f"{r.ticker}: exchange={r.exchange} yahoo_symbol={r.yahoo_symbol}")
+    # Known-correct mapping for the tickers named in the live bug report.
+    for tk in ["0050", "0056", "006208", "00878", "00919"]:
+        check(f"TWU-G.{tk}_maps_to_dot_tw", to_yahoo_symbol(tk) == f"{tk}.TW", to_yahoo_symbol(tk))
+
+
+# ── Test H: a Yahoo data failure never removes an ETF from the official universe ──
+def test_twu_h_yahoo_failure_does_not_delete_from_universe():
+    # The master universe is a static in-memory snapshot -- looking up an
+    # ETF's record NEVER touches the network, so a Yahoo Finance outage
+    # cannot affect it at all. Confirm the record survives regardless of
+    # download_etf_data() outcome (mocked here to simulate total failure).
+    from unittest.mock import patch
+    import pandas as pd
+
+    with patch("src.data_loader.yf.download", return_value=pd.DataFrame()):
+        from src.data_loader import download_etf_data
+        try:
+            result = download_etf_data(["0919UNAVAILABLE.TW"], "2023-01-01", "2023-02-01")
+            no_exception = True
+        except Exception:
+            result, no_exception = None, False
+        # download_etf_data()'s own pre-existing, documented fallback (not
+        # changed by this round): when EVERY requested ticker fails, it
+        # returns simulated sample data rather than raising or returning
+        # empty, so the app stays usable offline -- the point of this test
+        # is that it degrades GRACEFULLY (no exception), not any specific
+        # return shape.
+        check("TWU-H.download_failure_handled_without_exception", no_exception and result is not None)
+
+    # The ETF's OWN registry record is completely unaffected either way.
+    record = get_etf("00919")
+    check("TWU-H.etf_still_in_universe_after_download_failure", record is not None)
+    check("TWU-H.etf_metadata_intact", record.display_name_zh == "群益台灣精選高息" if record else False,
+          record.display_name_zh if record else None)
+    check("TWU-H.yahoo_status_unchanged_by_network_outcome", record.yahoo_status == "valid" if record else False)
+
+
+# ── Regression guard: the format_func multiselect-corruption bug found and
+# fixed while building this. A format_func closing over get_language()/t()/
+# get_etf() (called freshly per option, per render) was found to corrupt an
+# ALREADY-MADE selection on a later, unrelated rerun -- even with the
+# widget's own `options` held perfectly constant. Precomputing the label
+# map once (outside the widget call) and using a pure dict lookup as
+# format_func fixed it; this test exercises the exact repro sequence. ────
+def test_twu_regression_multiselect_survives_unrelated_rerun():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+
+    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
+    region_w.set_value("Taiwan")
+    at.run()
+    ms = next((w for w in at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+    before = list(ms.value)
+    check("TWU-regression.initial_selection_present", len(before) > 0, before)
+
+    # Change something entirely unrelated to the multiselect (search box,
+    # then a free-text custom ticker field) and confirm the selection
+    # survives both, with no exception.
+    search_w = next((w for w in at.text_input if w.key == "tw_etf_filter_search"), None)
+    search_w.set_value("00919")
+    at.run()
+    exc1 = at.exception[0] if at.exception else None
+    check("TWU-regression.no_exception_after_search", exc1 is None, str(exc1))
+    ms = next((w for w in at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+    check("TWU-regression.selection_survives_search", ms.value == before, f"{before} vs {ms.value}")
+
+    ct = next((w for w in at.text_input if w.key == "selected_custom_ticker"), None)
+    ct.set_value("ARKK")
+    at.run()
+    exc2 = at.exception[0] if at.exception else None
+    check("TWU-regression.no_exception_after_custom_ticker", exc2 is None, str(exc2))
+    ms = next((w for w in at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+    check("TWU-regression.selection_survives_custom_ticker_field", ms.value == before, f"{before} vs {ms.value}")
+
+
+# ── Test 17 (cross-page consistency): a Taiwan ETF outside the old
+# hardcoded list is recognized identically in ETF Analysis and Portfolio
+# Optimizer, and remains compatible with the shared global market state ──
+def test_twu_cross_page_consistency():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+    new_ticker = "00713"  # not in the old hardcoded 6-ticker Taiwan list
+    check("TWU-cross.new_ticker_not_in_old_list", new_ticker not in _OLD_HARDCODED_TAIWAN_TICKERS)
+
+    etf_at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    etf_at.session_state["language"] = "en"
+    etf_at.run()
+    region_w = next((w for w in etf_at.selectbox if w.key == "selected_region"), None)
+    region_w.set_value("Taiwan")
+    etf_at.run()
+    ms = next((w for w in etf_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+    ms.set_value([new_ticker])
+    etf_at.run()
+    exc = etf_at.exception[0] if etf_at.exception else None
+    check("TWU-cross.etf_analysis_accepts_new_ticker", exc is None, str(exc))
+
+    # Different AppTest instances do NOT share session_state (unlike two
+    # pages in the same real browser session via st.switch_page) -- seed
+    # the receiving page's session_state with exactly what the shared
+    # global-market-state mechanism (src/ui.py's region_selector() /
+    # region_etf_multiselect()) would have carried over for real.
+    def sget(a, k):
+        try:
+            return a.session_state[k]
+        except Exception:
+            return None
+
+    opt_at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    opt_at.session_state["language"] = "en"
+    opt_at.session_state["selected_region"] = sget(etf_at, "selected_region")
+    opt_at.session_state["_selected_region_shadow"] = sget(etf_at, "_selected_region_shadow")
+    opt_at.session_state["_selected_etfs_shadow"] = sget(etf_at, "_selected_etfs_shadow")
+    opt_at.run()
+    region_w2 = next((w for w in opt_at.selectbox if w.key == "selected_region"), None)
+    check("TWU-cross.optimizer_sees_shared_region_taiwan",
+          region_w2 is not None and region_w2.value == "Taiwan", region_w2.value if region_w2 else None)
+    ms2 = next((w for w in opt_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+    check("TWU-cross.optimizer_shares_new_ticker_selection",
+          ms2 is not None and new_ticker in ms2.value, ms2.value if ms2 else None)
+    exc2 = opt_at.exception[0] if opt_at.exception else None
+    check("TWU-cross.optimizer_no_exception", exc2 is None, str(exc2))
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -1965,6 +2206,18 @@ def main():
     test_hist_i_mode_switching_preserves_state()
     test_hist_j_i18n()
     test_hist_k_cross_page_handoff_unchanged()
+
+    test_twu_data_validation()
+    test_twu_a_taiwan_universe_much_larger()
+    test_twu_b_0050_searchable()
+    test_twu_c_new_etf_searchable_by_name_and_issuer()
+    test_twu_d_bond_etfs_included()
+    test_twu_e_active_management_style_architecture()
+    test_twu_f_leveraged_inverse_identified()
+    test_twu_g_twse_tpex_mapping_distinct()
+    test_twu_h_yahoo_failure_does_not_delete_from_universe()
+    test_twu_regression_multiselect_survives_unrelated_rerun()
+    test_twu_cross_page_consistency()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

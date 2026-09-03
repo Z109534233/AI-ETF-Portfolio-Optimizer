@@ -10,7 +10,7 @@ import streamlit as st
 
 from src.theme import COLORS, icon_svg
 from src.i18n import t, t_country, t_opt_method, language_selector, get_language
-from src.etf_database import get_countries, get_tickers_by_country
+from src.etf_database import get_countries, get_tickers_by_country, get_etf
 from src.data_loader import DEFAULT_ETFS
 from src.financial_metrics import ACTIVE_POSITION_TOLERANCE
 
@@ -65,6 +65,141 @@ def region_etf_options(selected_region: str, all_regions_label: str) -> list:
     return get_tickers_by_country(selected_region)
 
 
+def _build_etf_label_map(tickers: list) -> dict:
+    """Precompute {ticker: "0050 — 元大台灣50"} for every ticker up front,
+    in one pass -- this is what a multiselect's `format_func` should read
+    from (a plain, side-effect-free dict lookup), rather than calling
+    get_language()/t()/get_etf() itself on every option on every render.
+    Confirmed by direct testing: a format_func that calls session-state-
+    reading helpers (get_language(), t()) once PER OPTION corrupts this
+    multiselect's stored selection on a later, unrelated rerun (observed
+    even with the widget's own `options` held perfectly constant) --
+    precomputing the labels once, here, and using a trivial dict.get as
+    format_func avoids it entirely (and is strictly cheaper besides).
+
+    Chinese name shown when the UI language is zh-TW and one is on record,
+    else the English/generic fund name, with a compact [Leveraged]/
+    [Inverse] tag for special-structure products (Taiwan ETF universe
+    expansion section 9: these stay selectable, never blocked -- just
+    visually identified so they're never mistaken for an ordinary
+    long-term equity holding). Tickers not in the database (e.g. a
+    free-text custom ticker) map to themselves.
+    """
+    lang = get_language()
+    leveraged_tag = t("etf_badge_leveraged")
+    inverse_tag = t("etf_badge_inverse")
+    labels = {}
+    for ticker in tickers:
+        record = get_etf(ticker)
+        if not record:
+            labels[ticker] = ticker
+            continue
+        name = record.display_name_zh if (lang == "zh-TW" and record.display_name_zh) else record.name
+        tag = ""
+        if record.return_type == "Leveraged":
+            tag = f" [{leveraged_tag}]"
+        elif record.return_type == "Inverse":
+            tag = f" [{inverse_tag}]"
+        labels[ticker] = f"{ticker} — {name}{tag}" if name else f"{ticker}{tag}"
+    return labels
+
+
+# Internal category values (ETFRecord.category) -> the compact "ETF Type"
+# filter buckets from the Taiwan ETF universe UX spec. "Multi-Asset" has no
+# populated records yet (see the end-of-round data report) but stays a
+# selectable, empty-result-safe filter option rather than being hidden.
+_ETF_TYPE_FILTER_MAP = {
+    "Equity": {"Equity"},
+    "Bond": {"Fixed Income"},
+    "Multi-Asset": {"Multi-Asset"},
+    "Commodity": {"Commodity"},
+}
+
+
+def _render_taiwan_etf_filters(etf_options: list) -> list:
+    """Compact filter/search row shown only for Taiwan (section 6 of the
+    ETF universe spec). Returns the list of tickers matching the current
+    criteria for a READ-ONLY discovery preview the caller renders below --
+    deliberately NEVER used to change the multiselect's own `options=`.
+
+    Tested and confirmed unsafe: changing a multiselect's `options` between
+    reruns while it keeps the same widget `key` can corrupt/reset its
+    already-stored selection (observed under Streamlit's rerun model, not
+    just an exception-avoidance concern). So the picker below always keeps
+    the FULL, stable `etf_options` list as its `options` -- these filters
+    only help the user find/preview what to pick; Streamlit's own
+    multiselect dropdown already supports type-to-search over the
+    (name-labeled) options for quick manual narrowing.
+    """
+    records_by_ticker = {tk: get_etf(tk) for tk in etf_options}
+
+    fcol1, fcol2, fcol3 = st.columns(3)
+    _type_options = ["All", "Equity", "Bond", "Multi-Asset", "Commodity", "Other"]
+    _type_labels = {
+        "All": t("etf_filter_all"), "Equity": t("etf_filter_type_equity"),
+        "Bond": t("etf_filter_type_bond"), "Multi-Asset": t("etf_filter_type_multi_asset"),
+        "Commodity": t("etf_filter_type_commodity"), "Other": t("etf_filter_type_other"),
+    }
+    with fcol1:
+        etf_type = st.selectbox(
+            t("etf_filter_type_label"), _type_options, format_func=lambda x: _type_labels.get(x, x),
+            key="tw_etf_filter_type",
+        )
+
+    _style_options = ["All", "Passive", "Active"]
+    _style_labels = {
+        "All": t("etf_filter_all"), "Passive": t("etf_filter_style_passive"), "Active": t("etf_filter_style_active"),
+    }
+    with fcol2:
+        mgmt_style = st.selectbox(
+            t("etf_filter_style_label"), _style_options, format_func=lambda x: _style_labels.get(x, x),
+            key="tw_etf_filter_style",
+        )
+
+    _return_options = ["All", "Standard", "Leveraged", "Inverse"]
+    _return_labels = {
+        "All": t("etf_filter_all"), "Standard": t("etf_filter_return_standard"),
+        "Leveraged": t("etf_filter_return_leveraged"), "Inverse": t("etf_filter_return_inverse"),
+    }
+    with fcol3:
+        return_type = st.selectbox(
+            t("etf_filter_return_label"), _return_options, format_func=lambda x: _return_labels.get(x, x),
+            key="tw_etf_filter_return",
+        )
+
+    search_query = st.text_input(
+        t("etf_filter_search_label"), key="tw_etf_filter_search",
+        placeholder=t("etf_filter_search_placeholder"),
+    )
+
+    _known_categories = {"Equity", "Fixed Income", "Multi-Asset", "Commodity"}
+    out = []
+    for tk in etf_options:
+        record = records_by_ticker.get(tk)
+        category = record.category if record else None
+        if etf_type != "All":
+            if etf_type == "Other":
+                if category in _known_categories:
+                    continue
+            elif category not in _ETF_TYPE_FILTER_MAP.get(etf_type, set()):
+                continue
+        if mgmt_style != "All" and (record is None or record.management_style != mgmt_style):
+            continue
+        if return_type != "All" and (record is None or record.return_type != return_type):
+            continue
+        if search_query:
+            q = search_query.strip().lower()
+            haystack = " ".join(filter(None, [
+                tk, record.name if record else None,
+                record.display_name_zh if record else None,
+                record.issuer if record else None,
+            ])).lower()
+            if q not in haystack:
+                continue
+        out.append(tk)
+    return out
+
+
 def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
                             help_text: str = None, n_default: int = 3):
     """Shared ETF multiselect, scoped to the current global region, backed
@@ -74,17 +209,41 @@ def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
     dropped automatically since they're filtered out of `etf_options`.
     `n_default` only applies the first time a given region is ever visited
     in this session; after that the shared shadow state takes over.
+
+    For Taiwan specifically (now a much larger universe -- see
+    src/etf_database.py), a compact Type / Management Style / Return Type /
+    search filter row is shown above the picker (ETF universe UX section
+    6) as a discovery aid. The picker's own `options` always stay the FULL
+    `etf_options` list, regardless of the filters -- see
+    _render_taiwan_etf_filters()'s docstring for why narrowing a
+    multiselect's `options` between reruns of the same widget `key` is
+    unsafe. Options are labeled "TICKER — name" via format_func, so
+    Streamlit's native in-dropdown type-to-search already lets the user
+    narrow by typing too.
     """
     if "_selected_etfs_shadow" not in st.session_state:
         st.session_state["_selected_etfs_shadow"] = {}
     _shadow_map = st.session_state["_selected_etfs_shadow"]
-    _default = [tk for tk in _shadow_map.get(selected_region, []) if tk in etf_options]
-    if not _default:
-        _default = etf_options[:n_default]
+    _current_selection = [tk for tk in _shadow_map.get(selected_region, []) if tk in etf_options]
+    _default = _current_selection if _current_selection else etf_options[:n_default]
+
+    label_map = _build_etf_label_map(etf_options)
+
+    if selected_region == "Taiwan" and len(etf_options) > 10:
+        matches = _render_taiwan_etf_filters(etf_options)
+        if matches:
+            _preview_n = 12
+            preview = " · ".join(label_map.get(tk, tk) for tk in matches[:_preview_n])
+            if len(matches) > _preview_n:
+                preview += f" … (+{len(matches) - _preview_n})"
+            st.caption(t("etf_filter_match_count", n=len(matches)))
+            st.caption(preview)
+        else:
+            st.caption(t("etf_filter_no_matches"))
 
     selected_etfs = st.multiselect(
         label, options=etf_options, default=_default, help=help_text,
-        key=f"selected_etfs_{selected_region}",
+        format_func=lambda tk: label_map.get(tk, tk), key=f"selected_etfs_{selected_region}",
     )
     _shadow_map[selected_region] = selected_etfs
     st.session_state["_selected_etfs_shadow"] = _shadow_map
