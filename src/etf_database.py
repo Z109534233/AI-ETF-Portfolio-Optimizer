@@ -213,6 +213,20 @@ _BUILTIN_RECORDS: List[ETFRecord] = [
     _tw_etf("00636", "Cathay China A50 ETF", "國泰中國A50", "Equity", "Broad Market",
             "FTSE China A50 Index", "Equity ETF", "Cathay", underlying_market="China/Hong Kong"),
 
+    # -- Active ETFs (management_style="Active") -- classification is via
+    # this explicit field, populated from official product metadata, never
+    # inferred from the "A" ticker suffix alone (that suffix is common
+    # among actively-managed Taiwan ETFs but is supporting evidence only,
+    # per the ticker-format fix: a ticker's ALPHABETIC characters, if any,
+    # are never used to derive category/management_style/return_type).
+    # `name` below is an English GLOSS of the official Chinese fund name
+    # for display convenience (matching this file's existing convention
+    # for every other Taiwan record), not a claimed official English fund
+    # name -- display_name_zh is the authoritative name.
+    _tw_etf("00981A", "Uni-President Active Taiwan Growth ETF", "主動統一台股增長", "Equity", "Broad Market",
+            "N/A (Actively Managed)", "Equity ETF", "Uni-President",
+            management_style="Active", investment_style="Growth"),
+
     # -- Bond ETFs (overseas-denominated fixed income, Passive, Standard) --
     _tw_etf("00679B", "Yuanta US Treasury 20+ Year ETF", "元大美債20年", "Fixed Income", "Bond",
             "ICE U.S. Treasury 20+ Year Bond Index", "Bond ETF", "Yuanta",

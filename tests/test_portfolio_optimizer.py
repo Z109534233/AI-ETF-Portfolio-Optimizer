@@ -1955,6 +1955,13 @@ def test_twu_d_bond_etfs_included():
 # for why zero real Active tickers are populated this round -- confidence/
 # accuracy, not a missing feature) ───────────────────────────────────────
 def test_twu_e_active_management_style_architecture():
+    # Round 2B-5 fix: 00981A (Uni-President Active Taiwan Growth ETF) is
+    # now a REAL, confirmed Active-managed record -- the "zero Active
+    # records" state from the prior round was the actual live bug (a data
+    # gap, not an architectural limitation), now closed. This test checks
+    # the FILTER MECHANISM works (via a synthetic addition, so it doesn't
+    # depend on exactly which/how many real Active tickers exist) and that
+    # at least one genuine Active record is present.
     synthetic_active = ETFRecord(
         ticker="TESTACTIVE", name="Test Active Fund", region="Asia Pacific", country="Taiwan",
         currency="TWD", exchange="Taiwan Stock Exchange (TWSE)", category="Equity", sector="Broad Market",
@@ -1963,10 +1970,13 @@ def test_twu_e_active_management_style_architecture():
     )
     test_db = type(ETF_DATABASE)(ETF_DATABASE.all() + [synthetic_active])
     active_records = [r for r in test_db.by_country("Taiwan") if r.management_style == "Active"]
-    check("TWU-E.management_style_field_filterable", len(active_records) == 1, active_records)
+    check("TWU-E.management_style_field_filterable", len(active_records) >= 2, active_records)
     real_active = [r for r in ETF_DATABASE.by_country("Taiwan") if r.management_style == "Active"]
-    check("TWU-E.no_fabricated_active_tickers_in_real_data", len(real_active) == 0,
-          "expected 0 -- see report for why Active coverage is a known, flagged gap this round")
+    check("TWU-E.at_least_one_real_active_ticker_present", len(real_active) >= 1,
+          [r.ticker for r in real_active])
+    check("TWU-E.00981A_is_classified_active",
+          any(r.ticker == "00981A" and r.management_style == "Active" for r in real_active),
+          [r.ticker for r in real_active])
 
 
 # ── Test F: Leveraged/inverse products are included and identified ──────
@@ -2128,6 +2138,175 @@ def test_twu_cross_page_consistency():
     check("TWU-cross.optimizer_no_exception", exc2 is None, str(exc2))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Ticker-format defect fix (Round 2B-5): alphanumeric Taiwan ETF tickers
+# (Active "A" suffix, Leveraged "L", Inverse "R") must never be rejected,
+# mis-cased, or numerically mangled anywhere in the pipeline. Root cause of
+# the live 00981A bug was a missing DATA record (see the after-implementation
+# report) -- confirmed by audit that NO numeric-only parsing existed
+# anywhere in the codebase (repo-wide grep for isdigit/regex/int(ticker)
+# found zero ticker-related hits). These tests both confirm the fix and
+# guard the architecture going forward.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Test A: search "00981A" finds it with the correct display name ──────
+def test_taf_a_search_00981a_uppercase():
+    results = search_etfs("00981A", "Taiwan")
+    check("TAF-A.found", len(results) >= 1, results)
+    if results:
+        r = next((x for x in results if x.ticker == "00981A"), None)
+        check("TAF-A.exact_ticker_present", r is not None)
+        check("TAF-A.display_name_correct", r is not None and r.display_name_zh == "主動統一台股增長",
+              r.display_name_zh if r else None)
+
+
+# ── Test B: search "00981a" (lowercase) returns the identical result ────
+def test_taf_b_search_00981a_lowercase():
+    upper_results = {r.ticker for r in search_etfs("00981A", "Taiwan")}
+    lower_results = {r.ticker for r in search_etfs("00981a", "Taiwan")}
+    check("TAF-B.case_insensitive_match", "00981A" in lower_results, lower_results)
+    check("TAF-B.identical_result_set", upper_results == lower_results, (upper_results, lower_results))
+
+
+# ── Test C/D: Management Style filter combined with search (via the real
+# page UI, not just the pure search function -- reproduces the exact live
+# bug report's interaction) ──────────────────────────────────────────────
+def test_taf_c_d_management_style_filter_with_search():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+
+    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
+    region_w.set_value("Taiwan")
+    at.run()
+    search_w = next((w for w in at.text_input if w.key == "tw_etf_filter_search"), None)
+    search_w.set_value("00981A")
+    at.run()
+
+    style_w = next((w for w in at.selectbox if w.key == "tw_etf_filter_style"), None)
+    style_w.set_value("Active")
+    at.run()
+    exc1 = at.exception[0] if at.exception else None
+    check("TAF-C.no_exception", exc1 is None, str(exc1))
+    corpus_active = "\n".join(c.value for c in at.caption)
+    check("TAF-C.active_filter_finds_00981A", "00981A" in corpus_active, corpus_active[:300])
+
+    style_w2 = next((w for w in at.selectbox if w.key == "tw_etf_filter_style"), None)
+    style_w2.set_value("Passive")
+    at.run()
+    exc2 = at.exception[0] if at.exception else None
+    check("TAF-D.no_exception", exc2 is None, str(exc2))
+    corpus_passive = "\n".join(c.value for c in at.caption)
+    check("TAF-D.passive_filter_excludes_00981A", "00981A" not in corpus_passive, corpus_passive[:300])
+    check("TAF-D.passive_filter_shows_no_match_message",
+          "No ETFs match" in corpus_passive or "沒有符合" in corpus_passive, corpus_passive[:300])
+
+
+# ── Test E/F: 00403A / 00406A -- found IF present in the current
+# authoritative universe (per the spec's own conditional framing); NOT
+# fabricated here without confirmed real metadata. What's actually
+# verified: the ARCHITECTURE never rejects this ticker shape regardless of
+# whether a specific record exists yet. ──────────────────────────────────
+def test_taf_e_f_00403a_00406a_conditional():
+    for tk in ("00403A", "00406A"):
+        record = get_etf(tk)
+        if record is not None:
+            check(f"TAF-EF.{tk}_present_and_searchable",
+                  any(r.ticker == tk for r in search_etfs(tk, "Taiwan")), tk)
+        else:
+            # Not in the dataset -- confirm this is a clean, honest "not
+            # found" (no exception, no corruption, no silent mangling of
+            # the alphanumeric ticker shape), not a parsing failure.
+            check(f"TAF-EF.{tk}_absent_but_yahoo_mapping_still_well_formed",
+                  to_yahoo_symbol(tk) == tk,  # unknown tickers pass through unchanged, per to_yahoo_symbol()'s contract
+                  to_yahoo_symbol(tk))
+            check(f"TAF-EF.{tk}_search_returns_empty_not_error", search_etfs(tk, "Taiwan") == [])
+
+
+# ── Test G: 00631L found and classified Leveraged ────────────────────────
+def test_taf_g_00631l_leveraged():
+    r = get_etf("00631L")
+    check("TAF-G.found", r is not None)
+    check("TAF-G.classified_leveraged", r is not None and r.return_type == "Leveraged",
+          r.return_type if r else None)
+    check("TAF-G.searchable", any(x.ticker == "00631L" for x in search_etfs("00631L", "Taiwan")))
+
+
+# ── Test H: 00632R found and classified Inverse ──────────────────────────
+def test_taf_h_00632r_inverse():
+    r = get_etf("00632R")
+    check("TAF-H.found", r is not None)
+    check("TAF-H.classified_inverse", r is not None and r.return_type == "Inverse",
+          r.return_type if r else None)
+    check("TAF-H.searchable", any(x.ticker == "00632R" for x in search_etfs("00632R", "Taiwan")))
+
+
+# ── Test I: no code path converts a ticker string to an integer ─────────
+def test_taf_i_no_integer_ticker_conversion():
+    # If any ticker-handling code path applied int(ticker), a value like
+    # "00981A" would raise ValueError; "0050" would silently become 50,
+    # losing its leading zeros. Round-trip every alphanumeric AND
+    # leading-zero ticker through the full pipeline and confirm the string
+    # comes back byte-for-byte identical.
+    probe_tickers = ["00981A", "00631L", "00632R", "0050", "006208"]
+    for tk in probe_tickers:
+        check(f"TAF-I.{tk}_yahoo_symbol_starts_with_original_string",
+              to_yahoo_symbol(tk).startswith(tk), to_yahoo_symbol(tk))
+        record = get_etf(tk)
+        if record:
+            check(f"TAF-I.{tk}_record_ticker_field_is_str_and_unchanged",
+                  isinstance(record.ticker, str) and record.ticker == tk, (type(record.ticker), record.ticker))
+
+
+# ── Test J: leading zeros remain intact everywhere ───────────────────────
+def test_taf_j_leading_zeros_intact():
+    for tk in ["0050", "0056", "00919", "00981A"]:
+        check(f"TAF-J.{tk}_leading_zeros_preserved_in_yahoo_symbol", to_yahoo_symbol(tk).startswith(tk),
+              to_yahoo_symbol(tk))
+        record = get_etf(tk)
+        check(f"TAF-J.{tk}_leading_zeros_preserved_in_record", record is not None and record.ticker == tk,
+              record.ticker if record else None)
+
+
+# ── Test K: Global Market = Taiwan is unchanged by search/filter operations ──
+def test_taf_k_market_state_unchanged_during_search():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+
+    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
+    region_w.set_value("Taiwan")
+    at.run()
+
+    for search_term, style, etf_type, return_type in [
+        ("00981A", "Active", "All", "All"),
+        ("00631L", "All", "All", "Leveraged"),
+        ("", "All", "All", "All"),
+        ("00050", "Passive", "Equity", "All"),
+    ]:
+        search_w = next((w for w in at.text_input if w.key == "tw_etf_filter_search"), None)
+        search_w.set_value(search_term)
+        style_w = next((w for w in at.selectbox if w.key == "tw_etf_filter_style"), None)
+        style_w.set_value(style)
+        type_w = next((w for w in at.selectbox if w.key == "tw_etf_filter_type"), None)
+        type_w.set_value(etf_type)
+        return_w = next((w for w in at.selectbox if w.key == "tw_etf_filter_return"), None)
+        return_w.set_value(return_type)
+        at.run()
+        label = f"{search_term!r}_{style}_{etf_type}_{return_type}"
+        exc = at.exception[0] if at.exception else None
+        check(f"TAF-K.no_exception_during_{label}", exc is None, str(exc))
+        region_w2 = next((w for w in at.selectbox if w.key == "selected_region"), None)
+        check(f"TAF-K.region_still_taiwan_after_{label}",
+              region_w2 is not None and region_w2.value == "Taiwan", region_w2.value if region_w2 else None)
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -2218,6 +2397,16 @@ def main():
     test_twu_h_yahoo_failure_does_not_delete_from_universe()
     test_twu_regression_multiselect_survives_unrelated_rerun()
     test_twu_cross_page_consistency()
+
+    test_taf_a_search_00981a_uppercase()
+    test_taf_b_search_00981a_lowercase()
+    test_taf_c_d_management_style_filter_with_search()
+    test_taf_e_f_00403a_00406a_conditional()
+    test_taf_g_00631l_leveraged()
+    test_taf_h_00632r_inverse()
+    test_taf_i_no_integer_ticker_conversion()
+    test_taf_j_leading_zeros_intact()
+    test_taf_k_market_state_unchanged_during_search()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")
