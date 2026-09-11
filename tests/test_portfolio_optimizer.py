@@ -92,6 +92,24 @@ def _find_run_button(at):
     return next(iter(at.button), None)
 
 
+def _opt_switch_workspace(at, workspace, sub_view=None, sub_key=None):
+    """Portfolio Optimizer Full Workspace UI Redesign: Strategy Comparison /
+    Efficient Frontier / Portfolio Diagnosis (detailed) no longer render on
+    page load -- they only render once their workspace (and, for Strategy
+    Lab / Backtest & Risk, their internal sub-view) is active. Always
+    re-fetch the segmented_control fresh from the CURRENT tree rather than
+    reusing a reference captured before earlier at.run() calls (a stale
+    reference silently fails to resolve against a later tree -- confirmed
+    while building the ETF Analysis workspace redesign)."""
+    ws = next(w for w in at.segmented_control if w.key == "opt_workspace")
+    ws.set_value(workspace)
+    at.run()
+    if sub_view is not None and sub_key is not None:
+        sub = next(w for w in at.segmented_control if w.key == sub_key)
+        sub.set_value(sub_view)
+        at.run()
+
+
 # ── Test A: Equal Weight ─────────────────────────────────────────────────
 def test_a_equal_weight():
     result = run_optimization(PRICES, method="Equal Weight")
@@ -453,6 +471,10 @@ def test_sc_h_switch_strategy():
         run_btn.click()
         at.run()
 
+    # Strategy Comparison only renders once Strategy Lab (default
+    # sub-view: Comparison) is the active workspace.
+    _opt_switch_workspace(at, "Strategy Lab")
+
     exc = at.exception[0] if at.exception else None
     check("SC-H.no_exception", exc is None, str(exc))
     if exc:
@@ -487,6 +509,7 @@ def test_sc_i_i18n():
         if run_btn:
             run_btn.click()
             at.run()
+        _opt_switch_workspace(at, "Strategy Lab")
         exc = at.exception[0] if at.exception else None
         check(f"SC-I.{lang}.no_exception", exc is None, str(exc))
         if exc:
@@ -557,10 +580,19 @@ def _ef_mean_cov(prices_df=PRICES):
     return mean_returns, cov
 
 
-def _setup_ef_page(method=None, lang="en", tickers=None):
+def _setup_ef_page(method=None, lang="en", tickers=None, workspace=None, sub_view=None, sub_key=None):
     """Run pages/2_Portfolio_Optimizer.py via AppTest with the given
     language, ETF selection (default VOO/VTI/QQQ/SPY/SCHD per Round 2B-2's
-    test ticket), and optimization method, then click Run."""
+    test ticket), and optimization method, then click Run.
+
+    Portfolio Optimizer Full Workspace UI Redesign: Strategy Comparison /
+    Efficient Frontier / the detailed Portfolio Diagnosis view no longer
+    render on page load -- pass `workspace` (and `sub_view`/`sub_key` for
+    Strategy Lab / Backtest & Risk's internal sub-navigation) to navigate
+    there before returning. Defaults to None (stays on the default
+    "Overview" workspace) for callers that only need at.session_state
+    (e.g. opt_result), not rendered page content.
+    """
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 
@@ -599,6 +631,8 @@ def _setup_ef_page(method=None, lang="en", tickers=None):
     if run_btn:
         run_btn.click()
         at.run()
+    if workspace is not None:
+        _opt_switch_workspace(at, workspace, sub_view=sub_view, sub_key=sub_key)
     return at
 
 
@@ -803,7 +837,7 @@ def test_ef_g_no_duplicate_legend_labels():
 # ── EF-H: zh-TW render contains no raw opt_* keys ────────────────────────
 def test_ef_h_zh_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
-    at = _setup_ef_page(lang="zh-TW")
+    at = _setup_ef_page(lang="zh-TW", workspace="Strategy Lab", sub_view="Frontier", sub_key="opt_stratlab_view")
     exc = at.exception[0] if at.exception else None
     check("EF-H.no_exception", exc is None, str(exc))
     if exc:
@@ -818,7 +852,7 @@ def test_ef_h_zh_no_raw_keys():
 # ── EF-I: English render contains no raw opt_* keys ──────────────────────
 def test_ef_i_en_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
-    at = _setup_ef_page(lang="en")
+    at = _setup_ef_page(lang="en", workspace="Strategy Lab", sub_view="Frontier", sub_key="opt_stratlab_view")
     exc = at.exception[0] if at.exception else None
     check("EF-I.no_exception", exc is None, str(exc))
     if exc:
@@ -1001,7 +1035,7 @@ def test_pd_f_switch_strategy_updates_diagnosis():
 # ── PD-G: zh-TW renders the diagnosis section with no raw translation keys ──
 def test_pd_g_zh_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
-    at = _setup_ef_page(lang="zh-TW")
+    at = _setup_ef_page(lang="zh-TW", workspace="Backtest & Risk", sub_view="Diagnosis", sub_key="opt_backtest_view")
     exc = at.exception[0] if at.exception else None
     check("PD-G.no_exception", exc is None, str(exc))
     if exc:
@@ -1017,7 +1051,7 @@ def test_pd_g_zh_no_raw_keys():
 # ── PD-H: English renders the diagnosis section with no raw translation keys ──
 def test_pd_h_en_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
-    at = _setup_ef_page(lang="en")
+    at = _setup_ef_page(lang="en", workspace="Backtest & Risk", sub_view="Diagnosis", sub_key="opt_backtest_view")
     exc = at.exception[0] if at.exception else None
     check("PD-H.no_exception", exc is None, str(exc))
     if exc:
@@ -3194,6 +3228,297 @@ def test_wsr_k_i18n_all_workspaces():
             check(f"WSR-K.{lang}.no_raw_keys_{ws_name}", len(leaked) == 0, str(leaked))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Portfolio Optimizer Full Workspace UI Redesign
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Test A: Overview loads without rendering every expensive section ────────
+def test_owr_a_overview_lazy_rendering():
+    at = _setup_ef_page(method="Equal Weight", lang="en")  # stays on default "Overview"
+    exc = at.exception[0] if at.exception else None
+    check("OWR-A.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("OWR-A.diagnosis_snapshot_present", "Portfolio Diagnosis" in all_text)
+    check("OWR-A.no_strategy_comparison", "Strategy Comparison" not in all_text)
+    check("OWR-A.no_efficient_frontier_title", "Efficient Frontier" not in all_text)
+    check("OWR-A.no_backtest_card", "Backtest" not in all_text)
+    check("OWR-A.no_allocation_table_card", "Allocation Table" not in all_text)
+    # Strategy Lab / Backtest & Risk's own sub-nav widgets must not even
+    # exist in the tree yet (not just be visually hidden).
+    check("OWR-A.no_stratlab_subnav_widget",
+          next((w for w in at.segmented_control if w.key == "opt_stratlab_view"), None) is None)
+    check("OWR-A.no_backtest_subnav_widget",
+          next((w for w in at.segmented_control if w.key == "opt_backtest_view"), None) is None)
+
+
+# ── Test B: Allocation workspace shows the exact canonical weights ──────────
+def test_owr_b_allocation_shows_canonical_weights():
+    at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en", workspace="Allocation")
+    exc = at.exception[0] if at.exception else None
+    check("OWR-B.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    try:
+        opt_weights = at.session_state["opt_result"]["weights"]
+    except Exception:
+        opt_weights = None
+    check("OWR-B.opt_result_weights_present", opt_weights is not None)
+    if not opt_weights:
+        return
+    all_text = "\n".join(str(df.value) for df in at.dataframe) if hasattr(at, "dataframe") else ""
+    for tk, w in opt_weights.items():
+        check(f"OWR-B.allocation_table_shows_{tk}", tk in all_text, all_text[:200])
+
+
+# ── Test C: Strategy Comparison works (Strategy Lab, default sub-view) ──────
+def test_owr_c_strategy_comparison_works():
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Strategy Lab")
+    exc = at.exception[0] if at.exception else None
+    check("OWR-C.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("OWR-C.strategy_comparison_present", "Strategy Comparison" in all_text)
+    check("OWR-C.all_three_methods_present",
+          all(name in all_text for name in ("Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility")))
+
+
+# ── Test D: Efficient Frontier works (Strategy Lab -> Frontier sub-view) ────
+def test_owr_d_efficient_frontier_works():
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Strategy Lab",
+                         sub_view="Frontier", sub_key="opt_stratlab_view")
+    exc = at.exception[0] if at.exception else None
+    check("OWR-D.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("OWR-D.efficient_frontier_title_present", "Efficient Frontier" in all_text)
+    check("OWR-D.how_to_read_panel_present", "How to Read" in all_text or "如何閱讀" in all_text)
+
+
+# ── Test E: switching Strategy Lab's internal sub-view doesn't reset the
+# built portfolio (opt_result stays the SAME strategy/weights) ──────────────
+def test_owr_e_stratlab_subview_switch_preserves_portfolio():
+    at = _setup_ef_page(method="Minimum Volatility", lang="en", workspace="Strategy Lab")
+    try:
+        weights_before = dict(at.session_state["opt_result"]["weights"])
+    except Exception:
+        weights_before = None
+    check("OWR-E.opt_result_present", weights_before is not None)
+    if not weights_before:
+        return
+    sub = next(w for w in at.segmented_control if w.key == "opt_stratlab_view")
+    sub.set_value("Frontier")
+    at.run()
+    exc = at.exception[0] if at.exception else None
+    check("OWR-E.no_exception_after_subview_switch", exc is None, str(exc))
+    weights_after = at.session_state["opt_result"]["weights"]
+    check("OWR-E.weights_unchanged_after_subview_switch", weights_after == weights_before,
+          (weights_before, weights_after))
+    check("OWR-E.strategy_still_min_vol", at.session_state["opt_result"]["method"] == "Minimum Volatility",
+          at.session_state["opt_result"]["method"])
+
+
+# ── Test F: Historical Performance works ─────────────────────────────────────
+def test_owr_f_historical_performance_works():
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Backtest & Risk")
+    exc = at.exception[0] if at.exception else None
+    check("OWR-F.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("OWR-F.backtest_card_present", "Backtest" in all_text)
+    check("OWR-F.no_drawdown_chart_by_default", "Drawdown Comparison" not in all_text)
+
+
+# ── Test G: Drawdown Analysis works ──────────────────────────────────────────
+def test_owr_g_drawdown_analysis_works():
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Backtest & Risk",
+                         sub_view="Drawdown", sub_key="opt_backtest_view")
+    exc = at.exception[0] if at.exception else None
+    check("OWR-G.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("OWR-G.drawdown_comparison_present", "Drawdown Comparison" in all_text)
+    check("OWR-G.no_full_growth_chart_repeated", "Portfolio Backtest vs Equal Weight" not in all_text)
+
+
+# ── Test H: Portfolio Diagnosis values are IDENTICAL between Overview's
+# compact snapshot and Backtest & Risk's detailed view (same _diag dict,
+# never a second computation) ────────────────────────────────────────────────
+def test_owr_h_diagnosis_values_consistent_across_views():
+    at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")  # Overview (default)
+    exc = at.exception[0] if at.exception else None
+    check("OWR-H.no_exception_overview", exc is None, str(exc))
+    if exc:
+        return
+    overview_text = "\n".join(m.value for m in at.markdown)
+
+    _opt_switch_workspace(at, "Backtest & Risk", sub_view="Diagnosis", sub_key="opt_backtest_view")
+    exc2 = at.exception[0] if at.exception else None
+    check("OWR-H.no_exception_detailed_view", exc2 is None, str(exc2))
+    if exc2:
+        return
+    detailed_text = "\n".join(m.value for m in at.markdown)
+
+    try:
+        diag = portfolio_diagnosis(at.session_state["opt_result"]["weights"])
+    except Exception:
+        diag = None
+    check("OWR-H.diagnosis_computed", diag is not None)
+    if diag:
+        largest_str = f"{diag['largest_ticker']} {diag['largest_weight']:.2%}"
+        check("OWR-H.largest_position_in_overview", largest_str in overview_text, largest_str)
+        check("OWR-H.largest_position_in_detailed_view", largest_str in detailed_text, largest_str)
+
+
+# ── Test I: Save Portfolio (inside Save & Actions) still receives
+# current_portfolio ──────────────────────────────────────────────────────────
+def test_owr_i_save_portfolio_receives_current_portfolio():
+    from unittest.mock import patch
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Save & Actions")
+    exc = at.exception[0] if at.exception else None
+    check("OWR-I.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    try:
+        cp = at.session_state["current_portfolio"]
+    except Exception:
+        cp = None
+    check("OWR-I.current_portfolio_present_in_save_actions", cp is not None)
+    save_btn = next((b for b in at.button if b.key == "opt_save_export_btn"), None)
+    check("OWR-I.save_button_found", save_btn is not None)
+    if save_btn is None or cp is None:
+        return
+    # AppTest re-executes the page's script source on every .run() (it is
+    # not a one-time cached Python import), so patching src.database's
+    # save_portfolio before the click+rerun is picked up by the page's own
+    # `from src.database import save_portfolio` when it re-runs.
+    import src.database as db_mod
+    with patch.object(db_mod, "save_portfolio", return_value=True) as mock_save:
+        save_btn.click()
+        at.run()
+    check("OWR-I.save_portfolio_called_with_current_portfolio_weights",
+          mock_save.called and mock_save.call_args.kwargs.get("weights") == cp["weights"],
+          mock_save.call_args.kwargs.get("weights") if mock_save.called else "not called")
+    check("OWR-I.no_exception_after_save_click", (at.exception[0] if at.exception else None) is None,
+          str(at.exception[0]) if at.exception else "")
+
+
+# ── Test J: Investment Simulator handoff still receives current_portfolio
+# regardless of which workspace built it (covers the same ground as PH-A/B
+# but explicitly built while the page defaults to "Overview" post-redesign) ──
+def test_owr_j_simulator_handoff_unaffected_by_redesign():
+    at, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("OWR-J.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    sim_at = _run_receiving_page("pages/3_Investment_Simulator.py", cp)
+    exc = sim_at.exception[0] if sim_at.exception else None
+    check("OWR-J.simulator_no_exception", exc is None, str(exc))
+
+
+# ── Test K: Risk Analytics handoff still receives current_portfolio ─────────
+def test_owr_k_risk_analytics_handoff_unaffected_by_redesign():
+    at, cp = _build_current_portfolio_via_optimizer("Minimum Volatility")
+    check("OWR-K.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+    risk_at = _run_receiving_page("pages/4_Risk_Analytics.py", cp)
+    exc = risk_at.exception[0] if risk_at.exception else None
+    check("OWR-K.risk_analytics_no_exception", exc is None, str(exc))
+
+
+# ── Test L: changing workspace does not reset sidebar inputs ────────────────
+def test_owr_l_workspace_switch_preserves_sidebar_inputs():
+    at = _setup_ef_page(method="Equal Weight", lang="en")
+    amt_w = next((w for w in at.number_input if w.key == "investment_amount"), None)
+    check("OWR-L.investment_amount_widget_found", amt_w is not None)
+    if amt_w is None:
+        return
+    amt_w.set_value(54321.0)
+    at.run()
+    for ws in ("Allocation", "Strategy Lab", "Backtest & Risk", "Save & Actions", "Overview"):
+        exc = None
+        try:
+            _opt_switch_workspace(at, ws)
+        except Exception as e:
+            exc = e
+        check(f"OWR-L.no_exception_on_{ws}", exc is None, str(exc))
+        amt_w2 = next((w for w in at.number_input if w.key == "investment_amount"), None)
+        check(f"OWR-L.investment_amount_preserved_on_{ws}", amt_w2 is not None and amt_w2.value == 54321.0,
+              amt_w2.value if amt_w2 else None)
+
+
+# ── Test M: changing language does not reset the active workspace or
+# current_portfolio ──────────────────────────────────────────────────────────
+def test_owr_m_language_switch_preserves_workspace_and_portfolio():
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Allocation")
+    try:
+        cp_before = dict(at.session_state["current_portfolio"])
+    except Exception:
+        cp_before = None
+    check("OWR-M.current_portfolio_present_before", cp_before is not None)
+
+    at.session_state["language"] = "zh-TW"
+    at.run()
+    exc = at.exception[0] if at.exception else None
+    check("OWR-M.no_exception_after_language_switch", exc is None, str(exc))
+    if exc:
+        return
+
+    ws_w = next((w for w in at.segmented_control if w.key == "opt_workspace"), None)
+    check("OWR-M.workspace_still_allocation", ws_w is not None and ws_w.value == "Allocation",
+          ws_w.value if ws_w else None)
+    try:
+        cp_after = at.session_state["current_portfolio"]
+    except Exception:
+        cp_after = None
+    check("OWR-M.current_portfolio_still_present_after", cp_after is not None)
+    if cp_before and cp_after:
+        check("OWR-M.portfolio_weights_unchanged_by_language_switch", cp_after["weights"] == cp_before["weights"],
+              (cp_before["weights"], cp_after["weights"]))
+
+
+# ── Test N: zh-TW / English render every workspace + sub-nav with no raw
+# i18n keys ───────────────────────────────────────────────────────────────────
+def test_owr_n_i18n_all_workspaces():
+    import re
+    key_pattern = re.compile(r"\bopt_ws_[a-zA-Z0-9_]*\b|\bopt_(?:stratlab|backtest_nav|advanced_constraints|"
+                              r"historical_model_settings|overview_allocation_preview|setup_label)_[a-zA-Z0-9_]*\b")
+    for lang in ("zh-TW", "en"):
+        at = _setup_ef_page(method="Equal Weight", lang=lang)
+        exc = at.exception[0] if at.exception else None
+        check(f"OWR-N.{lang}.no_exception_overview", exc is None, str(exc))
+        if exc:
+            continue
+        targets = [
+            ("Allocation", None, None), ("Strategy Lab", "Comparison", "opt_stratlab_view"),
+            ("Strategy Lab", "Frontier", "opt_stratlab_view"), ("Backtest & Risk", "Historical", "opt_backtest_view"),
+            ("Backtest & Risk", "Drawdown", "opt_backtest_view"), ("Backtest & Risk", "Diagnosis", "opt_backtest_view"),
+            ("Save & Actions", None, None), ("Overview", None, None),
+        ]
+        for ws, sub_view, sub_key in targets:
+            _opt_switch_workspace(at, ws, sub_view=sub_view, sub_key=sub_key)
+            exc2 = at.exception[0] if at.exception else None
+            label = f"{ws}/{sub_view}" if sub_view else ws
+            check(f"OWR-N.{lang}.no_exception_{label}", exc2 is None, str(exc2))
+            if exc2:
+                continue
+            leaked = []
+            for m in at.markdown:
+                leaked += key_pattern.findall(m.value)
+            for kind in ("selectbox", "text_input", "segmented_control", "checkbox"):
+                for w in getattr(at, kind, []):
+                    lbl = getattr(w, "label", None)
+                    if lbl:
+                        leaked += key_pattern.findall(str(lbl))
+            check(f"OWR-N.{lang}.no_raw_keys_{label}", len(leaked) == 0, str(leaked))
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -3332,6 +3657,21 @@ def main():
     test_wsr_i_benchmark_not_reset_by_workspace_switch()
     test_wsr_j_no_redundant_market_data_downloads_between_workspaces()
     test_wsr_k_i18n_all_workspaces()
+
+    test_owr_a_overview_lazy_rendering()
+    test_owr_b_allocation_shows_canonical_weights()
+    test_owr_c_strategy_comparison_works()
+    test_owr_d_efficient_frontier_works()
+    test_owr_e_stratlab_subview_switch_preserves_portfolio()
+    test_owr_f_historical_performance_works()
+    test_owr_g_drawdown_analysis_works()
+    test_owr_h_diagnosis_values_consistent_across_views()
+    test_owr_i_save_portfolio_receives_current_portfolio()
+    test_owr_j_simulator_handoff_unaffected_by_redesign()
+    test_owr_k_risk_analytics_handoff_unaffected_by_redesign()
+    test_owr_l_workspace_switch_preserves_sidebar_inputs()
+    test_owr_m_language_switch_preserves_workspace_and_portfolio()
+    test_owr_n_i18n_all_workspaces()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

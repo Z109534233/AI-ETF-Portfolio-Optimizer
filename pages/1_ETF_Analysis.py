@@ -530,17 +530,33 @@ def _render_ai_insights_for_focus():
 # (Global ETF Universe round) to corrupt AppTest's widget-state
 # reconciliation between reruns, so every segmented_control on this page
 # follows this same precomputed-dict pattern.
+def _shadow_default(name: str, default):
+    """Read-or-seed a plain (non-widget) session_state mirror for a
+    segmented_control's `default=`. Needed for the same reason every other
+    shadow-stated control in this app needs it (see pages/2_Portfolio_
+    Optimizer.py's identical helper): the sidebar's language selector can
+    trigger st.rerun() before this widget is (re-)instantiated on that
+    pass, which -- without this -- can silently reset it to `default`
+    instead of preserving the user's chosen view."""
+    shadow_key = f"_{name}_shadow"
+    if shadow_key not in st.session_state:
+        st.session_state[shadow_key] = default
+    return shadow_key, st.session_state[shadow_key]
+
+
 _WORKSPACES = ["Overview", "Performance", "Risk", "Holdings", "Compare", "Deep Analysis"]
 _ws_labels = {
     "Overview": t("etf_ws_overview"), "Performance": t("etf_ws_performance"), "Risk": t("etf_ws_risk"),
     "Holdings": t("etf_ws_holdings"), "Compare": t("etf_ws_compare"), "Deep Analysis": t("etf_ws_deep_analysis"),
 }
+_wsk, _wsv = _shadow_default("etf_analysis_workspace", "Overview")
 workspace = st.segmented_control(
-    "workspace_nav", _WORKSPACES, default="Overview", format_func=lambda w: _ws_labels.get(w, w),
-    key="etf_analysis_workspace", label_visibility="collapsed",
+    "workspace_nav", _WORKSPACES, default=_wsv if _wsv in _WORKSPACES else "Overview",
+    format_func=lambda w: _ws_labels.get(w, w), key="etf_analysis_workspace", label_visibility="collapsed",
 )
 if not workspace:
     workspace = "Overview"
+st.session_state[_wsk] = workspace
 
 st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
@@ -564,18 +580,22 @@ if workspace == "Overview":
 elif workspace == "Performance":
     _PERF_VIEWS = ["Price", "Returns", "Annual"]
     _perf_labels = {"Price": t("etf_perf_nav_price"), "Returns": t("etf_perf_nav_returns"), "Annual": t("etf_perf_nav_annual")}
+    _pvk, _pvv = _shadow_default("etf_perf_view", "Price")
     perf_view = st.segmented_control(
-        "perf_nav", _PERF_VIEWS, default="Price", format_func=lambda w: _perf_labels.get(w, w),
-        key="etf_perf_view", label_visibility="collapsed",
+        "perf_nav", _PERF_VIEWS, default=_pvv if _pvv in _PERF_VIEWS else "Price",
+        format_func=lambda w: _perf_labels.get(w, w), key="etf_perf_view", label_visibility="collapsed",
     ) or "Price"
+    st.session_state[_pvk] = perf_view
 
     if perf_view == "Price":
         _PRICE_VIEWS = ["Historical", "Normalized", "Cumulative"]
         _price_labels = {"Historical": t("etf_tab_historical"), "Normalized": t("etf_tab_normalized"), "Cumulative": t("etf_tab_cumulative")}
+        _prk, _prv = _shadow_default("etf_price_view", "Historical")
         price_view = st.segmented_control(
-            "price_nav", _PRICE_VIEWS, default="Historical", format_func=lambda w: _price_labels.get(w, w),
-            key="etf_price_view", label_visibility="collapsed",
+            "price_nav", _PRICE_VIEWS, default=_prv if _prv in _PRICE_VIEWS else "Historical",
+            format_func=lambda w: _price_labels.get(w, w), key="etf_price_view", label_visibility="collapsed",
         ) or "Historical"
+        st.session_state[_prk] = price_view
 
         with chart_card(t("etf_price_charts_card"), tag=f"{len(etf_prices.columns)} ETFs"):
             if price_view == "Historical":
@@ -666,10 +686,12 @@ elif workspace == "Performance":
     elif perf_view == "Returns":
         _RET_VIEWS = ["Distribution", "Heatmap", "Rolling"]
         _ret_labels = {"Distribution": t("etf_tab_distribution"), "Heatmap": t("etf_tab_monthly_heatmap"), "Rolling": t("etf_tab_rolling_metrics")}
+        _rvk, _rvv = _shadow_default("etf_ret_view", "Distribution")
         ret_view = st.segmented_control(
-            "ret_nav", _RET_VIEWS, default="Distribution", format_func=lambda w: _ret_labels.get(w, w),
-            key="etf_ret_view", label_visibility="collapsed",
+            "ret_nav", _RET_VIEWS, default=_rvv if _rvv in _RET_VIEWS else "Distribution",
+            format_func=lambda w: _ret_labels.get(w, w), key="etf_ret_view", label_visibility="collapsed",
         ) or "Distribution"
+        st.session_state[_rvk] = ret_view
 
         with chart_card(t("etf_return_metrics_card")):
             if ret_view == "Distribution":
@@ -835,10 +857,12 @@ elif workspace == "Risk":
 
     _RISK_VIEWS = ["Drawdown", "Scatter"]
     _risk_labels = {"Drawdown": t("etf_risk_nav_drawdown"), "Scatter": t("etf_risk_nav_scatter")}
+    _rik, _riv = _shadow_default("etf_risk_view", "Drawdown")
     risk_view = st.segmented_control(
-        "risk_nav", _RISK_VIEWS, default="Drawdown", format_func=lambda w: _risk_labels.get(w, w),
-        key="etf_risk_view", label_visibility="collapsed",
+        "risk_nav", _RISK_VIEWS, default=_riv if _riv in _RISK_VIEWS else "Drawdown",
+        format_func=lambda w: _risk_labels.get(w, w), key="etf_risk_view", label_visibility="collapsed",
     ) or "Drawdown"
+    st.session_state[_rik] = risk_view
 
     if risk_view == "Drawdown":
         with chart_card(t("etf_price_charts_card")):
@@ -938,10 +962,12 @@ elif workspace == "Holdings":
         "Overview": t("etf_holdings_nav_overview"), "Top": t("etf_holdings_nav_top"),
         "All": t("etf_holdings_nav_all"), "Search": t("etf_holdings_nav_search"),
     }
+    _hvk, _hvv = _shadow_default("etf_holdings_view", "Overview")
     hold_view = st.segmented_control(
-        "hold_nav", _HOLD_VIEWS, default="Overview", format_func=lambda w: _hold_labels.get(w, w),
-        key="etf_holdings_view", label_visibility="collapsed",
+        "hold_nav", _HOLD_VIEWS, default=_hvv if _hvv in _HOLD_VIEWS else "Overview",
+        format_func=lambda w: _hold_labels.get(w, w), key="etf_holdings_view", label_visibility="collapsed",
     ) or "Overview"
+    st.session_state[_hvk] = hold_view
 
     # Identity / date / source -- shown on every sub-view (cheap captions,
     # never omitted per PRODUCT SPEC: never present weights without a date).
@@ -1099,10 +1125,12 @@ elif workspace == "Compare":
     else:
         _CMP_VIEWS = ["Rankings", "Correlation"]
         _cmp_view_labels = {"Rankings": t("etf_compare_nav_rankings"), "Correlation": t("etf_compare_nav_correlation")}
+        _cvk, _cvv = _shadow_default("etf_compare_view", "Rankings")
         cmp_view = st.segmented_control(
-            "cmp_nav", _CMP_VIEWS, default="Rankings", format_func=lambda w: _cmp_view_labels.get(w, w),
-            key="etf_compare_view", label_visibility="collapsed",
+            "cmp_nav", _CMP_VIEWS, default=_cvv if _cvv in _CMP_VIEWS else "Rankings",
+            format_func=lambda w: _cmp_view_labels.get(w, w), key="etf_compare_view", label_visibility="collapsed",
         ) or "Rankings"
+        st.session_state[_cvk] = cmp_view
 
         st.caption(t("etf_compare_normalized_xref"))
         _ai_summary_data = {tk: _ai_summary_entry(tk, _lang) for tk in etf_prices.columns}
