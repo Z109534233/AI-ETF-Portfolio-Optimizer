@@ -2611,6 +2611,15 @@ def test_hld_j_i18n():
             at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
             at.session_state["language"] = lang
             at.run()
+            # ETF Analysis Full Page Workspace Redesign: Holdings content
+            # only renders once the "Holdings" workspace is active (lazy
+            # rendering -- it's not the default "Overview" workspace), so
+            # switch to it before checking for leaked i18n keys.
+            ws = next((w for w in at.segmented_control if w.key == "etf_analysis_workspace"), None)
+            check(f"HLD-J.{lang}.workspace_control_found", ws is not None)
+            if ws is not None:
+                ws.set_value("Holdings")
+                at.run()
         exc = at.exception[0] if at.exception else None
         check(f"HLD-J.{lang}.no_exception", exc is None, str(exc))
         if exc:
@@ -2624,13 +2633,8 @@ def test_hld_j_i18n():
                 if label:
                     leaked += key_pattern.findall(str(label))
         check(f"HLD-J.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
-        # t() reads session_state OUTSIDE this AppTest's own isolated
-        # session -- compare against TRANSLATIONS directly for this lang
-        # (same approach as test_pd_k_concentrated_summary_interpolation).
-        from src.i18n import TRANSLATIONS
-        expected_label = TRANSLATIONS[lang]["etf_show_holdings"]
-        holdings_checkbox = next((w for w in at.checkbox if w.label == expected_label), None)
-        check(f"HLD-J.{lang}.holdings_checkbox_present", holdings_checkbox is not None)
+        holdings_view = next((w for w in at.segmented_control if w.key == "etf_holdings_view"), None)
+        check(f"HLD-J.{lang}.holdings_subnav_present", holdings_view is not None)
 
 
 # ── ETF Holdings & Exposure, Round 1 continuation: canonical-master
@@ -2944,6 +2948,252 @@ def test_geu_k_i18n():
         check(f"GEU-K.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
 
 
+# (WSR test functions follow; registered in main() below)
+# ══════════════════════════════════════════════════════════════════════════
+# ETF Analysis Full Page Workspace Redesign
+# ══════════════════════════════════════════════════════════════════════════
+def _wsr_app(lang="en", region=None, tickers=None):
+    """Boot pages/1_ETF_Analysis.py, optionally switching region and/or the
+    ETF multiselect. Returns the AppTest instance after settling."""
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = lang
+    at.run()
+    if region:
+        region_w = next(w for w in at.selectbox if w.key == "selected_region")
+        region_w.set_value(region)
+        at.run()
+    if tickers:
+        ms = next(w for w in at.multiselect if w.key and w.key.startswith("selected_etfs_"))
+        ms.set_value(tickers)
+        at.run()
+    return at
+
+
+def _wsr_switch(at, workspace):
+    """Fetch the CURRENT workspace segmented_control fresh and switch to
+    `workspace` -- widget references must be re-fetched after every
+    at.run(), not reused across multiple runs (confirmed while building
+    this: a stale reference from an earlier run silently fails to find
+    itself in the new tree)."""
+    ws = next(w for w in at.segmented_control if w.key == "etf_analysis_workspace")
+    ws.set_value(workspace)
+    at.run()
+    return at.exception[0] if at.exception else None
+
+
+# ── Test A: Overview does not render every other workspace's content ────────
+def test_wsr_a_overview_does_not_render_everything():
+    at = _wsr_app()
+    exc = at.exception[0] if at.exception else None
+    check("WSR-A.no_exception", exc is None, str(exc))
+    ws = next((w for w in at.segmented_control if w.key == "etf_analysis_workspace"), None)
+    check("WSR-A.defaults_to_overview", ws is not None and ws.value == "Overview", ws.value if ws else None)
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("WSR-A.overview_snapshot_present", "ETF Intelligence Snapshot" in all_text or "Overview" in all_text)
+    # Compare-only / Holdings-only content must NOT be present on Overview.
+    check("WSR-A.no_etf_ranking_section", "ETF Ranking" not in all_text)
+    check("WSR-A.no_compare_mode_section", "Compare Mode" not in all_text)
+    check("WSR-A.no_investment_verdict_section", "Investment Verdict" not in all_text)
+    check("WSR-A.no_etf_dna_section", "ETF DNA" not in all_text)
+    holdings_view_widget = next((w for w in at.segmented_control if w.key == "etf_holdings_view"), None)
+    check("WSR-A.holdings_subnav_not_rendered", holdings_view_widget is None)
+
+
+# ── Test B: Performance internal navigation changes chart, keeps focus ETF ──
+def test_wsr_b_performance_navigation_preserves_focus_etf():
+    at = _wsr_app()
+    focus_w = next(w for w in at.selectbox if w.key == "etf_analysis_focus_ticker")
+    focus_before = focus_w.value
+    exc = _wsr_switch(at, "Performance")
+    check("WSR-B.no_exception_on_performance", exc is None, str(exc))
+
+    perf_nav = next((w for w in at.segmented_control if w.key == "etf_perf_view"), None)
+    check("WSR-B.perf_subnav_found", perf_nav is not None)
+    price_nav = next((w for w in at.segmented_control if w.key == "etf_price_view"), None)
+    check("WSR-B.price_subnav_found", price_nav is not None)
+    if price_nav is not None:
+        price_nav.set_value("Normalized")
+        at.run()
+        exc2 = at.exception[0] if at.exception else None
+        check("WSR-B.no_exception_after_view_switch", exc2 is None, str(exc2))
+        focus_w2 = next(w for w in at.selectbox if w.key == "etf_analysis_focus_ticker")
+        check("WSR-B.focus_etf_unchanged_after_view_switch", focus_w2.value == focus_before,
+              (focus_before, focus_w2.value))
+
+
+# ── Test C: Risk workspace renders its KPI cards + chart switcher ───────────
+def test_wsr_c_risk_navigation_works():
+    at = _wsr_app()
+    exc = _wsr_switch(at, "Risk")
+    check("WSR-C.no_exception", exc is None, str(exc))
+    risk_nav = next((w for w in at.segmented_control if w.key == "etf_risk_view"), None)
+    check("WSR-C.risk_subnav_found", risk_nav is not None)
+    if risk_nav is not None:
+        risk_nav.set_value("Scatter")
+        at.run()
+        exc2 = at.exception[0] if at.exception else None
+        check("WSR-C.no_exception_after_scatter_switch", exc2 is None, str(exc2))
+
+
+# ── Test D: Holdings retains the SAME focus ETF and shows its holdings data ──
+def test_wsr_d_holdings_retains_focus_etf():
+    at = _wsr_app(region="Taiwan", tickers=["0050"])
+    focus_w = next(w for w in at.selectbox if w.key == "etf_analysis_focus_ticker")
+    check("WSR-D.focus_is_0050", focus_w.value == "0050", focus_w.value)
+    exc = _wsr_switch(at, "Holdings")
+    check("WSR-D.no_exception", exc is None, str(exc))
+    focus_w2 = next(w for w in at.selectbox if w.key == "etf_analysis_focus_ticker")
+    check("WSR-D.focus_etf_unchanged_in_holdings", focus_w2.value == "0050", focus_w2.value)
+    hold_nav = next((w for w in at.segmented_control if w.key == "etf_holdings_view"), None)
+    check("WSR-D.holdings_subnav_found", hold_nav is not None)
+    # Either a real "Data As Of" caption (holdings fetched) or the clean
+    # unavailable/not-supported error_state (rendered via st.markdown, not
+    # st.caption -- this sandbox's live Yahoo access is rate-limited, so
+    # both outcomes are legitimate depending on network conditions; either
+    # way, something informative must be shown, never silence).
+    all_captions = "\n".join(c.value for c in at.caption)
+    all_markdown = "\n".join(m.value for m in at.markdown)
+    all_text = all_captions + "\n" + all_markdown
+    check("WSR-D.data_date_or_status_message_present",
+          ("Data As Of" in all_text or "資料日期" in all_text or "unavailable" in all_text.lower()
+           or "無法取得" in all_text or "not supported" in all_text.lower() or "不支援" in all_text),
+          all_text[:400])
+
+
+# ── Test E: Compare works with 2+ ETFs (rankings sub-view renders) ──────────
+def test_wsr_e_compare_multi_etf_works():
+    at = _wsr_app()  # default US region, 3 default tickers selected
+    exc = _wsr_switch(at, "Compare")
+    check("WSR-E.no_exception", exc is None, str(exc))
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("WSR-E.etf_ranking_present", "ETF Ranking" in all_text, all_text[:200])
+    check("WSR-E.compare_score_present", "ETF Compare Score" in all_text)
+    cmp_nav = next((w for w in at.segmented_control if w.key == "etf_compare_view"), None)
+    check("WSR-E.compare_subnav_found", cmp_nav is not None)
+    if cmp_nav is not None:
+        cmp_nav.set_value("Correlation")
+        at.run()
+        exc2 = at.exception[0] if at.exception else None
+        check("WSR-E.no_exception_after_correlation_switch", exc2 is None, str(exc2))
+        all_text2 = "\n".join(m.value for m in at.markdown)
+        check("WSR-E.etf_dna_present_in_correlation_view", "ETF DNA" in all_text2)
+
+
+# ── Test F: exactly one ETF selected -> Compare shows the clean instruction ──
+def test_wsr_f_compare_single_etf_empty_state():
+    at = _wsr_app(region="Taiwan", tickers=["0050"])
+    exc = _wsr_switch(at, "Compare")
+    check("WSR-F.no_exception", exc is None, str(exc))
+    info_texts = [i.value for i in at.info]
+    check("WSR-F.empty_state_message_shown",
+          any("least two" in txt or "至少兩檔" in txt for txt in info_texts), info_texts)
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("WSR-F.no_ranking_rendered_in_empty_state", "ETF Ranking" not in all_text)
+
+
+# ── Test G: Deep Analysis renders the full metrics table + technical
+# indicators for the focus ETF ───────────────────────────────────────────────
+def test_wsr_g_deep_analysis_works():
+    at = _wsr_app()
+    exc = _wsr_switch(at, "Deep Analysis")
+    check("WSR-G.no_exception", exc is None, str(exc))
+    all_text = "\n".join(m.value for m in at.markdown)
+    check("WSR-G.risk_metrics_table_card_present",
+          "Risk Metrics" in all_text or "風險指標" in all_text, all_text[:200])
+
+
+# ── Test H: sidebar collapsed Analysis Settings values survive a workspace
+# switch (benchmark + risk-free rate + dates are widgets INSIDE the
+# collapsed expander) ────────────────────────────────────────────────────────
+def test_wsr_h_collapsed_sidebar_settings_preserved():
+    at = _wsr_app()
+    rf_w = next((w for w in at.slider if "Risk-Free" in (w.label or "") or "無風險" in (w.label or "")), None)
+    check("WSR-H.risk_free_slider_found", rf_w is not None)
+    if rf_w is not None:
+        rf_w.set_value(7.0)
+        at.run()
+    exc = _wsr_switch(at, "Risk")
+    check("WSR-H.no_exception", exc is None, str(exc))
+    rf_w2 = next((w for w in at.slider if "Risk-Free" in (w.label or "") or "無風險" in (w.label or "")), None)
+    check("WSR-H.risk_free_value_preserved", rf_w2 is not None and rf_w2.value == 7.0, rf_w2.value if rf_w2 else None)
+
+
+# ── Test I: market-aware benchmark (now inside the collapsed Analysis
+# Settings panel) still does not reset across a workspace switch ────────────
+def test_wsr_i_benchmark_not_reset_by_workspace_switch():
+    at = _wsr_app()
+    bench_w = next((w for w in at.selectbox if w.key == "selected_benchmark_United States"), None)
+    check("WSR-I.benchmark_widget_found", bench_w is not None)
+    if bench_w is None:
+        return
+    bench_w.set_value("QQQ")
+    at.run()
+    for ws_name in ("Performance", "Risk", "Compare", "Overview"):
+        exc = _wsr_switch(at, ws_name)
+        check(f"WSR-I.no_exception_on_{ws_name}", exc is None, str(exc))
+        bench_w2 = next((w for w in at.selectbox if w.key == "selected_benchmark_United States"), None)
+        check(f"WSR-I.benchmark_still_qqq_on_{ws_name}", bench_w2 is not None and bench_w2.value == "QQQ",
+              bench_w2.value if bench_w2 else None)
+
+
+# ── Test J: switching workspaces never re-hits the price-data source
+# (download_etf_data() is @st.cache_data on (tickers, start, end) -- those
+# never change on a workspace switch, so the underlying per-ticker fetch
+# must be called exactly as many times after 5 workspace switches as it
+# was after the very first load) ─────────────────────────────────────────────
+def test_wsr_j_no_redundant_market_data_downloads_between_workspaces():
+    from unittest.mock import patch
+    import src.data_loader as dl_mod
+
+    dl_mod.download_etf_data.clear()  # start from a clean st.cache_data slate
+    call_count = {"n": 0}
+    real_fetch = dl_mod._download_single_ticker
+
+    def _counting_fetch(ticker, start_date, end_date, price_field="Close"):
+        call_count["n"] += 1
+        return real_fetch(ticker, start_date, end_date, price_field)
+
+    with patch.object(dl_mod, "_download_single_ticker", side_effect=_counting_fetch):
+        at = _wsr_app()
+        exc1 = at.exception[0] if at.exception else None
+        check("WSR-J.no_exception_initial_load", exc1 is None, str(exc1))
+        calls_after_initial_load = call_count["n"]
+        check("WSR-J.initial_load_fetched_at_least_once", calls_after_initial_load > 0, calls_after_initial_load)
+
+        for ws_name in ("Performance", "Risk", "Holdings", "Compare", "Deep Analysis", "Overview"):
+            exc = _wsr_switch(at, ws_name)
+            check(f"WSR-J.no_exception_switching_to_{ws_name}", exc is None, str(exc))
+
+        check("WSR-J.no_additional_fetches_after_workspace_switches",
+              call_count["n"] == calls_after_initial_load,
+              (calls_after_initial_load, call_count["n"]))
+
+
+# ── Test K: zh-TW / English render the full workspace set with no raw keys ──
+def test_wsr_k_i18n_all_workspaces():
+    import re
+    key_pattern = re.compile(r"\betf_ws_[a-zA-Z0-9_]*\b|\betf_(?:overview|perf|risk_nav|holdings_nav|compare_nav|kpi|header|focus|analysis_settings|deep_analysis)_[a-zA-Z0-9_]*\b")
+    for lang in ("zh-TW", "en"):
+        at = _wsr_app(lang=lang)
+        exc = at.exception[0] if at.exception else None
+        check(f"WSR-K.{lang}.no_exception_overview", exc is None, str(exc))
+        for ws_name in ("Performance", "Risk", "Holdings", "Compare", "Deep Analysis"):
+            exc = _wsr_switch(at, ws_name)
+            check(f"WSR-K.{lang}.no_exception_{ws_name}", exc is None, str(exc))
+            leaked = []
+            for m in at.markdown:
+                leaked += key_pattern.findall(m.value)
+            for kind in ("selectbox", "text_input", "segmented_control"):
+                for w in getattr(at, kind, []):
+                    label = getattr(w, "label", None)
+                    if label:
+                        leaked += key_pattern.findall(str(label))
+            check(f"WSR-K.{lang}.no_raw_keys_{ws_name}", len(leaked) == 0, str(leaked))
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -3070,6 +3320,18 @@ def main():
     test_geu_i_uk_required_searches()
     test_geu_j_master_schema_integrity()
     test_geu_k_i18n()
+
+    test_wsr_a_overview_does_not_render_everything()
+    test_wsr_b_performance_navigation_preserves_focus_etf()
+    test_wsr_c_risk_navigation_works()
+    test_wsr_d_holdings_retains_focus_etf()
+    test_wsr_e_compare_multi_etf_works()
+    test_wsr_f_compare_single_etf_empty_state()
+    test_wsr_g_deep_analysis_works()
+    test_wsr_h_collapsed_sidebar_settings_preserved()
+    test_wsr_i_benchmark_not_reset_by_workspace_switch()
+    test_wsr_j_no_redundant_market_data_downloads_between_workspaces()
+    test_wsr_k_i18n_all_workspaces()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

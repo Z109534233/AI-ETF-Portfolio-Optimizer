@@ -186,29 +186,20 @@ _ETF_TYPE_FILTER_MAP = {
 }
 
 
-def _render_etf_universe_filters(etf_options: list) -> list:
-    """Compact filter/search row (ETF universe UX section B9: Search / Asset
-    Type / Management Style / Return Type / Issuer), shown for ANY region
-    once its universe is large enough to need one -- originally built for
-    Taiwan only (hence the "tw_etf_filter_*" widget keys, kept as-is for
-    backward compatibility rather than churned for a cosmetic rename), now
-    shared by every market since the US/Taiwan bulk-imported universes made
-    "just scroll a raw multiselect" unusable everywhere, not just Taiwan.
-    Returns the list of tickers matching the current criteria for a
-    READ-ONLY discovery preview the caller renders below -- deliberately
-    NEVER used to change the multiselect's own `options=`.
+def _render_etf_search_box() -> str:
+    return st.text_input(
+        t("etf_filter_search_label"), key="tw_etf_filter_search",
+        placeholder=t("etf_filter_search_placeholder"),
+    )
 
-    Tested and confirmed unsafe: changing a multiselect's `options` between
-    reruns while it keeps the same widget `key` can corrupt/reset its
-    already-stored selection (observed under Streamlit's rerun model, not
-    just an exception-avoidance concern). So the picker below always keeps
-    the FULL, stable `etf_options` list as its `options` -- these filters
-    only help the user find/preview what to pick; Streamlit's own
-    multiselect dropdown already supports type-to-search over the
-    (name-labeled) options for quick manual narrowing.
-    """
-    records_by_ticker = {tk: get_etf(tk) for tk in etf_options}
 
+def _render_etf_dropdown_filters(etf_options: list, records_by_ticker: dict, extra_filters: bool = False) -> dict:
+    """Type / Management Style / Return Type / Issuer selectboxes (+
+    Underlying Market / Trading Currency when `extra_filters=True` -- ETF
+    Analysis workspace redesign only; Portfolio Optimizer / Risk Analytics /
+    AI Advisor never pass this, so their filter row is exactly the 4
+    columns it always was). Returns the chosen values; does not filter or
+    render the search box itself -- see _render_etf_universe_filters()."""
     fcol1, fcol2, fcol3, fcol4 = st.columns(4)
     _type_options = ["All", "Equity", "Bond", "Multi-Asset", "Commodity", "Real Estate", "Money Market", "Other"]
     _type_labels = {
@@ -260,27 +251,49 @@ def _render_etf_universe_filters(etf_options: list) -> list:
             key="tw_etf_filter_issuer",
         )
 
-    search_query = st.text_input(
-        t("etf_filter_search_label"), key="tw_etf_filter_search",
-        placeholder=t("etf_filter_search_placeholder"),
-    )
+    values = {"type": etf_type, "style": mgmt_style, "return": return_type, "issuer": issuer,
+              "market": "All", "currency": "All"}
+    if extra_filters:
+        fcol5, fcol6 = st.columns(2)
+        _market_options = ["All"] + sorted({r.underlying_market for r in records_by_ticker.values() if r and r.underlying_market})
+        with fcol5:
+            values["market"] = st.selectbox(
+                t("etf_filter_market_label"), _market_options,
+                format_func=lambda x: _all_label if x == "All" else x,
+                key="tw_etf_filter_market",
+            )
+        _currency_options = ["All"] + sorted({r.currency for r in records_by_ticker.values() if r and r.currency})
+        with fcol6:
+            values["currency"] = st.selectbox(
+                t("etf_filter_currency_label"), _currency_options,
+                format_func=lambda x: _all_label if x == "All" else x,
+                key="tw_etf_filter_currency",
+            )
+    return values
 
+
+def _apply_etf_filters(etf_options: list, records_by_ticker: dict, filters: dict, search_query: str) -> list:
     _known_categories = {"Equity", "Fixed Income", "Multi-Asset", "Commodity", "Real Estate", "Money Market"}
     out = []
     for tk in etf_options:
         record = records_by_ticker.get(tk)
         category = record.category if record else None
+        etf_type = filters["type"]
         if etf_type != "All":
             if etf_type == "Other":
                 if category in _known_categories:
                     continue
             elif category not in _ETF_TYPE_FILTER_MAP.get(etf_type, set()):
                 continue
-        if mgmt_style != "All" and (record is None or record.management_style != mgmt_style):
+        if filters["style"] != "All" and (record is None or record.management_style != filters["style"]):
             continue
-        if return_type != "All" and (record is None or record.return_type != return_type):
+        if filters["return"] != "All" and (record is None or record.return_type != filters["return"]):
             continue
-        if issuer != "All" and (record is None or record.issuer != issuer):
+        if filters["issuer"] != "All" and (record is None or record.issuer != filters["issuer"]):
+            continue
+        if filters.get("market", "All") != "All" and (record is None or record.underlying_market != filters["market"]):
+            continue
+        if filters.get("currency", "All") != "All" and (record is None or record.currency != filters["currency"]):
             continue
         if search_query:
             q = search_query.strip().lower()
@@ -296,8 +309,52 @@ def _render_etf_universe_filters(etf_options: list) -> list:
     return out
 
 
+def _render_etf_universe_filters(etf_options: list, extra_filters: bool = False, collapse_dropdowns: bool = False) -> list:
+    """Compact filter/search row (ETF universe UX section B9: Search / Asset
+    Type / Management Style / Return Type / Issuer), shown for ANY region
+    once its universe is large enough to need one -- originally built for
+    Taiwan only (hence the "tw_etf_filter_*" widget keys, kept as-is for
+    backward compatibility rather than churned for a cosmetic rename), now
+    shared by every market since the US/Taiwan bulk-imported universes made
+    "just scroll a raw multiselect" unusable everywhere, not just Taiwan.
+    Returns the list of tickers matching the current criteria for a
+    READ-ONLY discovery preview the caller renders below -- deliberately
+    NEVER used to change the multiselect's own `options=`.
+
+    Tested and confirmed unsafe: changing a multiselect's `options` between
+    reruns while it keeps the same widget `key` can corrupt/reset its
+    already-stored selection (observed under Streamlit's rerun model, not
+    just an exception-avoidance concern). So the picker below always keeps
+    the FULL, stable `etf_options` list as its `options` -- these filters
+    only help the user find/preview what to pick; Streamlit's own
+    multiselect dropdown already supports type-to-search over the
+    (name-labeled) options for quick manual narrowing.
+
+    `extra_filters`/`collapse_dropdowns` default to False, which renders
+    EXACTLY the original 4-column dropdown row then the search box below it
+    -- Portfolio Optimizer / Risk Analytics / AI Advisor never pass either,
+    so their sidebar is pixel-identical to before. ETF Analysis (workspace
+    redesign) passes both True: the search box stays always visible, and
+    the (now 6-column) dropdown row collapses into an expander (PRODUCT
+    SPEC section 11: "Keep always visible: ETF Search. Move into collapsed:
+    Advanced ETF Filters").
+    """
+    records_by_ticker = {tk: get_etf(tk) for tk in etf_options}
+
+    if collapse_dropdowns:
+        search_query = _render_etf_search_box()
+        with st.expander(t("etf_advanced_filters_label"), expanded=False):
+            filters = _render_etf_dropdown_filters(etf_options, records_by_ticker, extra_filters)
+    else:
+        filters = _render_etf_dropdown_filters(etf_options, records_by_ticker, extra_filters)
+        search_query = _render_etf_search_box()
+
+    return _apply_etf_filters(etf_options, records_by_ticker, filters, search_query)
+
+
 def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
-                            help_text: str = None, n_default: int = 3):
+                            help_text: str = None, n_default: int = 3,
+                            extra_filters: bool = False, collapse_filters: bool = False):
     """Shared ETF multiselect, scoped to the current global region, backed
     by st.session_state["selected_etfs_<region>"] -- picking ETFs on one
     page carries over to any other page calling this helper for the same
@@ -317,6 +374,11 @@ def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
     the same widget `key` is unsafe. Options are labeled "TICKER — name"
     via format_func, so Streamlit's native in-dropdown type-to-search
     already lets the user narrow by typing too.
+
+    `extra_filters`/`collapse_filters` default to False (unchanged
+    behavior for every existing caller -- Portfolio Optimizer, Risk
+    Analytics, AI Advisor). ETF Analysis (workspace redesign) passes both
+    True for its collapsed "Advanced ETF Filters" sidebar panel.
     """
     if "_selected_etfs_shadow" not in st.session_state:
         st.session_state["_selected_etfs_shadow"] = {}
@@ -327,7 +389,7 @@ def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
     label_map = _build_etf_label_map(etf_options)
 
     if len(etf_options) > 10:
-        matches = _render_etf_universe_filters(etf_options)
+        matches = _render_etf_universe_filters(etf_options, extra_filters=extra_filters, collapse_dropdowns=collapse_filters)
         if matches:
             _preview_n = 12
             preview = " · ".join(label_map.get(tk, tk) for tk in matches[:_preview_n])
