@@ -65,6 +65,72 @@ def region_etf_options(selected_region: str, all_regions_label: str) -> list:
     return get_tickers_by_country(selected_region)
 
 
+# ── Market-Aware Benchmark Selector ───────────────────────────────────────
+# Fixes the confirmed "Taiwan + QQQ" benchmark bug: the benchmark selector
+# used to be `st.selectbox(options=DEFAULT_ETFS, index=2)` on each page --
+# a plain, un-keyed widget hardcoded to the US-only DEFAULT_ETFS list
+# (DEFAULT_ETFS[2] == "QQQ"), completely independent of the selected
+# region. It never re-evaluated when the region changed, so a Taiwan
+# session kept showing/using QQQ as the benchmark even though QQQ isn't
+# even in the Taiwan ETF universe. Root cause: no session-state key tied
+# the benchmark to the region at all, unlike region_etf_multiselect()
+# above (which HAS always been region-keyed).
+_MARKET_DEFAULT_BENCHMARK = {
+    "Taiwan": "0050",           # Taiwan broad-market index tracker
+    "United States": "SPY",     # S&P 500 -- the most common US broad-market benchmark
+    "United Kingdom": "VUKE",   # Vanguard FTSE 100 UCITS ETF -- broad UK-market benchmark
+}
+_GLOBAL_DEFAULT_BENCHMARK = "VT"  # used only for the "All Regions" scope
+
+
+def market_default_benchmark(selected_region: str, all_regions_label: str) -> str:
+    """The sensible starting benchmark for a given region. NOT a claim that
+    every ETF in that region has exposure to that region (PRODUCT SPEC
+    A3) -- this is only ever used as an initial/fallback suggestion; the
+    user can always override it via region_benchmark_selector() below."""
+    if selected_region == all_regions_label:
+        return _GLOBAL_DEFAULT_BENCHMARK
+    return _MARKET_DEFAULT_BENCHMARK.get(selected_region, _GLOBAL_DEFAULT_BENCHMARK)
+
+
+def region_benchmark_selector(selected_region: str, etf_options: list, label: str,
+                               help_text: str = None) -> str:
+    """Shared, market-aware benchmark ETF selector (ETF Analysis + Risk
+    Analytics both call this instead of each keeping its own hardcoded
+    selectbox). Backed by st.session_state["_benchmark_shadow"][region], a
+    PER-REGION shadow map so each region remembers its own last valid
+    choice independently -- switching United States -> Taiwan -> United
+    States restores your last United States benchmark, it does not carry
+    QQQ (or any other now-invalid ticker) across into Taiwan, and it does
+    not reset a manually-chosen Taiwan benchmark just because you looked at
+    the US tab in between (PRODUCT SPEC A2/A4/B16).
+
+    The widget itself is also keyed per-region
+    (key=f"selected_benchmark_{region}"), so Streamlit treats it as a
+    genuinely different widget instance per region -- the same mechanism
+    that already made region_etf_multiselect() region-safe.
+    """
+    if "_benchmark_shadow" not in st.session_state:
+        st.session_state["_benchmark_shadow"] = {}
+    shadow = st.session_state["_benchmark_shadow"]
+
+    current = shadow.get(selected_region)
+    if current not in etf_options:
+        default = market_default_benchmark(selected_region, t("field_all_regions"))
+        current = default if default in etf_options else (etf_options[0] if etf_options else None)
+
+    label_map = _build_etf_label_map(etf_options)
+    index = etf_options.index(current) if current in etf_options else 0
+    benchmark = st.selectbox(
+        label, options=etf_options, index=index, help=help_text,
+        format_func=lambda tk: label_map.get(tk, tk),
+        key=f"selected_benchmark_{selected_region}",
+    )
+    shadow[selected_region] = benchmark
+    st.session_state["_benchmark_shadow"] = shadow
+    return benchmark
+
+
 def _build_etf_label_map(tickers: list) -> dict:
     """Precompute {ticker: "0050 — 元大台灣50"} for every ticker up front,
     in one pass -- this is what a multiselect's `format_func` should read
@@ -106,21 +172,31 @@ def _build_etf_label_map(tickers: list) -> dict:
 
 # Internal category values (ETFRecord.category) -> the compact "ETF Type"
 # filter buckets from the Taiwan ETF universe UX spec. "Multi-Asset" has no
-# populated records yet (see the end-of-round data report) but stays a
-# selectable, empty-result-safe filter option rather than being hidden.
+# populated Taiwan records yet but stays a selectable, empty-result-safe
+# filter option rather than being hidden; Real Estate / Money Market appear
+# once the US bulk universe is loaded (see build_us_snapshot()'s keyword
+# classification in scripts/refresh_etf_universe.py).
 _ETF_TYPE_FILTER_MAP = {
     "Equity": {"Equity"},
     "Bond": {"Fixed Income"},
     "Multi-Asset": {"Multi-Asset"},
     "Commodity": {"Commodity"},
+    "Real Estate": {"Real Estate"},
+    "Money Market": {"Money Market"},
 }
 
 
-def _render_taiwan_etf_filters(etf_options: list) -> list:
-    """Compact filter/search row shown only for Taiwan (section 6 of the
-    ETF universe spec). Returns the list of tickers matching the current
-    criteria for a READ-ONLY discovery preview the caller renders below --
-    deliberately NEVER used to change the multiselect's own `options=`.
+def _render_etf_universe_filters(etf_options: list) -> list:
+    """Compact filter/search row (ETF universe UX section B9: Search / Asset
+    Type / Management Style / Return Type / Issuer), shown for ANY region
+    once its universe is large enough to need one -- originally built for
+    Taiwan only (hence the "tw_etf_filter_*" widget keys, kept as-is for
+    backward compatibility rather than churned for a cosmetic rename), now
+    shared by every market since the US/Taiwan bulk-imported universes made
+    "just scroll a raw multiselect" unusable everywhere, not just Taiwan.
+    Returns the list of tickers matching the current criteria for a
+    READ-ONLY discovery preview the caller renders below -- deliberately
+    NEVER used to change the multiselect's own `options=`.
 
     Tested and confirmed unsafe: changing a multiselect's `options` between
     reruns while it keeps the same widget `key` can corrupt/reset its
@@ -133,12 +209,13 @@ def _render_taiwan_etf_filters(etf_options: list) -> list:
     """
     records_by_ticker = {tk: get_etf(tk) for tk in etf_options}
 
-    fcol1, fcol2, fcol3 = st.columns(3)
-    _type_options = ["All", "Equity", "Bond", "Multi-Asset", "Commodity", "Other"]
+    fcol1, fcol2, fcol3, fcol4 = st.columns(4)
+    _type_options = ["All", "Equity", "Bond", "Multi-Asset", "Commodity", "Real Estate", "Money Market", "Other"]
     _type_labels = {
         "All": t("etf_filter_all"), "Equity": t("etf_filter_type_equity"),
         "Bond": t("etf_filter_type_bond"), "Multi-Asset": t("etf_filter_type_multi_asset"),
-        "Commodity": t("etf_filter_type_commodity"), "Other": t("etf_filter_type_other"),
+        "Commodity": t("etf_filter_type_commodity"), "Real Estate": t("etf_filter_type_real_estate"),
+        "Money Market": t("etf_filter_type_money_market"), "Other": t("etf_filter_type_other"),
     }
     with fcol1:
         etf_type = st.selectbox(
@@ -167,12 +244,28 @@ def _render_taiwan_etf_filters(etf_options: list) -> list:
             key="tw_etf_filter_return",
         )
 
+    _issuer_options = ["All"] + sorted({r.issuer for r in records_by_ticker.values() if r and r.issuer})
+    _all_label = t("etf_filter_all")  # precomputed ONCE -- see _build_etf_label_map()'s
+    # docstring: a format_func that calls t()/get_language() itself (fresh,
+    # inside the lambda) rather than closing over an already-computed value
+    # corrupts AppTest's widget-state reconciliation between reruns (it
+    # calls the stored format_func again outside any active script/session
+    # context, where get_language() falls back to the default language --
+    # observed here as a ValueError when the resulting mismatched label
+    # isn't found in the options list captured from the first render).
+    with fcol4:
+        issuer = st.selectbox(
+            t("etf_filter_issuer_label"), _issuer_options,
+            format_func=lambda x: _all_label if x == "All" else x,
+            key="tw_etf_filter_issuer",
+        )
+
     search_query = st.text_input(
         t("etf_filter_search_label"), key="tw_etf_filter_search",
         placeholder=t("etf_filter_search_placeholder"),
     )
 
-    _known_categories = {"Equity", "Fixed Income", "Multi-Asset", "Commodity"}
+    _known_categories = {"Equity", "Fixed Income", "Multi-Asset", "Commodity", "Real Estate", "Money Market"}
     out = []
     for tk in etf_options:
         record = records_by_ticker.get(tk)
@@ -187,12 +280,15 @@ def _render_taiwan_etf_filters(etf_options: list) -> list:
             continue
         if return_type != "All" and (record is None or record.return_type != return_type):
             continue
+        if issuer != "All" and (record is None or record.issuer != issuer):
+            continue
         if search_query:
             q = search_query.strip().lower()
             haystack = " ".join(filter(None, [
                 tk, record.name if record else None,
                 record.display_name_zh if record else None,
                 record.issuer if record else None,
+                record.isin if record else None,
             ])).lower()
             if q not in haystack:
                 continue
@@ -210,16 +306,17 @@ def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
     `n_default` only applies the first time a given region is ever visited
     in this session; after that the shared shadow state takes over.
 
-    For Taiwan specifically (now a much larger universe -- see
-    src/etf_database.py), a compact Type / Management Style / Return Type /
-    search filter row is shown above the picker (ETF universe UX section
-    6) as a discovery aid. The picker's own `options` always stay the FULL
-    `etf_options` list, regardless of the filters -- see
-    _render_taiwan_etf_filters()'s docstring for why narrowing a
-    multiselect's `options` between reruns of the same widget `key` is
-    unsafe. Options are labeled "TICKER — name" via format_func, so
-    Streamlit's native in-dropdown type-to-search already lets the user
-    narrow by typing too.
+    For any region whose universe is large (now the normal case for
+    Taiwan/United States/United Kingdom -- see src/etf_database.py, which
+    loads a real bulk-imported master universe per market), a compact Type
+    / Management Style / Return Type / Issuer / search filter row is shown
+    above the picker (ETF universe UX section B9) as a discovery aid. The
+    picker's own `options` always stay the FULL `etf_options` list,
+    regardless of the filters -- see _render_etf_universe_filters()'s
+    docstring for why narrowing a multiselect's `options` between reruns of
+    the same widget `key` is unsafe. Options are labeled "TICKER — name"
+    via format_func, so Streamlit's native in-dropdown type-to-search
+    already lets the user narrow by typing too.
     """
     if "_selected_etfs_shadow" not in st.session_state:
         st.session_state["_selected_etfs_shadow"] = {}
@@ -229,8 +326,8 @@ def region_etf_multiselect(selected_region: str, etf_options: list, label: str,
 
     label_map = _build_etf_label_map(etf_options)
 
-    if selected_region == "Taiwan" and len(etf_options) > 10:
-        matches = _render_taiwan_etf_filters(etf_options)
+    if len(etf_options) > 10:
+        matches = _render_etf_universe_filters(etf_options)
         if matches:
             _preview_n = 12
             preview = " · ".join(label_map.get(tk, tk) for tk in matches[:_preview_n])

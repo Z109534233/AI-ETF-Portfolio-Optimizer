@@ -11,7 +11,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.data_loader import download_etf_data, DEFAULT_ETFS
+from src.data_loader import download_etf_data
 from src.data_cleaner import clean_price_data, compute_returns, normalize_prices
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import (
@@ -29,7 +29,7 @@ from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, g
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, kpi_card,
-    region_selector, region_etf_options, region_etf_multiselect,
+    region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
 )
 from src.i18n import t, t_country, get_language
 
@@ -92,7 +92,20 @@ with st.sidebar:
     )
     st.session_state["_selected_end_date_shadow"] = end_date
 
-    benchmark = st.selectbox(t("field_benchmark_etf"), options=DEFAULT_ETFS, index=2)  # SPY
+    # Market-aware benchmark selector (Global ETF Universe + Benchmark
+    # Architecture round): fixes the confirmed "Taiwan region + QQQ
+    # benchmark" bug. The old code (`st.selectbox(options=DEFAULT_ETFS,
+    # index=2)`) was a plain, un-keyed widget hardcoded to the US-only
+    # DEFAULT_ETFS list regardless of `selected_region` -- it never
+    # re-evaluated when the region changed, so a Taiwan session kept
+    # showing/using QQQ (DEFAULT_ETFS[2]) even though QQQ isn't in the
+    # Taiwan universe at all. region_benchmark_selector() (src/ui.py) is
+    # region-keyed and scopes its options to the SAME `etf_options` this
+    # page already computed for the region above, so a benchmark can never
+    # be a ticker unavailable in the current market.
+    benchmark = region_benchmark_selector(
+        selected_region, etf_options, t("field_benchmark_etf"), help_text=t("etf_benchmark_help"),
+    )
     risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, 5.0, 0.25) / 100
 
     st.markdown("---")

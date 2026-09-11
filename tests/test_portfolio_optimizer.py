@@ -38,7 +38,7 @@ from src.simulator import (
 )
 from src.etf_database import (
     ETF_DATABASE, get_tickers_by_country, get_etf, search_etfs, to_yahoo_symbol,
-    validate_etf_database, ETFRecord,
+    validate_etf_database, ETFRecord, get_country,
 )
 from src.holdings import (
     get_etf_holdings, itemized_holdings, total_disclosed_weight, search_holdings,
@@ -1913,8 +1913,20 @@ def test_twu_data_validation():
     report = validate_etf_database()
     check("TWU-data.no_issues", report["issues"] == [], report["issues"])
     check("TWU-data.no_duplicate_tickers", report["duplicate_tickers"] == [], report["duplicate_tickers"])
-    check("TWU-data.all_yahoo_status_valid", report["yahoo_status_counts"]["valid"] == report["total_records"],
-          report["yahoo_status_counts"])
+    # Global ETF Universe round: bulk-imported records (Taiwan TWSE/TPEx,
+    # US Nasdaq Trader) are intentionally seeded with provider_status
+    # "unknown" (PRODUCT SPEC section B8 -- listing/registry existence is
+    # verified via the authoritative source itself, but whether Yahoo
+    # Finance specifically can price each of ~6000 tickers has not been
+    # individually confirmed, so "valid" would be an unverified claim).
+    # Only the hand-curated records (individually verified, including
+    # against live price data in earlier rounds) assert "valid". This
+    # replaces the pre-bulk-import assumption that every record is "valid".
+    counts = report["yahoo_status_counts"]
+    check("TWU-data.status_counts_sum_to_total",
+          sum(counts.values()) == report["total_records"], (counts, report["total_records"]))
+    check("TWU-data.no_unsupported_status", counts["unsupported"] == 0, counts)
+    check("TWU-data.some_curated_records_are_valid", counts["valid"] > 0, counts)
 
 
 # ── Test A: Taiwan selector contains far more than the old ~6 ETFs ──────
@@ -1951,8 +1963,27 @@ def test_twu_d_bond_etfs_included():
     tw_records = ETF_DATABASE.by_country("Taiwan")
     bond_records = [r for r in tw_records if r.category == "Fixed Income"]
     check("TWU-D.bond_etfs_present", len(bond_records) > 0, len(bond_records))
-    check("TWU-D.bond_etfs_flagged_standard_return_type",
-          all(r.return_type == "Standard" for r in bond_records), [r.ticker for r in bond_records])
+    # The real TWSE/TPEx bulk universe (Global ETF Universe round) turned
+    # up genuine LEVERAGED/INVERSE bond ETFs (e.g. 00680L "元大美債20正2",
+    # 00689R "國泰20年美債反1") -- confirmed via their own official
+    # registered names, not assumed -- so "every bond ETF is Standard" was
+    # an assumption that held only for the small original curated set and
+    # is no longer true of the real universe. Assert structural validity
+    # (a real enum value) instead of a since-disproven blanket claim, and
+    # separately confirm the originally-curated bond tickers specifically
+    # are still Standard (nothing regressed for the records this WAS
+    # already verified true for).
+    check("TWU-D.bond_return_types_are_valid_enum_values",
+          all(r.return_type in ("Standard", "Leveraged", "Inverse") for r in bond_records),
+          [(r.ticker, r.return_type) for r in bond_records if r.return_type not in ("Standard", "Leveraged", "Inverse")])
+    _curated_bond_tickers = {"00679B", "00687B", "00694B", "00695B", "00696B", "00720B", "00751B", "00761B"}
+    _curated_bonds = [r for r in bond_records if r.ticker in _curated_bond_tickers]
+    check("TWU-D.originally_curated_bonds_still_standard",
+          len(_curated_bonds) == len(_curated_bond_tickers) and all(r.return_type == "Standard" for r in _curated_bonds),
+          [(r.ticker, r.return_type) for r in _curated_bonds])
+    check("TWU-D.leveraged_inverse_bond_etfs_now_discoverable",
+          any(r.return_type in ("Leveraged", "Inverse") for r in bond_records),
+          "expected at least one real leveraged/inverse Taiwan bond ETF in the bulk-imported universe")
 
 
 # ── Test E: Active-ETF ARCHITECTURE is supported (see end-of-round report
@@ -2602,6 +2633,230 @@ def test_hld_j_i18n():
         check(f"HLD-J.{lang}.holdings_checkbox_present", holdings_checkbox is not None)
 
 
+# ── Global ETF Universe + Benchmark Architecture ─────────────────────────────
+_OLD_US_CURATED_TICKERS = {
+    "VOO", "VTI", "QQQ", "SPY", "SCHD", "BND", "GLD", "VT", "VXUS",
+    "TLT", "IWM", "XLK", "XLF", "XLV", "VNQ",
+}
+_OLD_UK_CURATED_TICKERS = {"VUSA", "VUAG", "EQQQ", "CSPX", "FUSD"}
+
+
+# ── Test A (B15): benchmark regression -- US(QQQ) -> Taiwan -> UK -> US ──────
+def test_geu_a_benchmark_regression_us_taiwan_uk():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+
+    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+
+    region_w = next(w for w in at.selectbox if w.key == "selected_region")
+    check("GEU-A.default_region_is_united_states", region_w.value == "United States", region_w.value)
+
+    us_bench_w = next((w for w in at.selectbox if w.key == "selected_benchmark_United States"), None)
+    check("GEU-A.us_benchmark_widget_found", us_bench_w is not None)
+    if us_bench_w is None:
+        return
+    us_bench_w.set_value("QQQ")
+    at.run()
+    us_bench_w = next((w for w in at.selectbox if w.key == "selected_benchmark_United States"), None)
+    check("GEU-A.us_benchmark_is_qqq", us_bench_w.value == "QQQ", us_bench_w.value)
+
+    region_w = next(w for w in at.selectbox if w.key == "selected_region")
+    region_w.set_value("Taiwan")
+    at.run()
+    tw_bench_w = next((w for w in at.selectbox if w.key == "selected_benchmark_Taiwan"), None)
+    check("GEU-A.taiwan_benchmark_widget_found", tw_bench_w is not None)
+    check("GEU-A.taiwan_benchmark_not_qqq", tw_bench_w is not None and tw_bench_w.value != "QQQ",
+          tw_bench_w.value if tw_bench_w else None)
+    check("GEU-A.taiwan_benchmark_defaults_to_0050", tw_bench_w is not None and tw_bench_w.value == "0050",
+          tw_bench_w.value if tw_bench_w else None)
+
+    region_w = next(w for w in at.selectbox if w.key == "selected_region")
+    region_w.set_value("United Kingdom")
+    at.run()
+    uk_bench_w = next((w for w in at.selectbox if w.key == "selected_benchmark_United Kingdom"), None)
+    check("GEU-A.uk_benchmark_widget_found", uk_bench_w is not None)
+    check("GEU-A.uk_benchmark_not_taiwan_ticker", uk_bench_w is not None and uk_bench_w.value != "0050",
+          uk_bench_w.value if uk_bench_w else None)
+    check("GEU-A.uk_benchmark_valid_for_uk_market",
+          uk_bench_w is not None and get_country(uk_bench_w.value) == "United Kingdom",
+          (uk_bench_w.value, get_country(uk_bench_w.value)) if uk_bench_w else None)
+
+    # Switching back to US restores the earlier per-region choice (QQQ) --
+    # manual overrides are preserved (A4), not wiped by visiting other markets.
+    region_w = next(w for w in at.selectbox if w.key == "selected_region")
+    region_w.set_value("United States")
+    at.run()
+    us_bench_w2 = next((w for w in at.selectbox if w.key == "selected_benchmark_United States"), None)
+    check("GEU-A.us_benchmark_restored_after_round_trip",
+          us_bench_w2 is not None and us_bench_w2.value == "QQQ", us_bench_w2.value if us_bench_w2 else None)
+
+
+# ── Test B/C/D: each market's universe is the real bulk-imported one, not
+# the old small curated list ─────────────────────────────────────────────────
+def test_geu_b_taiwan_universe_not_old_curated_list():
+    tw = set(get_tickers_by_country("Taiwan"))
+    check("GEU-B.taiwan_far_larger_than_curated_44", len(tw) > 44 * 2, len(tw))
+    check("GEU-B.taiwan_has_real_bulk_only_ticker", "00400A" in tw,
+          "00400A (TWSE-listed, bulk-imported) should be present")
+
+
+def test_geu_c_us_universe_not_old_curated_list():
+    us = set(get_tickers_by_country("United States"))
+    check("GEU-C.us_far_larger_than_old_15", len(us) > len(_OLD_US_CURATED_TICKERS) * 10, len(us))
+    check("GEU-C.us_has_many_tickers_beyond_old_curated_list",
+          len(us - _OLD_US_CURATED_TICKERS) >= 10, len(us - _OLD_US_CURATED_TICKERS))
+
+
+def test_geu_d_uk_universe_not_old_curated_list():
+    uk = set(get_tickers_by_country("United Kingdom"))
+    check("GEU-D.uk_far_larger_than_old_5", len(uk) > len(_OLD_UK_CURATED_TICKERS) * 4, len(uk))
+    check("GEU-D.uk_has_many_tickers_beyond_old_curated_list",
+          len(uk - _OLD_UK_CURATED_TICKERS) >= 10, len(uk - _OLD_UK_CURATED_TICKERS))
+
+
+# ── Test E: a newly-selected (bulk-only) ETF persists across compatible views ──
+def test_geu_e_new_etf_selection_persists_across_views():
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+
+    def sget(state, key, default=None):
+        try:
+            return state[key]
+        except Exception:
+            return default
+
+    etf_at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    etf_at.session_state["language"] = "en"
+    etf_at.run()
+    region_w = next(w for w in etf_at.selectbox if w.key == "selected_region")
+    region_w.set_value("Taiwan")
+    etf_at.run()
+    ms = next((w for w in etf_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+    # ms.options is the FORMATTED "TICKER — Name" display list (AppTest
+    # serializes what the frontend would show, per format_func) -- check
+    # ticker membership against the underlying data instead of that list.
+    check("GEU-E.bulk_ticker_in_taiwan_universe", "00400A" in get_tickers_by_country("Taiwan"))
+    check("GEU-E.multiselect_widget_found", ms is not None)
+    if ms is None or "00400A" not in get_tickers_by_country("Taiwan"):
+        return
+    ms.set_value(["00400A"])
+    etf_at.run()
+
+    # A second, independent AppTest instance simulates st.switch_page's
+    # session_state carryover (two separate AppTest instances do NOT share
+    # session_state automatically -- see test_twu_cross_page_consistency's
+    # docstring precedent -- so it's seeded explicitly here).
+    opt_at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    opt_at.session_state["language"] = "en"
+    opt_at.session_state["selected_region"] = sget(etf_at.session_state, "selected_region")
+    opt_at.session_state["_selected_region_shadow"] = sget(etf_at.session_state, "_selected_region_shadow")
+    opt_at.session_state["_selected_etfs_shadow"] = sget(etf_at.session_state, "_selected_etfs_shadow")
+    opt_at.run()
+    opt_ms = next((w for w in opt_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
+    check("GEU-E.new_ticker_persists_into_optimizer_page",
+          opt_ms is not None and "00400A" in opt_ms.value, opt_ms.value if opt_ms else None)
+
+
+# ── Test F: provider (Yahoo) failure never deletes a bulk-imported ETF ──────
+def test_geu_f_provider_failure_does_not_delete_bulk_etf():
+    from unittest.mock import patch
+    import pandas as pd
+    with patch("src.data_loader.yf.download", return_value=pd.DataFrame()):
+        from src.data_loader import download_etf_data
+        try:
+            download_etf_data(["GLDM"], "2023-01-01", "2023-02-01")
+            no_exception = True
+        except Exception:
+            no_exception = False
+        check("GEU-F.download_failure_handled_without_exception", no_exception)
+    record = get_etf("GLDM")
+    check("GEU-F.bulk_etf_still_in_universe_after_provider_failure", record is not None)
+    check("GEU-F.bulk_etf_provider_status_is_valid_enum",
+          record is not None and record.yahoo_status in ("valid", "unsupported", "unknown"),
+          record.yahoo_status if record else None)
+
+
+# ── Test G/H/I (B14): required search coverage per market ───────────────────
+def test_geu_g_taiwan_required_searches():
+    for ticker in ["0050", "00981A", "00631L", "00632R"]:
+        results = {r.ticker for r in search_etfs(ticker, "Taiwan")}
+        check(f"GEU-G.taiwan_search_{ticker}", ticker in results, results)
+
+
+def test_geu_h_us_required_searches():
+    for ticker in ["VOO", "QQQ", "SCHD"]:
+        results = {r.ticker for r in search_etfs(ticker, "United States")}
+        check(f"GEU-H.us_search_{ticker}", ticker in results, results)
+
+    new_ones = [tk for tk in get_tickers_by_country("United States") if tk not in _OLD_US_CURATED_TICKERS]
+    check("GEU-H.at_least_10_new_us_etfs_beyond_old_list", len(new_ones) >= 10, len(new_ones))
+    for tk in new_ones[:10]:
+        r = get_etf(tk)
+        check(f"GEU-H.new_us_etf_{tk}_resolves", r is not None and r.country == "United States")
+
+
+def test_geu_i_uk_required_searches():
+    for ticker in ["VUSA", "VUAG", "EQQQ", "CSPX", "FUSD"]:
+        results = {r.ticker for r in search_etfs(ticker, "United Kingdom")}
+        check(f"GEU-I.uk_search_{ticker}", ticker in results, results)
+
+    new_ones = [tk for tk in get_tickers_by_country("United Kingdom") if tk not in _OLD_UK_CURATED_TICKERS]
+    check("GEU-I.at_least_10_new_uk_etfs_beyond_old_list", len(new_ones) >= 10, len(new_ones))
+    for tk in new_ones[:10]:
+        r = get_etf(tk)
+        check(f"GEU-I.new_uk_etf_{tk}_resolves", r is not None and r.country == "United Kingdom")
+
+
+# ── Test J: master schema / classification integrity ────────────────────────
+def test_geu_j_master_schema_integrity():
+    tw_bulk = get_etf("00400A")
+    check("GEU-J.taiwan_bulk_record_has_isin", tw_bulk is not None and bool(tw_bulk.isin), tw_bulk.isin if tw_bulk else None)
+    check("GEU-J.taiwan_bulk_record_has_source", tw_bulk is not None and bool(tw_bulk.source), tw_bulk.source if tw_bulk else None)
+    check("GEU-J.taiwan_00981a_active_via_bulk_or_curated",
+          get_etf("00981A") is not None and get_etf("00981A").management_style == "Active")
+    check("GEU-J.taiwan_00403a_active_confirmed_by_real_twse_data",
+          get_etf("00403A") is not None and get_etf("00403A").management_style == "Active",
+          get_etf("00403A"))
+    uk_eqqq = get_etf("EQQQ")
+    check("GEU-J.uk_eqqq_resolves_to_uk_not_us",
+          uk_eqqq is not None and uk_eqqq.country == "United Kingdom", uk_eqqq.country if uk_eqqq else None)
+    check("GEU-J.no_ticker_ever_cast_to_int",
+          all(isinstance(r.ticker, str) for r in ETF_DATABASE.all()[:200]))
+
+
+# ── Test K: bilingual rendering of the new filter/benchmark UI, no raw keys ──
+def test_geu_k_i18n():
+    import re
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+
+    key_pattern = re.compile(r"\betf_filter_[a-zA-Z0-9_]*\b|\bfield_benchmark[a-zA-Z0-9_]*\b")
+    for lang in ("zh-TW", "en"):
+        at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+        at.session_state["language"] = lang
+        at.run()
+        region_w = next(w for w in at.selectbox if w.key == "selected_region")
+        region_w.set_value("Taiwan")
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check(f"GEU-K.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        leaked = []
+        for m in at.markdown:
+            leaked += key_pattern.findall(m.value)
+        for kind in ("selectbox", "text_input"):
+            for w in getattr(at, kind, []):
+                if w.label:
+                    leaked += key_pattern.findall(str(w.label))
+        check(f"GEU-K.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -2713,6 +2968,18 @@ def main():
     test_hld_h_cache_avoids_repeat_fetch()
     test_hld_i_source_unavailable_handling()
     test_hld_j_i18n()
+
+    test_geu_a_benchmark_regression_us_taiwan_uk()
+    test_geu_b_taiwan_universe_not_old_curated_list()
+    test_geu_c_us_universe_not_old_curated_list()
+    test_geu_d_uk_universe_not_old_curated_list()
+    test_geu_e_new_etf_selection_persists_across_views()
+    test_geu_f_provider_failure_does_not_delete_bulk_etf()
+    test_geu_g_taiwan_required_searches()
+    test_geu_h_us_required_searches()
+    test_geu_i_uk_required_searches()
+    test_geu_j_master_schema_integrity()
+    test_geu_k_i18n()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

@@ -13,7 +13,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.data_loader import download_etf_data, DEFAULT_ETFS
+from src.data_loader import download_etf_data
 from src.data_cleaner import clean_price_data
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import (
@@ -30,7 +30,7 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html, g
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, style_signed_columns,
-    region_selector, region_etf_options, region_etf_multiselect,
+    region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
     render_current_portfolio_handoff,
 )
 from src.theme import COLORS
@@ -95,7 +95,12 @@ with st.sidebar:
             if total_w > 0:
                 weights_input = {k: v / total_w for k, v in weights_input.items()}
 
-    benchmark = st.selectbox(t("field_benchmark"), options=DEFAULT_ETFS, index=2)
+    # Market-aware benchmark selector -- see the identical fix + rationale
+    # in pages/1_ETF_Analysis.py (Global ETF Universe + Benchmark
+    # Architecture round: fixes the confirmed "Taiwan region + QQQ
+    # benchmark" bug, which affected this page too via the exact same
+    # hardcoded-DEFAULT_ETFS/index=2 pattern).
+    benchmark = region_benchmark_selector(selected_region, etf_options, t("field_benchmark"))
     risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, 5.0, 0.25) / 100
 
     default_start, default_end = get_date_range_defaults()
