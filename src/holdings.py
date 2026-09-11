@@ -42,7 +42,28 @@ from typing import Dict, List, Optional
 import streamlit as st
 import yfinance as yf
 
-from src.etf_database import to_yahoo_symbol
+from src.etf_database import get_etf, to_yahoo_symbol
+
+# Valid asset_type values a HoldingRecord can carry (PRODUCT SPEC section
+# 14: never assume every holding is a stock). Not every value is currently
+# reachable through the Yahoo adapter below -- ETF-of-ETFs / Futures /
+# Derivative require source data this adapter doesn't get from Yahoo's
+# topHoldings module -- but the schema and UI are ready for a future source
+# adapter that does disclose them.
+VALID_ASSET_TYPES = ("Equity", "Bond", "Cash", "Futures", "ETF", "Derivative",
+                      "Preferred", "Convertible", "Other")
+
+# What an itemized (non-aggregate) holding row should default to when
+# Yahoo's topHoldings module doesn't say (it never does -- it only lists a
+# holding's symbol/name/weight, no per-row type). Using the ETF's OWN
+# canonical category (from the real TWSE/TPEx/Nasdaq Trader-sourced master
+# -- see src/etf_database.py) is real information, not a guess: a Fixed
+# Income ETF's "top holdings" are bonds, not stocks, even though Yahoo's
+# response shape is identical either way.
+_DEFAULT_HOLDING_ASSET_TYPE_BY_CATEGORY = {
+    "Fixed Income": "Bond",
+    "Money Market": "Cash",
+}
 
 # Holdings composition changes far more slowly than daily prices (typical
 # index-fund rebalances are monthly/quarterly) -- a 24h cache TTL avoids
@@ -93,6 +114,8 @@ class HoldingRecord:
                                         # "Preferred" / "Convertible"
     weight: float                      # fraction of ETF NAV, e.g. 0.5686 for 56.86%
     quantity: Optional[float] = None   # shares/units held, if the source discloses it
+    market_value: Optional[float] = None  # position value in the ETF's own currency, if disclosed
+    currency: Optional[str] = None        # currency of `market_value`, if disclosed
     sector: Optional[str] = None       # per-holding sector, if the source discloses it
     country: Optional[str] = None      # per-holding country, if the source discloses it
     is_aggregate: bool = False         # True for a fund-level bucket (e.g. "CASH")
@@ -104,7 +127,16 @@ class HoldingRecord:
 
 @dataclass
 class HoldingsSnapshot:
-    """The full holdings picture for one ETF at the time it was retrieved."""
+    """The full holdings picture for one ETF at the time it was retrieved.
+
+    `issuer`/`exchange`/`isin`/`listing_market`/`fund_group_id` are read
+    straight from the ETF's CANONICAL master record (src/etf_database.py --
+    ETF Holdings & Exposure round: "identify the ETF through the canonical
+    master record", not just its bare ticker), so the UI can show who
+    issues it, where it's listed, and (for a multi-currency LSE fund) which
+    other tickers are the SAME underlying fund -- without this module
+    duplicating that data itself.
+    """
     etf_ticker: str
     holdings: List[HoldingRecord] = field(default_factory=list)
     data_date: Optional[str] = None    # None only when status == "unavailable"/"not_supported"
@@ -112,6 +144,11 @@ class HoldingsSnapshot:
     source_url: Optional[str] = None
     status: str = STATUS_UNAVAILABLE
     retrieved_at: Optional[str] = None  # when THIS call ran, regardless of data_date
+    issuer: Optional[str] = None
+    exchange: Optional[str] = None
+    isin: Optional[str] = None
+    listing_market: Optional[str] = None
+    fund_group_id: Optional[str] = None
 
 
 # Process-local "last known good" cache, keyed by ETF ticker. Deliberately
@@ -173,10 +210,15 @@ def _strip_holding_suffix(symbol: str) -> str:
 
 
 def _normalize_yahoo_holdings(etf_ticker: str, yahoo_symbol: str, result: dict,
-                               data_date: str) -> List[HoldingRecord]:
+                               data_date: str, default_asset_type: str = "Equity") -> List[HoldingRecord]:
     """Turn one Yahoo quoteSummary result into normalized HoldingRecords.
     Never invents a row that isn't backed by a field actually present in
-    `result` -- a missing bucket is simply omitted, not zero-filled."""
+    `result` -- a missing bucket is simply omitted, not zero-filled.
+
+    `default_asset_type` labels the itemized rows (Yahoo's topHoldings
+    doesn't carry a per-row type at all -- see _DEFAULT_HOLDING_ASSET_TYPE_BY_CATEGORY's
+    docstring for why this comes from the ETF's own canonical category
+    rather than a blanket "Equity")."""
     src_url = _source_url(yahoo_symbol)
     top = (result or {}).get("topHoldings") or {}
     records: List[HoldingRecord] = []
@@ -190,7 +232,7 @@ def _normalize_yahoo_holdings(etf_ticker: str, yahoo_symbol: str, result: dict,
         records.append(HoldingRecord(
             etf_ticker=etf_ticker, holding_ticker=_strip_holding_suffix(symbol),
             holding_name=row.get("holdingName") or symbol,
-            asset_type="Equity", weight=float(weight),
+            asset_type=default_asset_type, weight=float(weight),
             is_aggregate=False, data_date=data_date,
             source="Yahoo Finance", source_url=src_url,
         ))
@@ -212,25 +254,43 @@ def _normalize_yahoo_holdings(etf_ticker: str, yahoo_symbol: str, result: dict,
 
 def get_etf_holdings(ticker: str) -> HoldingsSnapshot:
     """Public entry point: the single reusable holdings service every page
-    should call (PRODUCT SPEC section 2: "central holdings data model").
+    should call (PRODUCT SPEC section 2/3: "identify the ETF through the
+    canonical master record" -- ticker/exchange/issuer/ISIN/provider symbol/
+    listing market all come from ETF_DATABASE via get_etf(), never a second
+    independent lookup).
 
     `ticker` is the platform's own display ticker (e.g. "0050" or "00981A"),
     never a raw Yahoo symbol -- management_style/return_type/asset_class are
-    never consulted here, so an Active ETF or a leveraged/inverse ETF is
-    fetched exactly the same way as a plain passive equity ETF (section 12).
+    never consulted to decide WHETHER to fetch (section 18: an Active ETF or
+    a leveraged/inverse ETF is fetched exactly the same way as a plain
+    passive equity ETF), but the ETF's `category` DOES inform what an
+    itemized holding row defaults to (Bond vs Equity -- section 14).
     """
-    yahoo_symbol = to_yahoo_symbol(ticker)
+    record = get_etf(ticker)
+    yahoo_symbol = record.yahoo_symbol if record else to_yahoo_symbol(ticker)
+    default_asset_type = _DEFAULT_HOLDING_ASSET_TYPE_BY_CATEGORY.get(
+        record.category, "Equity") if record else "Equity"
     retrieved_at = datetime.now().strftime("%Y-%m-%d")
     src_url = _source_url(yahoo_symbol)
+    common = dict(
+        issuer=record.issuer if record else None,
+        exchange=record.exchange if record else None,
+        isin=record.isin if record else None,
+        listing_market=record.country if record else None,
+        fund_group_id=record.fund_group_id if record else None,
+    )
 
     result, reached = _cached_fetch_raw(yahoo_symbol)
-    holdings = _normalize_yahoo_holdings(ticker, yahoo_symbol, result, retrieved_at) if result else []
+    holdings = (
+        _normalize_yahoo_holdings(ticker, yahoo_symbol, result, retrieved_at, default_asset_type)
+        if result else []
+    )
 
     if holdings:
         snapshot = HoldingsSnapshot(
             etf_ticker=ticker, holdings=holdings, data_date=retrieved_at,
             source="Yahoo Finance", source_url=src_url,
-            status=STATUS_UPDATED, retrieved_at=retrieved_at,
+            status=STATUS_UPDATED, retrieved_at=retrieved_at, **common,
         )
         _LAST_GOOD_SNAPSHOT[ticker] = snapshot
         return snapshot
@@ -240,14 +300,14 @@ def get_etf_holdings(ticker: str) -> HoldingsSnapshot:
         return HoldingsSnapshot(
             etf_ticker=ticker, holdings=cached.holdings, data_date=cached.data_date,
             source=cached.source, source_url=cached.source_url,
-            status=STATUS_CACHED, retrieved_at=retrieved_at,
+            status=STATUS_CACHED, retrieved_at=retrieved_at, **common,
         )
 
     status = STATUS_NOT_SUPPORTED if reached else STATUS_UNAVAILABLE
     return HoldingsSnapshot(
         etf_ticker=ticker, holdings=[], data_date=None,
         source="Yahoo Finance", source_url=src_url,
-        status=status, retrieved_at=retrieved_at,
+        status=status, retrieved_at=retrieved_at, **common,
     )
 
 

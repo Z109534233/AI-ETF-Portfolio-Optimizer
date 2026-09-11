@@ -38,7 +38,7 @@ from src.simulator import (
 )
 from src.etf_database import (
     ETF_DATABASE, get_tickers_by_country, get_etf, search_etfs, to_yahoo_symbol,
-    validate_etf_database, ETFRecord, get_country,
+    validate_etf_database, ETFRecord, get_country, get_related_tickers,
 )
 from src.holdings import (
     get_etf_holdings, itemized_holdings, total_disclosed_weight, search_holdings,
@@ -2633,6 +2633,93 @@ def test_hld_j_i18n():
         check(f"HLD-J.{lang}.holdings_checkbox_present", holdings_checkbox is not None)
 
 
+# ── ETF Holdings & Exposure, Round 1 continuation: canonical-master
+# identification + US/LSE source adapter tests (built on top of the now-
+# completed Global ETF Universe, which gave every record a real issuer/
+# exchange/ISIN/fund_group_id to identify through). ──────────────────────────
+
+# A distinct fixture from 0050's, reused for both a plain US ticker (VOO)
+# and a bond ETF (BND) to prove the SAME adapter mechanism is generic.
+_HLD_FIXTURE_US = {
+    "topHoldings": {
+        "cashPosition": {"raw": 0.003},
+        "holdings": [
+            {"symbol": "AAPL", "holdingName": "Apple Inc", "holdingPercent": {"raw": 0.071}},
+            {"symbol": "MSFT", "holdingName": "Microsoft Corp", "holdingPercent": {"raw": 0.066}},
+            {"symbol": "NVDA", "holdingName": "NVIDIA Corp", "holdingPercent": {"raw": 0.061}},
+        ],
+    },
+}
+
+_HLD_FIXTURE_UK = {
+    "topHoldings": {
+        "holdings": [
+            {"symbol": "AAPL", "holdingName": "Apple Inc", "holdingPercent": {"raw": 0.072}},
+            {"symbol": "MSFT", "holdingName": "Microsoft Corp", "holdingPercent": {"raw": 0.065}},
+        ],
+    },
+}
+
+
+# ── Test K: US ETF holdings adapter (canonical master identification) ───────
+def test_hld_k_us_adapter_and_canonical_identification():
+    from unittest.mock import patch
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"VOO": _HLD_FIXTURE_US})):
+        snap = get_etf_holdings("VOO")
+    check("HLD-K.status_updated", snap.status == STATUS_UPDATED, snap.status)
+    check("HLD-K.holdings_present", len(snap.holdings) > 0, len(snap.holdings))
+    check("HLD-K.issuer_from_canonical_master", snap.issuer == "Vanguard", snap.issuer)
+    check("HLD-K.exchange_from_canonical_master", snap.exchange == "NYSE Arca", snap.exchange)
+    check("HLD-K.listing_market_from_canonical_master", snap.listing_market == "United States", snap.listing_market)
+    check("HLD-K.equity_category_defaults_itemized_rows_to_equity",
+          all(h.asset_type == "Equity" for h in itemized_holdings(snap)),
+          [(h.holding_ticker, h.asset_type) for h in itemized_holdings(snap)])
+
+
+# ── Test L: LSE ETF holdings adapter + multi-currency share-class linkage ───
+def test_hld_l_lse_adapter_and_related_trading_lines():
+    from unittest.mock import patch
+    _hld_reset()
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"VUSA.L": _HLD_FIXTURE_UK})):
+        snap = get_etf_holdings("VUSA")
+    check("HLD-L.status_updated", snap.status == STATUS_UPDATED, snap.status)
+    check("HLD-L.holdings_present", len(snap.holdings) > 0, len(snap.holdings))
+    check("HLD-L.issuer_is_vanguard", snap.issuer == "Vanguard", snap.issuer)
+    check("HLD-L.exchange_is_lse", snap.exchange == "London Stock Exchange (LSE)", snap.exchange)
+    check("HLD-L.listing_market_is_uk", snap.listing_market == "United Kingdom", snap.listing_market)
+    check("HLD-L.fund_group_id_present", bool(snap.fund_group_id), snap.fund_group_id)
+    # VUAG is the SAME underlying fund's USD-accumulating trading line --
+    # this must be discoverable via the ETF master, not conflated with an
+    # unrelated ETF that happens to share no relationship.
+    related = get_related_tickers("VUSA")
+    check("HLD-L.related_trading_line_vuag_found", "VUAG" in related, related)
+    check("HLD-L.related_lines_do_not_include_self", "VUSA" not in related, related)
+
+
+# ── Test M: a Bond-category ETF's itemized holdings default to Bond, not
+# a blanket "Equity" (PRODUCT SPEC section 14) ───────────────────────────────
+def test_hld_m_bond_etf_asset_type_default():
+    from unittest.mock import patch
+    _hld_reset()
+    record = get_etf("BND")
+    check("HLD-M.bnd_is_fixed_income_category", record is not None and record.category == "Fixed Income",
+          record.category if record else None)
+    with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
+                       _hld_mock_fetch({"BND": _HLD_FIXTURE_US})):
+        snap = get_etf_holdings("BND")
+    check("HLD-M.itemized_rows_default_to_bond_not_equity",
+          len(itemized_holdings(snap)) > 0 and all(h.asset_type == "Bond" for h in itemized_holdings(snap)),
+          [(h.holding_ticker, h.asset_type) for h in itemized_holdings(snap)])
+    # The aggregate cash bucket is genuinely cash regardless of the ETF's
+    # own category -- must NOT be relabeled "Bond" just because BND is one.
+    cash_rows = [h for h in snap.holdings if h.is_aggregate]
+    check("HLD-M.aggregate_cash_bucket_stays_cash",
+          all(h.asset_type == "Cash" for h in cash_rows), [(h.holding_ticker, h.asset_type) for h in cash_rows])
+
+
 # ── Global ETF Universe + Benchmark Architecture ─────────────────────────────
 _OLD_US_CURATED_TICKERS = {
     "VOO", "VTI", "QQQ", "SPY", "SCHD", "BND", "GLD", "VT", "VXUS",
@@ -2968,6 +3055,9 @@ def main():
     test_hld_h_cache_avoids_repeat_fetch()
     test_hld_i_source_unavailable_handling()
     test_hld_j_i18n()
+    test_hld_k_us_adapter_and_canonical_identification()
+    test_hld_l_lse_adapter_and_related_trading_lines()
+    test_hld_m_bond_etf_asset_type_default()
 
     test_geu_a_benchmark_regression_us_taiwan_uk()
     test_geu_b_taiwan_universe_not_old_curated_list()

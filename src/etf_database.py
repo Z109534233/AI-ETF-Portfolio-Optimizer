@@ -125,39 +125,54 @@ def _tw_etf(ticker: str, name_en: str, name_zh: str, category: str, sector: str,
 # change -- every page reads this list through ETFDatabase's accessors.
 _BUILTIN_RECORDS: List[ETFRecord] = [
     # ── United States ─────────────────────────────────────────────────────
+    # `issuer` added (ETF Holdings & Exposure round -- "identify the ETF
+    # through the canonical master record... issuer where available"): these
+    # 15 records predate the Taiwan/UK issuer field and never got one.
     ETFRecord("VOO", "Vanguard S&P 500 ETF", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Broad Market", "S&P 500", "Equity ETF", "Blend", "VOO"),
+              "NYSE Arca", "Equity", "Broad Market", "S&P 500", "Equity ETF", "Blend", "VOO",
+              issuer="Vanguard"),
     ETFRecord("VTI", "Vanguard Total Stock Market ETF", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Broad Market", "CRSP US Total Market Index", "Equity ETF", "Blend", "VTI"),
+              "NYSE Arca", "Equity", "Broad Market", "CRSP US Total Market Index", "Equity ETF", "Blend", "VTI",
+              issuer="Vanguard"),
     ETFRecord("QQQ", "Invesco QQQ Trust", "North America", "United States", "USD",
-              "Nasdaq", "Equity", "Technology", "Nasdaq-100", "Equity ETF", "Growth", "QQQ"),
+              "Nasdaq", "Equity", "Technology", "Nasdaq-100", "Equity ETF", "Growth", "QQQ",
+              issuer="Invesco"),
     ETFRecord("SPY", "SPDR S&P 500 ETF Trust", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Broad Market", "S&P 500", "Equity ETF", "Blend", "SPY"),
+              "NYSE Arca", "Equity", "Broad Market", "S&P 500", "Equity ETF", "Blend", "SPY",
+              issuer="SPDR (SSGA)"),
     ETFRecord("SCHD", "Schwab U.S. Dividend Equity ETF", "North America", "United States", "USD",
               "NYSE Arca", "Equity", "Dividend", "Dow Jones U.S. Dividend 100 Index", "Equity ETF",
-              "Value / Income", "SCHD"),
+              "Value / Income", "SCHD", issuer="Charles Schwab"),
     ETFRecord("BND", "Vanguard Total Bond Market ETF", "North America", "United States", "USD",
               "Nasdaq", "Fixed Income", "Bond", "Bloomberg U.S. Aggregate Float Adjusted Index",
-              "Bond ETF", "Income", "BND"),
+              "Bond ETF", "Income", "BND", issuer="Vanguard"),
     ETFRecord("GLD", "SPDR Gold Shares", "North America", "United States", "USD",
-              "NYSE Arca", "Commodity", "Gold", "Gold Spot Price", "Commodity ETF", "Alternative", "GLD"),
+              "NYSE Arca", "Commodity", "Gold", "Gold Spot Price", "Commodity ETF", "Alternative", "GLD",
+              issuer="SPDR (SSGA)"),
     ETFRecord("VT", "Vanguard Total World Stock ETF", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Broad Market", "FTSE Global All Cap Index", "Equity ETF", "Blend", "VT"),
+              "NYSE Arca", "Equity", "Broad Market", "FTSE Global All Cap Index", "Equity ETF", "Blend", "VT",
+              issuer="Vanguard"),
     ETFRecord("VXUS", "Vanguard Total International Stock ETF", "North America", "United States", "USD",
-              "Nasdaq", "Equity", "Broad Market", "FTSE Global All Cap ex US Index", "Equity ETF", "Blend", "VXUS"),
+              "Nasdaq", "Equity", "Broad Market", "FTSE Global All Cap ex US Index", "Equity ETF", "Blend", "VXUS",
+              issuer="Vanguard"),
     ETFRecord("TLT", "iShares 20+ Year Treasury Bond ETF", "North America", "United States", "USD",
-              "Nasdaq", "Fixed Income", "Bond", "ICE U.S. Treasury 20+ Year Bond Index", "Bond ETF", "Income", "TLT"),
+              "Nasdaq", "Fixed Income", "Bond", "ICE U.S. Treasury 20+ Year Bond Index", "Bond ETF", "Income", "TLT",
+              issuer="iShares"),
     ETFRecord("IWM", "iShares Russell 2000 ETF", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Small Cap", "Russell 2000", "Equity ETF", "Blend", "IWM"),
+              "NYSE Arca", "Equity", "Small Cap", "Russell 2000", "Equity ETF", "Blend", "IWM",
+              issuer="iShares"),
     ETFRecord("XLK", "Technology Select Sector SPDR Fund", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Technology", "Technology Select Sector Index", "Equity ETF", "Growth", "XLK"),
+              "NYSE Arca", "Equity", "Technology", "Technology Select Sector Index", "Equity ETF", "Growth", "XLK",
+              issuer="SPDR (SSGA)"),
     ETFRecord("XLF", "Financial Select Sector SPDR Fund", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Financials", "Financial Select Sector Index", "Equity ETF", "Blend", "XLF"),
+              "NYSE Arca", "Equity", "Financials", "Financial Select Sector Index", "Equity ETF", "Blend", "XLF",
+              issuer="SPDR (SSGA)"),
     ETFRecord("XLV", "Health Care Select Sector SPDR Fund", "North America", "United States", "USD",
-              "NYSE Arca", "Equity", "Healthcare", "Health Care Select Sector Index", "Equity ETF", "Blend", "XLV"),
+              "NYSE Arca", "Equity", "Healthcare", "Health Care Select Sector Index", "Equity ETF", "Blend", "XLV",
+              issuer="SPDR (SSGA)"),
     ETFRecord("VNQ", "Vanguard Real Estate ETF", "North America", "United States", "USD",
               "NYSE Arca", "Equity", "Real Estate", "MSCI US Investable Market Real Estate 25/50 Index",
-              "Equity ETF", "Income", "VNQ"),
+              "Equity ETF", "Income", "VNQ", issuer="Vanguard"),
 
     # ── Taiwan (TWSE + TPEx) ─────────────────────────────────────────────
     # See _tw_etf() above for the exchange -> Yahoo-suffix mapping. Grouped
@@ -517,6 +532,27 @@ def get_country(ticker: str) -> Optional[str]:
 def search_etfs(query: str, country: Optional[str] = None) -> List[ETFRecord]:
     """Module-level convenience wrapper around ETFDatabase.search()."""
     return ETF_DATABASE.search(query, country)
+
+
+def get_related_tickers(ticker: str) -> List[str]:
+    """Other tickers sharing the same `fund_group_id` as `ticker` -- i.e.
+    a DIFFERENT trading line/currency/share-class of the SAME underlying
+    fund (e.g. "VUSA" (GBP, distributing) and "VUAG" (USD, accumulating)
+    are both the same Vanguard S&P 500 UCITS fund). Empty list if the
+    ticker isn't in the database or has no recorded fund group (true for
+    almost everything outside the curated LSE multi-currency entries --
+    see scripts/refresh_etf_universe.py's _UK_CURATED list).
+
+    Used by the Holdings & Exposure UI (ETF Holdings & Exposure round) so a
+    user inspecting one LSE trading line isn't left thinking a sibling
+    ticker is a completely different, unrelated portfolio."""
+    record = ETF_DATABASE.get(ticker)
+    if not record or not record.fund_group_id:
+        return []
+    return [
+        r.ticker for r in ETF_DATABASE.all()
+        if r.fund_group_id == record.fund_group_id and r.ticker != ticker
+    ]
 
 
 def to_yahoo_symbol(ticker: str) -> str:

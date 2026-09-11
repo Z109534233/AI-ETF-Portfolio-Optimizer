@@ -1409,6 +1409,7 @@ if show_holdings:
         STATUS_UPDATED, STATUS_CACHED, STATUS_NOT_SUPPORTED,
     )
     from src.financial_metrics import largest_position, top_n_concentration, effective_number_of_holdings
+    from src.etf_database import get_related_tickers
     from src.theme import COLORS as _HLD_C
 
     section_header(t("etf_holdings_title"), t("etf_holdings_subtitle"))
@@ -1417,6 +1418,25 @@ if show_holdings:
         t("etf_holdings_select_etf"), etf_prices.columns.tolist(), key="holdings_ticker",
     )
     _hld_snapshot = get_etf_holdings(_hld_ticker)
+
+    # Canonical-master identification (ETF Holdings & Exposure round: the
+    # ETF is identified through its master record, not just its bare
+    # ticker) -- issuer/exchange/ISIN, shown only where the record actually
+    # has them (bulk-imported records mostly lack ISIN for US/curated UK).
+    if _hld_snapshot.issuer or _hld_snapshot.exchange:
+        st.caption(t(
+            "etf_holdings_identity_line",
+            issuer=_hld_snapshot.issuer or "—", exchange=_hld_snapshot.exchange or "—",
+        ))
+    if _hld_snapshot.isin:
+        st.caption(t("etf_holdings_identity_isin", isin=_hld_snapshot.isin))
+
+    # Multi-currency LSE trading lines of the SAME underlying fund (e.g.
+    # VUSA/VUAG) are flagged here rather than left looking like unrelated
+    # funds -- see get_related_tickers()'s docstring.
+    _hld_related = get_related_tickers(_hld_ticker)
+    if _hld_related:
+        st.caption(t("etf_holdings_related_lines", tickers=", ".join(_hld_related)))
 
     # Data date is ALWAYS shown, regardless of status -- never present
     # weights without a date (PRODUCT SPEC section 5).
@@ -1521,6 +1541,8 @@ if show_holdings:
                     "Bond": "etf_holdings_asset_type_bond", "Other": "etf_holdings_asset_type_other",
                     "Preferred": "etf_holdings_asset_type_preferred",
                     "Convertible": "etf_holdings_asset_type_convertible",
+                    "Futures": "etf_holdings_asset_type_futures", "ETF": "etf_holdings_asset_type_etf",
+                    "Derivative": "etf_holdings_asset_type_derivative",
                 }
                 _hld_table_rows = [
                     {
