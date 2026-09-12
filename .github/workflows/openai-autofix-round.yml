@@ -31,6 +31,10 @@ on:
       autofix_allowed:
         required: true
         type: boolean
+      trusted_automation:
+        required: false
+        type: boolean
+        default: false
     secrets:
       OPENAI_API_KEY:
         required: true
@@ -180,6 +184,7 @@ jobs:
           COMMENT_ID: ${{ inputs.controller_comment_id }}
           EXPECTED_COUNT: ${{ inputs.attempt_count }}
           EXPECTED_HEAD: ${{ inputs.head_sha }}
+          TRUSTED_AUTOMATION: ${{ inputs.trusted_automation }}
         with:
           script: |
             const crypto = require('crypto');
@@ -187,6 +192,7 @@ jobs:
             const statePattern = /<!-- openai-autofix-state:(\{.*\}) -->/;
             const commentId = Number(process.env.COMMENT_ID);
             const expectedCount = Number(process.env.EXPECTED_COUNT);
+            const trustedAutomation = process.env.TRUSTED_AUTOMATION === 'true';
 
             const prResponse = await github.rest.pulls.get({
               owner: context.repo.owner,
@@ -203,9 +209,25 @@ jobs:
               core.setFailed('Auto-fix is restricted to same-repository PRs.');
               return;
             }
-            if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association || '')) {
-              core.setFailed('PR author is not authorized for automatic repair.');
-              return;
+            // trusted_automation only relaxes *who* may author the PR (the
+            // autopilot queue's own github-actions[bot] commits), never the
+            // same-repository check above or the controller-state check below.
+            // Normal human PRs always go through the OWNER/MEMBER/COLLABORATOR
+            // branch and can never set autopilot_managed:true on their state.
+            if (trustedAutomation) {
+              if (!pr.user || pr.user.login !== 'github-actions[bot]') {
+                core.setFailed('trusted_automation repair requires a github-actions[bot]-authored PR.');
+                return;
+              }
+              if (!pr.head.ref.startsWith('autopilot/')) {
+                core.setFailed('trusted_automation repair requires an autopilot/ head ref.');
+                return;
+              }
+            } else {
+              if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association || '')) {
+                core.setFailed('PR author is not authorized for automatic repair.');
+                return;
+              }
             }
 
             const commentResponse = await github.rest.issues.getComment({
@@ -227,6 +249,12 @@ jobs:
               return;
             }
             const state = JSON.parse(match[1]);
+            if (trustedAutomation !== (state.autopilot_managed === true)) {
+              core.setFailed(
+                'trusted_automation flag does not match controller autopilot_managed state.'
+              );
+              return;
+            }
             if (!Number.isInteger(state.attempts) ||
                 state.attempts !== expectedCount ||
                 state.attempts >= 3) {

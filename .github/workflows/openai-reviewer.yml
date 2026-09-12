@@ -58,6 +58,26 @@ jobs:
               pr.head.repo.full_name === context.repo.owner + '/' + context.repo.repo;
             const trustedActor = trustedAssociations.has(pr.author_association || '');
 
+            if (pr.head.ref.startsWith('autopilot/')) {
+              // Autopilot-managed branches are reviewed by the trusted
+              // methodology-autopilot queue calling openai-autofix-round.yml
+              // directly with trusted_automation:true. Skip here to avoid
+              // duplicate reviewer runs / event recursion on this
+              // pull_request_target trigger.
+              core.notice(
+                'Skipping standard reviewer: autopilot-managed branch is reviewed by the trusted autopilot queue directly.'
+              );
+              core.setOutput('review_allowed', 'false');
+              core.setOutput('autofix_allowed', 'false');
+              core.setOutput('attempt_count', '0');
+              core.setOutput('comment_id', '0');
+              core.setOutput('head_sha', currentHead);
+              core.setOutput('head_ref', pr.head.ref);
+              core.setOutput('base_sha', pr.base.sha);
+              core.setOutput('trusted_actor', trustedActor ? 'true' : 'false');
+              return;
+            }
+
             const files = await github.paginate(
               github.rest.pulls.listFiles,
               {
