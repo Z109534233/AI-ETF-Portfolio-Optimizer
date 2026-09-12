@@ -34,13 +34,10 @@ Claude receives that text in its prompt.
 The pinned Claude Code Action is invoked with:
 
 - the workflow's read-only `GITHUB_TOKEN`, not a repository-write credential;
-- `--bare`;
 - `--permission-mode dontAsk`;
 - `--tools ""`.
 
-That removes built-in tools and denies unapproved MCP tool calls. Claude cannot
-run tests, invoke shell commands, read arbitrary files, edit the workspace, or
-push commits. Its only deliverable is a JSON-structured unified diff.
+OAuth authentication remains enabled so the existing Claude subscription token can be used. Built-in tools are disabled and unapproved tool calls are denied. Claude cannot run tests, invoke shell commands, read arbitrary PR files, edit the PR workspace, or push commits. Its only deliverable is a JSON-structured unified diff.
 
 ### Patch validation and apply jobs
 
