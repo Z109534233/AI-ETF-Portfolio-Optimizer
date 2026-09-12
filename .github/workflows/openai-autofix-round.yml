@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: write
     outputs:
       verdict: ${{ steps.verdict.outputs.value }}
@@ -166,7 +166,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: write
     outputs:
       attempt_count: ${{ steps.reserve.outputs.attempt_count }}
@@ -709,7 +709,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: write
     outputs:
       verdict: ${{ steps.verdict.outputs.value }}
@@ -821,7 +821,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: write
     outputs:
       verdict: ${{ steps.final.outputs.verdict }}
