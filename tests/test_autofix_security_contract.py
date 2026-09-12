@@ -28,7 +28,7 @@ def test_claude_job_is_toolless_and_read_only():
     assert "contents: read" in block
     assert "contents: write" not in block
     assert "github_token: ${{ github.token }}" in block
-    assert "--bare" in block
+    assert "--bare" not in block  # OAuth subscription auth must remain available
     assert "--permission-mode dontAsk" in block
     assert '--tools ""' in block
     assert "CLAUDE_CODE_OAUTH_TOKEN" in block
