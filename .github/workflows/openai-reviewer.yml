@@ -6,16 +6,22 @@ on:
 
 concurrency:
   group: openai-reviewer-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
 
 jobs:
   openai-review:
-    if: github.event.pull_request.draft == false
+    if: >
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,6 +35,32 @@ jobs:
 
       - name: Install OpenAI SDK
         run: pip install --upgrade openai
+
+      - name: Read existing auto-fix attempts
+        id: attempts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = /<!-- openai-autofix-attempt:(\d+) -->/;
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+              }
+            );
+
+            let maxAttempt = 0;
+            for (const comment of comments) {
+              const match = (comment.body || '').match(marker);
+              if (match) {
+                maxAttempt = Math.max(maxAttempt, Number(match[1]));
+              }
+            }
+
+            core.setOutput('count', String(maxAttempt));
 
       - name: Compute PR diff and changed-file list
         env:
@@ -59,6 +91,72 @@ jobs:
             --output-json review_result.json \
             --output-comment review_comment.md
 
+      - name: Decide whether Claude should auto-fix
+        id: gate
+        env:
+          ATTEMPTS: ${{ steps.attempts.outputs.count }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          result = json.load(open("review_result.json", encoding="utf-8"))
+          verdict = result.get("verdict", "STOP")
+          attempts = int(os.environ.get("ATTEMPTS", "0") or 0)
+          max_attempts = 3
+
+          should_fix = verdict == "FIX" and attempts < max_attempts
+          limit_reached = verdict == "FIX" and attempts >= max_attempts
+          next_attempt = attempts + 1 if should_fix else attempts
+
+          issues = result.get("issues", [])
+          issue_lines = []
+          for issue in issues:
+              issue_lines.append(
+                  f"- [{issue.get('severity', 'unknown')}] "
+                  f"{issue.get('file', 'unknown')}: "
+                  f"{issue.get('problem', '')}\n"
+                  f"  Required fix: {issue.get('required_fix', '')}"
+              )
+
+          prompt = f"""You are fixing PR #{os.environ['PR_NUMBER']} in {os.environ['REPO']}.
+
+          The independent OpenAI Reviewer returned FIX.
+
+          Fix only the concrete findings below. Do not broaden the task scope.
+          Work on the existing PR branch only. Do not merge the PR.
+          Do not fabricate financial data or analytical results.
+          Preserve working behavior that is outside the stated findings.
+          Preserve zh-TW / English i18n parity.
+          Run the relevant tests before finishing.
+          Do not modify .github/workflows/*, automation/reviewer.py, or
+          automation/REVIEW_RULES.md unless the reviewer explicitly identifies
+          one of those files as the problem.
+          If a requested fix cannot be implemented safely from the repository
+          evidence, stop and explain the blocker instead of guessing.
+
+          Reviewer summary:
+          {result.get('summary', '')}
+
+          Findings:
+          {chr(10).join(issue_lines) if issue_lines else '(no structured issues supplied)'}
+
+          Required next action:
+          {result.get('next_instruction', '')}
+          """
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"verdict={verdict}\n")
+              output.write(f"should_fix={'true' if should_fix else 'false'}\n")
+              output.write(f"limit_reached={'true' if limit_reached else 'false'}\n")
+              output.write(f"next_attempt={next_attempt}\n")
+              output.write("prompt<<AUTOFIX_PROMPT_EOF\n")
+              output.write(prompt)
+              output.write("\nAUTOFIX_PROMPT_EOF\n")
+          PY
+
       - name: Post or update PR review comment
         uses: actions/github-script@v7
         with:
@@ -67,11 +165,15 @@ jobs:
             const body = fs.readFileSync('review_comment.md', 'utf8');
             const marker = '## OpenAI Reviewer';
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+              }
+            );
 
             const existing = comments.find(
               (c) => c.user.type === 'Bot' && c.body.includes(marker)
@@ -92,3 +194,80 @@ jobs:
                 body,
               });
             }
+
+      - name: Stop automatic fixing after three failed fix rounds
+        if: steps.gate.outputs.limit_reached == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- openai-autofix-controller-stop -->';
+            const body = [
+              marker,
+              '## Auto-fix Controller',
+              '',
+              'STOP — OpenAI still returned FIX after 3 automatic Claude repair rounds.',
+              'No further automatic changes will be made. Human review is required.'
+            ].join('\n');
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+              }
+            );
+
+            const existing = comments.find(
+              (c) => (c.body || '').includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Record automatic fix attempt
+        if: steps.gate.outputs.should_fix == 'true'
+        uses: actions/github-script@v7
+        env:
+          NEXT_ATTEMPT: ${{ steps.gate.outputs.next_attempt }}
+        with:
+          script: |
+            const attempt = process.env.NEXT_ATTEMPT;
+            const body = [
+              `<!-- openai-autofix-attempt:${attempt} -->`,
+              '## Auto-fix Controller',
+              '',
+              `Starting Claude automatic repair round ${attempt}/3.`
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Ask Claude to fix OpenAI findings
+        if: steps.gate.outputs.should_fix == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: ${{ steps.gate.outputs.prompt }}
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --max-turns 20
