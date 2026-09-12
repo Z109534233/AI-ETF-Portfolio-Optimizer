@@ -488,6 +488,7 @@ jobs:
             --bare
             --permission-mode dontAsk
             --tools ""
+            --output-format json
             --max-turns 8
             --json-schema '{"type":"object","additionalProperties":false,"properties":{"patch":{"type":"string"},"summary":{"type":"string"}},"required":["patch","summary"]}'
 
