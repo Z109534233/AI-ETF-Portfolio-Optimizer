@@ -1,94 +1,235 @@
 name: OpenAI PR Reviewer
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: openai-reviewer-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  pull-requests: write
+  cancel-in-progress: false
 
 jobs:
-  openai-review:
+  controller:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+
+    outputs:
+      review_allowed: ${{ steps.state.outputs.review_allowed }}
+      autofix_allowed: ${{ steps.state.outputs.autofix_allowed }}
+      attempt_count: ${{ steps.state.outputs.attempt_count }}
+      comment_id: ${{ steps.state.outputs.comment_id }}
+      head_sha: ${{ steps.state.outputs.head_sha }}
+      head_ref: ${{ steps.state.outputs.head_ref }}
+      base_sha: ${{ steps.state.outputs.base_sha }}
+      trusted_actor: ${{ steps.state.outputs.trusted_actor }}
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install OpenAI SDK
-        run: pip install --upgrade openai
-
-      - name: Compute PR diff and changed-file list
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          git fetch origin "$BASE_SHA" "$HEAD_SHA"
-          git diff "$BASE_SHA" "$HEAD_SHA" > pr.diff
-          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed_files.txt
-
-      - name: Write PR body
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          printf '%s' "$PR_BODY" > pr_body.txt
-
-      - name: Run OpenAI reviewer
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          python automation/reviewer.py \
-            --pr-title "$PR_TITLE" \
-            --pr-body-file pr_body.txt \
-            --changed-files-file changed_files.txt \
-            --diff-file pr.diff \
-            --rules-file automation/REVIEW_RULES.md \
-            --output-json review_result.json \
-            --output-comment review_comment.md
-
-      - name: Post or update PR review comment
+      - name: Load trusted PR state
+        id: state
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
-            const body = fs.readFileSync('review_comment.md', 'utf8');
-            const marker = '## OpenAI Reviewer';
+            const marker = '<!-- openai-autofix-controller:v3 -->';
+            const statePattern = /<!-- openai-autofix-state:(\{.*\}) -->/;
+            const maxAttempts = 3;
+            const trustedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+            const protectedPrefixes = [
+              '.github/workflows/',
+              '.github/actions/',
+              'automation/'
+            ];
 
-            const { data: comments } = await github.rest.issues.listComments({
+            const prResponse = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              pull_number: context.issue.number
             });
+            const pr = prResponse.data;
 
-            const existing = comments.find(
-              (c) => c.user.type === 'Bot' && c.body.includes(marker)
-            );
+            const eventHead = context.payload.pull_request.head.sha;
+            const currentHead = pr.head.sha;
+            const staleEvent = eventHead !== currentHead;
+            const sameRepo =
+              pr.head.repo &&
+              pr.head.repo.full_name === context.repo.owner + '/' + context.repo.repo;
+            const trustedActor = trustedAssociations.has(pr.author_association || '');
 
-            if (existing) {
-              await github.rest.issues.updateComment({
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
+                pull_number: context.issue.number,
+                per_page: 100
+              }
+            );
+            const sensitive = files.some((f) =>
+              protectedPrefixes.some((prefix) => f.filename.startsWith(prefix))
+            );
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body,
+                per_page: 100
+              }
+            );
+            const trustedComments = comments
+              .filter((c) =>
+                c.user &&
+                c.user.login === 'github-actions[bot]' &&
+                (c.body || '').includes(marker)
+              )
+              .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+
+            let state = {
+              attempts: 0,
+              status: 'idle',
+              last_repair_sha: '',
+              last_run_id: ''
+            };
+            let comment = trustedComments[0];
+
+            if (comment) {
+              const match = (comment.body || '').match(statePattern);
+              if (!match) {
+                core.setFailed('Trusted controller comment exists without state.');
+                return;
+              }
+              state = JSON.parse(match[1]);
+              if (!Number.isInteger(state.attempts) ||
+                  state.attempts < 0 ||
+                  state.attempts > maxAttempts) {
+                core.setFailed('Controller attempt count is invalid.');
+                return;
+              }
+            } else {
+              const body = [
+                marker,
+                '<!-- openai-autofix-state:' + JSON.stringify(state) + ' -->',
+                '## Auto-fix Controller',
+                '',
+                'Automatic repair attempts used: 0/3',
+                'Status: idle.',
+                'Auto-fix requires a same-repository PR from OWNER/MEMBER/COLLABORATOR,',
+                'must not touch protected automation paths, and runs Claude in read-only patch-generation mode.'
+              ].join('\n');
+              const created = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
               });
+              comment = created.data;
             }
+
+            const terminal = ['blocked', 'exhausted', 'reserved'].includes(state.status);
+            const reviewAllowed = !staleEvent;
+            const autofixAllowed =
+              reviewAllowed &&
+              sameRepo &&
+              trustedActor &&
+              !sensitive &&
+              !terminal &&
+              state.attempts < maxAttempts;
+
+            core.setOutput('review_allowed', reviewAllowed ? 'true' : 'false');
+            core.setOutput('autofix_allowed', autofixAllowed ? 'true' : 'false');
+            core.setOutput('attempt_count', String(state.attempts));
+            core.setOutput('comment_id', String(comment.id));
+            core.setOutput('head_sha', currentHead);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('base_sha', pr.base.sha);
+            core.setOutput('trusted_actor', trustedActor ? 'true' : 'false');
+
+            if (staleEvent) {
+              core.notice('This pull_request_target event is stale; a newer PR head exists.');
+            }
+            if (!sameRepo) {
+              core.notice('Auto-fix disabled: fork PR.');
+            } else if (!trustedActor) {
+              core.notice('Auto-fix disabled: PR author is not OWNER/MEMBER/COLLABORATOR.');
+            } else if (sensitive) {
+              core.notice('Auto-fix disabled: PR touches protected automation paths.');
+            } else if (terminal) {
+              core.notice('Auto-fix disabled: controller state is ' + state.status + '.');
+            }
+
+  round_1:
+    needs: controller
+    if: needs.controller.outputs.review_allowed == 'true'
+    uses: ./.github/workflows/openai-autofix-round.yml
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      base_sha: ${{ needs.controller.outputs.base_sha }}
+      head_sha: ${{ needs.controller.outputs.head_sha }}
+      head_ref: ${{ needs.controller.outputs.head_ref }}
+      pr_title: ${{ github.event.pull_request.title }}
+      pr_body: ${{ github.event.pull_request.body || '' }}
+      controller_comment_id: ${{ needs.controller.outputs.comment_id }}
+      attempt_count: ${{ fromJSON(needs.controller.outputs.attempt_count) }}
+      autofix_allowed: ${{ needs.controller.outputs.autofix_allowed == 'true' }}
+    secrets: inherit
+
+  round_2:
+    needs: [controller, round_1]
+    if: >
+      needs.round_1.result == 'success' &&
+      needs.round_1.outputs.verdict == 'FIX' &&
+      needs.round_1.outputs.status == 'completed' &&
+      needs.controller.outputs.autofix_allowed == 'true' &&
+      fromJSON(needs.round_1.outputs.attempt_count) < 3
+    uses: ./.github/workflows/openai-autofix-round.yml
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      base_sha: ${{ needs.controller.outputs.base_sha }}
+      head_sha: ${{ needs.round_1.outputs.head_sha }}
+      head_ref: ${{ needs.controller.outputs.head_ref }}
+      pr_title: ${{ github.event.pull_request.title }}
+      pr_body: ${{ github.event.pull_request.body || '' }}
+      controller_comment_id: ${{ needs.controller.outputs.comment_id }}
+      attempt_count: ${{ fromJSON(needs.round_1.outputs.attempt_count) }}
+      autofix_allowed: true
+    secrets: inherit
+
+  round_3:
+    needs: [controller, round_2]
+    if: >
+      needs.round_2.result == 'success' &&
+      needs.round_2.outputs.verdict == 'FIX' &&
+      needs.round_2.outputs.status == 'completed' &&
+      needs.controller.outputs.autofix_allowed == 'true' &&
+      fromJSON(needs.round_2.outputs.attempt_count) < 3
+    uses: ./.github/workflows/openai-autofix-round.yml
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      base_sha: ${{ needs.controller.outputs.base_sha }}
+      head_sha: ${{ needs.round_2.outputs.head_sha }}
+      head_ref: ${{ needs.controller.outputs.head_ref }}
+      pr_title: ${{ github.event.pull_request.title }}
+      pr_body: ${{ github.event.pull_request.body || '' }}
+      controller_comment_id: ${{ needs.controller.outputs.comment_id }}
+      attempt_count: ${{ fromJSON(needs.round_2.outputs.attempt_count) }}
+      autofix_allowed: true
+    secrets: inherit
