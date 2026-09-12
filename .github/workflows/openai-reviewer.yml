@@ -46,10 +46,9 @@ jobs:
                 per_page: 100
               }
             );
+            const protectedPrefixes = ['.github/workflows/', '.github/actions/', 'automation/'];
             const sensitive = fileList.some((f) =>
-              f.filename.startsWith('.github/workflows/') ||
-              f.filename === 'automation/reviewer.py' ||
-              f.filename === 'automation/REVIEW_RULES.md'
+              protectedPrefixes.some((prefix) => f.filename.startsWith(prefix))
             );
             const autofixAllowed = !sensitive;
 
@@ -132,18 +131,26 @@ jobs:
       verdict: ${{ steps.verdict.outputs.value }}
 
     steps:
-      - name: Checkout reviewed PR head
+      - name: Checkout trusted reviewer (base ref)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout PR head (review data only, never executed)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          path: pr_head
           persist-credentials: false
 
-      - name: Assert checkout is the expected reviewed SHA
+      - name: Assert PR head checkout is the expected reviewed SHA
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          ACTUAL_SHA="$(git rev-parse HEAD)"
+          ACTUAL_SHA="$(git -C pr_head rev-parse HEAD)"
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "Expected $EXPECTED_SHA but checked out $ACTUAL_SHA"
             exit 1
@@ -157,30 +164,30 @@ jobs:
       - name: Install OpenAI SDK
         run: pip install --upgrade openai
 
-      - name: Compute PR diff and changed-file list
+      - name: Compute PR diff and changed-file list (untrusted data only)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch origin "$BASE_SHA"
-          git diff "$BASE_SHA" HEAD > pr.diff
-          git diff --name-only "$BASE_SHA" HEAD > changed_files.txt
+          git -C pr_head fetch origin "$BASE_SHA"
+          git -C pr_head diff "$BASE_SHA" HEAD > pr.diff
+          git -C pr_head diff --name-only "$BASE_SHA" HEAD > changed_files.txt
 
       - name: Write PR body
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: printf '%s' "$PR_BODY" > pr_body.txt
 
-      - name: Run OpenAI reviewer
+      - name: Run OpenAI reviewer (trusted script + rules, untrusted data)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          python automation/reviewer.py \
+          python trusted/automation/reviewer.py \
             --pr-title "$PR_TITLE" \
             --pr-body-file pr_body.txt \
             --changed-files-file changed_files.txt \
             --diff-file pr.diff \
-            --rules-file automation/REVIEW_RULES.md \
+            --rules-file trusted/automation/REVIEW_RULES.md \
             --output-json review_result.json \
             --output-comment review_comment.md
 
@@ -425,6 +432,10 @@ jobs:
           Fix only the concrete OpenAI Reviewer findings below.
           Do not broaden the task scope.
           Do not expose or modify credentials or repository secrets.
+          Do not modify anything under .github/workflows/, .github/actions/, or
+          automation/ - these are the reviewer's own trust boundary and are
+          independently verified after your commit; any such change causes this
+          repair to be rejected and the PR to be marked STOP.
           Do not fabricate financial data or analytical results.
           Preserve unrelated working behavior and zh-TW / English i18n parity.
           Run relevant tests before finishing.
@@ -521,6 +532,18 @@ jobs:
             if (comparison.status !== 'ahead' || comparison.ahead_by !== 1 ||
                 comparison.commits.length !== 1) {
               fail('Branch movement was not exactly one descendant commit from the reviewed SHA.', after);
+              return;
+            }
+            const protectedPrefixes = ['.github/workflows/', '.github/actions/', 'automation/'];
+            const touchedProtected = (comparison.files || []).filter((f) =>
+              protectedPrefixes.some((prefix) => f.filename.startsWith(prefix))
+            );
+            if (touchedProtected.length > 0) {
+              fail(
+                'STOP: repair commit touched protected reviewer/controller security-boundary paths: ' +
+                  touchedProtected.map((f) => f.filename).join(', '),
+                after
+              );
               return;
             }
             const commitResponse = await github.rest.repos.getCommit({
@@ -679,18 +702,26 @@ jobs:
       verdict: ${{ steps.verdict.outputs.value }}
 
     steps:
-      - name: Checkout reviewed PR head
+      - name: Checkout trusted reviewer (base ref)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout PR head (review data only, never executed)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          path: pr_head
           persist-credentials: false
 
-      - name: Assert checkout is the expected reviewed SHA
+      - name: Assert PR head checkout is the expected reviewed SHA
         env:
           EXPECTED_SHA: ${{ needs.repair_1.outputs.after_sha }}
         run: |
-          ACTUAL_SHA="$(git rev-parse HEAD)"
+          ACTUAL_SHA="$(git -C pr_head rev-parse HEAD)"
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "Expected $EXPECTED_SHA but checked out $ACTUAL_SHA"
             exit 1
@@ -704,30 +735,30 @@ jobs:
       - name: Install OpenAI SDK
         run: pip install --upgrade openai
 
-      - name: Compute PR diff and changed-file list
+      - name: Compute PR diff and changed-file list (untrusted data only)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch origin "$BASE_SHA"
-          git diff "$BASE_SHA" HEAD > pr.diff
-          git diff --name-only "$BASE_SHA" HEAD > changed_files.txt
+          git -C pr_head fetch origin "$BASE_SHA"
+          git -C pr_head diff "$BASE_SHA" HEAD > pr.diff
+          git -C pr_head diff --name-only "$BASE_SHA" HEAD > changed_files.txt
 
       - name: Write PR body
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: printf '%s' "$PR_BODY" > pr_body.txt
 
-      - name: Run OpenAI reviewer
+      - name: Run OpenAI reviewer (trusted script + rules, untrusted data)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          python automation/reviewer.py \
+          python trusted/automation/reviewer.py \
             --pr-title "$PR_TITLE" \
             --pr-body-file pr_body.txt \
             --changed-files-file changed_files.txt \
             --diff-file pr.diff \
-            --rules-file automation/REVIEW_RULES.md \
+            --rules-file trusted/automation/REVIEW_RULES.md \
             --output-json review_result.json \
             --output-comment review_comment.md
 
@@ -972,6 +1003,10 @@ jobs:
           Fix only the concrete OpenAI Reviewer findings below.
           Do not broaden the task scope.
           Do not expose or modify credentials or repository secrets.
+          Do not modify anything under .github/workflows/, .github/actions/, or
+          automation/ - these are the reviewer's own trust boundary and are
+          independently verified after your commit; any such change causes this
+          repair to be rejected and the PR to be marked STOP.
           Do not fabricate financial data or analytical results.
           Preserve unrelated working behavior and zh-TW / English i18n parity.
           Run relevant tests before finishing.
@@ -1068,6 +1103,18 @@ jobs:
             if (comparison.status !== 'ahead' || comparison.ahead_by !== 1 ||
                 comparison.commits.length !== 1) {
               fail('Branch movement was not exactly one descendant commit from the reviewed SHA.', after);
+              return;
+            }
+            const protectedPrefixes = ['.github/workflows/', '.github/actions/', 'automation/'];
+            const touchedProtected = (comparison.files || []).filter((f) =>
+              protectedPrefixes.some((prefix) => f.filename.startsWith(prefix))
+            );
+            if (touchedProtected.length > 0) {
+              fail(
+                'STOP: repair commit touched protected reviewer/controller security-boundary paths: ' +
+                  touchedProtected.map((f) => f.filename).join(', '),
+                after
+              );
               return;
             }
             const commitResponse = await github.rest.repos.getCommit({
@@ -1226,18 +1273,26 @@ jobs:
       verdict: ${{ steps.verdict.outputs.value }}
 
     steps:
-      - name: Checkout reviewed PR head
+      - name: Checkout trusted reviewer (base ref)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout PR head (review data only, never executed)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          path: pr_head
           persist-credentials: false
 
-      - name: Assert checkout is the expected reviewed SHA
+      - name: Assert PR head checkout is the expected reviewed SHA
         env:
           EXPECTED_SHA: ${{ needs.repair_2.outputs.after_sha }}
         run: |
-          ACTUAL_SHA="$(git rev-parse HEAD)"
+          ACTUAL_SHA="$(git -C pr_head rev-parse HEAD)"
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "Expected $EXPECTED_SHA but checked out $ACTUAL_SHA"
             exit 1
@@ -1251,30 +1306,30 @@ jobs:
       - name: Install OpenAI SDK
         run: pip install --upgrade openai
 
-      - name: Compute PR diff and changed-file list
+      - name: Compute PR diff and changed-file list (untrusted data only)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch origin "$BASE_SHA"
-          git diff "$BASE_SHA" HEAD > pr.diff
-          git diff --name-only "$BASE_SHA" HEAD > changed_files.txt
+          git -C pr_head fetch origin "$BASE_SHA"
+          git -C pr_head diff "$BASE_SHA" HEAD > pr.diff
+          git -C pr_head diff --name-only "$BASE_SHA" HEAD > changed_files.txt
 
       - name: Write PR body
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: printf '%s' "$PR_BODY" > pr_body.txt
 
-      - name: Run OpenAI reviewer
+      - name: Run OpenAI reviewer (trusted script + rules, untrusted data)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          python automation/reviewer.py \
+          python trusted/automation/reviewer.py \
             --pr-title "$PR_TITLE" \
             --pr-body-file pr_body.txt \
             --changed-files-file changed_files.txt \
             --diff-file pr.diff \
-            --rules-file automation/REVIEW_RULES.md \
+            --rules-file trusted/automation/REVIEW_RULES.md \
             --output-json review_result.json \
             --output-comment review_comment.md
 
@@ -1519,6 +1574,10 @@ jobs:
           Fix only the concrete OpenAI Reviewer findings below.
           Do not broaden the task scope.
           Do not expose or modify credentials or repository secrets.
+          Do not modify anything under .github/workflows/, .github/actions/, or
+          automation/ - these are the reviewer's own trust boundary and are
+          independently verified after your commit; any such change causes this
+          repair to be rejected and the PR to be marked STOP.
           Do not fabricate financial data or analytical results.
           Preserve unrelated working behavior and zh-TW / English i18n parity.
           Run relevant tests before finishing.
@@ -1615,6 +1674,18 @@ jobs:
             if (comparison.status !== 'ahead' || comparison.ahead_by !== 1 ||
                 comparison.commits.length !== 1) {
               fail('Branch movement was not exactly one descendant commit from the reviewed SHA.', after);
+              return;
+            }
+            const protectedPrefixes = ['.github/workflows/', '.github/actions/', 'automation/'];
+            const touchedProtected = (comparison.files || []).filter((f) =>
+              protectedPrefixes.some((prefix) => f.filename.startsWith(prefix))
+            );
+            if (touchedProtected.length > 0) {
+              fail(
+                'STOP: repair commit touched protected reviewer/controller security-boundary paths: ' +
+                  touchedProtected.map((f) => f.filename).join(', '),
+                after
+              );
               return;
             }
             const commitResponse = await github.rest.repos.getCommit({
@@ -1773,18 +1844,26 @@ jobs:
       verdict: ${{ steps.verdict.outputs.value }}
 
     steps:
-      - name: Checkout reviewed PR head
+      - name: Checkout trusted reviewer (base ref)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout PR head (review data only, never executed)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          path: pr_head
           persist-credentials: false
 
-      - name: Assert checkout is the expected reviewed SHA
+      - name: Assert PR head checkout is the expected reviewed SHA
         env:
           EXPECTED_SHA: ${{ needs.repair_3.outputs.after_sha }}
         run: |
-          ACTUAL_SHA="$(git rev-parse HEAD)"
+          ACTUAL_SHA="$(git -C pr_head rev-parse HEAD)"
           if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
             echo "Expected $EXPECTED_SHA but checked out $ACTUAL_SHA"
             exit 1
@@ -1798,30 +1877,30 @@ jobs:
       - name: Install OpenAI SDK
         run: pip install --upgrade openai
 
-      - name: Compute PR diff and changed-file list
+      - name: Compute PR diff and changed-file list (untrusted data only)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch origin "$BASE_SHA"
-          git diff "$BASE_SHA" HEAD > pr.diff
-          git diff --name-only "$BASE_SHA" HEAD > changed_files.txt
+          git -C pr_head fetch origin "$BASE_SHA"
+          git -C pr_head diff "$BASE_SHA" HEAD > pr.diff
+          git -C pr_head diff --name-only "$BASE_SHA" HEAD > changed_files.txt
 
       - name: Write PR body
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: printf '%s' "$PR_BODY" > pr_body.txt
 
-      - name: Run OpenAI reviewer
+      - name: Run OpenAI reviewer (trusted script + rules, untrusted data)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          python automation/reviewer.py \
+          python trusted/automation/reviewer.py \
             --pr-title "$PR_TITLE" \
             --pr-body-file pr_body.txt \
             --changed-files-file changed_files.txt \
             --diff-file pr.diff \
-            --rules-file automation/REVIEW_RULES.md \
+            --rules-file trusted/automation/REVIEW_RULES.md \
             --output-json review_result.json \
             --output-comment review_comment.md
 
