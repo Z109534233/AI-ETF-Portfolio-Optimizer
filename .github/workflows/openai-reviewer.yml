@@ -7,7 +7,7 @@ on:
 # Controller runs serialize per PR. Claude-generated synchronize events are
 # isolated so they cannot cancel the controller run already reviewing them.
 concurrency:
-  group: openai-reviewer-${{ github.event.pull_request.number }}-${{ github.actor == 'claude[bot]' && 'claude-trigger' || 'controller' }}
+  group: openai-reviewer-${{ github.event.pull_request.number }}-${{ (github.actor == 'claude[bot]' || github.actor == 'github-actions[bot]') && 'autofix-trigger' || 'controller' }}
   cancel-in-progress: true
 
 jobs:
@@ -15,7 +15,8 @@ jobs:
     if: >
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor != 'claude[bot]'
+      github.actor != 'claude[bot]' &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,6 +27,7 @@ jobs:
       attempt_count: ${{ steps.state.outputs.attempt_count }}
       comment_id: ${{ steps.state.outputs.comment_id }}
       autofix_allowed: ${{ steps.state.outputs.autofix_allowed }}
+      review_allowed: ${{ steps.state.outputs.review_allowed }}
 
     steps:
       - name: Load or create trusted PR-level controller state
@@ -114,13 +116,37 @@ jobs:
               comment = created.data;
             }
 
+            const terminalStatuses = new Set(['blocked', 'exhausted']);
+            const pendingVerification = state.status === 'reserved';
+            const stateAllowsAutofix =
+              !terminalStatuses.has(state.status) && !pendingVerification;
+            const effectiveAutofixAllowed = autofixAllowed && stateAllowsAutofix;
+            const reviewAllowed = !pendingVerification;
+
             core.setOutput('attempt_count', String(state.attempts));
             core.setOutput('comment_id', String(comment.id));
-            core.setOutput('autofix_allowed', autofixAllowed ? 'true' : 'false');
+            core.setOutput(
+              'autofix_allowed',
+              effectiveAutofixAllowed ? 'true' : 'false'
+            );
+            core.setOutput('review_allowed', reviewAllowed ? 'true' : 'false');
+
+            if (pendingVerification) {
+              core.notice(
+                'A repair is still reserved/pending verification. ' +
+                'This run will not review or start another repair.'
+              );
+            } else if (terminalStatuses.has(state.status)) {
+              core.notice(
+                'Auto-fix is disabled because controller status is ' +
+                state.status + '. OpenAI review may still run, but no ' +
+                'automatic repair is allowed until an explicit manual reset.'
+              );
+            }
 
   review_0:
     needs: [controller]
-    if: needs.controller.result == 'success'
+    if: needs.controller.result == 'success' && needs.controller.outputs.review_allowed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -370,6 +396,13 @@ jobs:
             }
             if (state.attempts !== expectedCount) {
               core.setFailed('Stale controller state; refusing a concurrent repair.');
+              return;
+            }
+            if (!['idle', 'completed'].includes(state.status)) {
+              core.setFailed(
+                'Controller status is ' + state.status +
+                '; automatic repair requires explicit human reset.'
+              );
               return;
             }
             if (state.attempts >= 3) {
@@ -945,6 +978,13 @@ jobs:
               core.setFailed('Stale controller state; refusing a concurrent repair.');
               return;
             }
+            if (!['idle', 'completed'].includes(state.status)) {
+              core.setFailed(
+                'Controller status is ' + state.status +
+                '; automatic repair requires explicit human reset.'
+              );
+              return;
+            }
             if (state.attempts >= 3) {
               core.setFailed('PR-level automatic repair cap is exhausted.');
               return;
@@ -1516,6 +1556,13 @@ jobs:
             }
             if (state.attempts !== expectedCount) {
               core.setFailed('Stale controller state; refusing a concurrent repair.');
+              return;
+            }
+            if (!['idle', 'completed'].includes(state.status)) {
+              core.setFailed(
+                'Controller status is ' + state.status +
+                '; automatic repair requires explicit human reset.'
+              );
               return;
             }
             if (state.attempts >= 3) {
