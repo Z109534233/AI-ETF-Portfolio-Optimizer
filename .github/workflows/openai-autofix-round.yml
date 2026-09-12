@@ -711,6 +711,12 @@ jobs:
             python -m pip install --disable-pip-version-check --quiet -r requirements.txt
           fi
           if [ -d tests ]; then
+            # Streamlit AppTest resolves page paths relative to the calling
+            # test file, so mirror the app's pages directory under tests/
+            # without changing repository contents.
+            if [ -d pages ] && [ ! -e tests/pages ]; then
+              ln -s ../pages tests/pages
+            fi
             python -m pytest -q
           fi
 
