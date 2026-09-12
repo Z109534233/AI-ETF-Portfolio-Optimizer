@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Pull request number whose blocked/exhausted auto-fix state should be reset"
+        description: "Open PR number whose blocked/exhausted/reserved auto-fix state should be reset"
         required: true
         type: string
 
@@ -35,15 +35,13 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber
             });
-
             if (prResponse.data.state !== 'open') {
-              core.setFailed('Only an open pull request can be reset.');
+              core.setFailed('Only an open PR can be reset.');
               return;
             }
 
-            const marker = '<!-- openai-autofix-controller:v2 -->';
+            const marker = '<!-- openai-autofix-controller:v3 -->';
             const statePattern = /<!-- openai-autofix-state:(\{.*\}) -->/;
-
             const comments = await github.paginate(
               github.rest.issues.listComments,
               {
@@ -53,7 +51,6 @@ jobs:
                 per_page: 100
               }
             );
-
             const trusted = comments
               .filter((c) =>
                 c.user &&
@@ -64,39 +61,40 @@ jobs:
 
             const comment = trusted[0];
             if (!comment) {
-              core.setFailed('No trusted auto-fix controller comment exists for this PR.');
+              core.setFailed('No trusted v3 controller comment exists.');
               return;
             }
-
             const match = (comment.body || '').match(statePattern);
             if (!match) {
-              core.setFailed('Trusted controller state marker is missing.');
+              core.setFailed('Controller state marker is missing.');
               return;
             }
 
             const state = JSON.parse(match[1]);
-            if (!['blocked', 'exhausted'].includes(state.status)) {
+            if (!['blocked', 'exhausted', 'reserved'].includes(state.status)) {
               core.setFailed(
-                'Reset is allowed only from blocked or exhausted state. ' +
+                'Reset is allowed only from blocked, exhausted, or reserved state. ' +
                 'Current status: ' + state.status
               );
               return;
             }
 
-            const previous = {
-              attempts: state.attempts,
-              status: state.status,
-              last_repair_sha: state.last_repair_sha || ''
-            };
+            const history = Array.isArray(state.reset_history)
+              ? state.reset_history.slice(-9)
+              : [];
+            history.push({
+              by: process.env.REQUESTED_BY,
+              at: new Date().toISOString(),
+              previous_status: state.status,
+              previous_attempts: state.attempts
+            });
 
             const resetState = {
               attempts: 0,
               status: 'idle',
               last_repair_sha: state.last_repair_sha || '',
-              last_nonce: '',
-              reset_by: process.env.REQUESTED_BY,
-              reset_at: new Date().toISOString(),
-              previous_state: previous
+              last_run_id: state.last_run_id || '',
+              reset_history: history
             };
 
             const body = [
@@ -107,12 +105,12 @@ jobs:
               'Automatic repair attempts used: 0/3',
               'Status: idle after explicit human reset.',
               'Reset requested by: ' + process.env.REQUESTED_BY,
-              'The reset is recorded in this workflow run and controller state.'
+              'Previous repair budget remains visible in reset_history for audit.'
             ].join('\n');
 
             await github.rest.issues.updateComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               comment_id: comment.id,
-              body: body
+              body
             });
