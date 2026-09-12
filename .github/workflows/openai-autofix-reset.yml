@@ -1,0 +1,118 @@
+name: Reset OpenAI Auto-fix Controller
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number whose blocked/exhausted auto-fix state should be reset"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset trusted controller state
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REQUESTED_BY: ${{ github.actor }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed('pr_number must be a positive integer.');
+              return;
+            }
+
+            const prResponse = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            if (prResponse.data.state !== 'open') {
+              core.setFailed('Only an open pull request can be reset.');
+              return;
+            }
+
+            const marker = '<!-- openai-autofix-controller:v2 -->';
+            const statePattern = /<!-- openai-autofix-state:(\{.*\}) -->/;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                per_page: 100
+              }
+            );
+
+            const trusted = comments
+              .filter((c) =>
+                c.user &&
+                c.user.login === 'github-actions[bot]' &&
+                (c.body || '').includes(marker)
+              )
+              .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+
+            const comment = trusted[0];
+            if (!comment) {
+              core.setFailed('No trusted auto-fix controller comment exists for this PR.');
+              return;
+            }
+
+            const match = (comment.body || '').match(statePattern);
+            if (!match) {
+              core.setFailed('Trusted controller state marker is missing.');
+              return;
+            }
+
+            const state = JSON.parse(match[1]);
+            if (!['blocked', 'exhausted'].includes(state.status)) {
+              core.setFailed(
+                'Reset is allowed only from blocked or exhausted state. ' +
+                'Current status: ' + state.status
+              );
+              return;
+            }
+
+            const previous = {
+              attempts: state.attempts,
+              status: state.status,
+              last_repair_sha: state.last_repair_sha || ''
+            };
+
+            const resetState = {
+              attempts: 0,
+              status: 'idle',
+              last_repair_sha: state.last_repair_sha || '',
+              last_nonce: '',
+              reset_by: process.env.REQUESTED_BY,
+              reset_at: new Date().toISOString(),
+              previous_state: previous
+            };
+
+            const body = [
+              marker,
+              '<!-- openai-autofix-state:' + JSON.stringify(resetState) + ' -->',
+              '## Auto-fix Controller',
+              '',
+              'Automatic repair attempts used: 0/3',
+              'Status: idle after explicit human reset.',
+              'Reset requested by: ' + process.env.REQUESTED_BY,
+              'The reset is recorded in this workflow run and controller state.'
+            ].join('\n');
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: comment.id,
+              body: body
+            });
