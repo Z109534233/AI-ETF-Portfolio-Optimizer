@@ -470,6 +470,11 @@ jobs:
               out.write(f"{delimiter}\n")
           PY
 
+      - name: Install Claude subprocess isolation dependency
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap
+
       - name: Generate patch with Claude in tool-less mode
         id: claude
         uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f
