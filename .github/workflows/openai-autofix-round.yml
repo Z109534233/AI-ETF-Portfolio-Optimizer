@@ -485,7 +485,6 @@ jobs:
           github_token: ${{ github.token }}
           prompt: ${{ steps.prompt.outputs.value }}
           claude_args: >-
-            --bare
             --permission-mode dontAsk
             --tools ""
             --output-format json
