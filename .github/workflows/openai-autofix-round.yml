@@ -568,18 +568,24 @@ jobs:
 
           touched = []
           for line in patch.splitlines():
-              if not line.startswith('diff --git '):
-                  continue
-              parts = shlex.split(line)
-              if len(parts) != 4:
-                  raise SystemExit('Unexpected diff header: ' + line)
-              for raw in parts[2:4]:
+              candidates = []
+              if line.startswith('diff --git '):
+                  parts = shlex.split(line)
+                  if len(parts) != 4:
+                      raise SystemExit('Unexpected diff header: ' + line)
+                  candidates.extend(parts[2:4])
+              elif line.startswith('--- ') or line.startswith('+++ '):
+                  raw = line[4:].split('\t', 1)[0].strip()
+                  if raw != '/dev/null':
+                      candidates.append(raw)
+
+              for raw in candidates:
                   path = raw[2:] if raw.startswith(('a/', 'b/')) else raw
-                  if path not in touched:
+                  if path and path not in touched:
                       touched.append(path)
 
           if not touched:
-              raise SystemExit('No touched files could be parsed from patch.')
+              raise SystemExit('No touched files could be parsed from patch headers.')
           if len(touched) > 10:
               raise SystemExit('Patch touches more than 10 files.')
           for path in touched:
