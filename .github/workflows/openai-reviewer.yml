@@ -481,6 +481,8 @@ jobs:
         uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f # v1.0.222 immutable commit
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          bot_id: "41898282"
+          bot_name: "github-actions[bot]"
           prompt: ${{ steps.prompt.outputs.value }}
           additional_permissions: |
             actions: read
@@ -560,8 +562,8 @@ jobs:
             const gitCommitter = commit.commit.committer || {};
             const mappedAuthor = commit.author ? commit.author.login : '';
             const mappedCommitter = commit.committer ? commit.committer.login : '';
-            const expectedName = 'claude[bot]';
-            const expectedEmail = '41898282+claude[bot]@users.noreply.github.com';
+            const expectedName = 'github-actions[bot]';
+            const expectedEmail = '41898282+github-actions[bot]@users.noreply.github.com';
             const identityOk =
               gitAuthor.name === expectedName &&
               gitAuthor.email === expectedEmail &&
@@ -1052,6 +1054,8 @@ jobs:
         uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f # v1.0.222 immutable commit
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          bot_id: "41898282"
+          bot_name: "github-actions[bot]"
           prompt: ${{ steps.prompt.outputs.value }}
           additional_permissions: |
             actions: read
@@ -1131,8 +1135,8 @@ jobs:
             const gitCommitter = commit.commit.committer || {};
             const mappedAuthor = commit.author ? commit.author.login : '';
             const mappedCommitter = commit.committer ? commit.committer.login : '';
-            const expectedName = 'claude[bot]';
-            const expectedEmail = '41898282+claude[bot]@users.noreply.github.com';
+            const expectedName = 'github-actions[bot]';
+            const expectedEmail = '41898282+github-actions[bot]@users.noreply.github.com';
             const identityOk =
               gitAuthor.name === expectedName &&
               gitAuthor.email === expectedEmail &&
@@ -1623,6 +1627,8 @@ jobs:
         uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f # v1.0.222 immutable commit
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          bot_id: "41898282"
+          bot_name: "github-actions[bot]"
           prompt: ${{ steps.prompt.outputs.value }}
           additional_permissions: |
             actions: read
@@ -1702,8 +1708,8 @@ jobs:
             const gitCommitter = commit.commit.committer || {};
             const mappedAuthor = commit.author ? commit.author.login : '';
             const mappedCommitter = commit.committer ? commit.committer.login : '';
-            const expectedName = 'claude[bot]';
-            const expectedEmail = '41898282+claude[bot]@users.noreply.github.com';
+            const expectedName = 'github-actions[bot]';
+            const expectedEmail = '41898282+github-actions[bot]@users.noreply.github.com';
             const identityOk =
               gitAuthor.name === expectedName &&
               gitAuthor.email === expectedEmail &&
