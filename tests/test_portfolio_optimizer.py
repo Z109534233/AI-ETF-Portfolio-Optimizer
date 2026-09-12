@@ -44,6 +44,12 @@ from src.holdings import (
     get_etf_holdings, itemized_holdings, total_disclosed_weight, search_holdings,
     STATUS_UPDATED, STATUS_CACHED, STATUS_UNAVAILABLE, STATUS_NOT_SUPPORTED,
 )
+from src.data_cleaner import get_common_date_range, clean_price_data
+from src.methodology import (
+    classify_data_sufficiency, validate_optimization_result,
+    SUFFICIENCY_INSUFFICIENT, SUFFICIENCY_LIMITED, SUFFICIENCY_SUFFICIENT,
+    MIN_OBSERVATIONS_ABSOLUTE,
+)
 
 
 def make_synthetic_prices(seed: int = 42, n_days: int = 300) -> pd.DataFrame:
@@ -3243,7 +3249,11 @@ def test_owr_a_overview_lazy_rendering():
     check("OWR-A.diagnosis_snapshot_present", "Portfolio Diagnosis" in all_text)
     check("OWR-A.no_strategy_comparison", "Strategy Comparison" not in all_text)
     check("OWR-A.no_efficient_frontier_title", "Efficient Frontier" not in all_text)
-    check("OWR-A.no_backtest_card", "Backtest" not in all_text)
+    # The Methodology expander (Round M1) legitimately mentions "Backtest"
+    # (its "Backtest Methodology" section + disclosure text) on every
+    # workspace, so this check targets the actual Backtest & Risk workspace
+    # content (its chart title) rather than the bare substring "Backtest".
+    check("OWR-A.no_backtest_card", "Portfolio Backtest vs Equal Weight" not in all_text)
     check("OWR-A.no_allocation_table_card", "Allocation Table" not in all_text)
     # Strategy Lab / Backtest & Risk's own sub-nav widgets must not even
     # exist in the tree yet (not just be visually hidden).
@@ -3519,6 +3529,192 @@ def test_owr_n_i18n_all_workspaces():
             check(f"OWR-N.{lang}.no_raw_keys_{label}", len(leaked) == 0, str(leaked))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Portfolio Optimization Methodology & Model Validation (Round M1)
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Test A: Expected return = arithmetic daily mean * 252, not CAGR ─────────
+def test_m1_a_expected_return_formula():
+    returns_df = PRICES.pct_change(fill_method=None).dropna(how="all")
+    mean_returns = returns_df.mean().values
+    n = len(TICKERS)
+    weights = np.array([1.0 / n] * n)
+    expected = float(np.dot(weights, mean_returns) * 252)
+
+    result = run_optimization(PRICES, method="Equal Weight")
+    check("M1-A.arithmetic_mean_times_252", abs(result["expected_return"] - expected) < 1e-9,
+          f"{result['expected_return']} vs {expected}")
+
+    geo = (PRICES.iloc[-1] / PRICES.iloc[0]) ** (252.0 / len(PRICES)) - 1.0
+    geo_port = float(np.dot(weights, geo.values))
+    check("M1-A.not_geometric_cagr", abs(result["expected_return"] - geo_port) > 1e-6,
+          f"{result['expected_return']} vs geometric {geo_port}")
+
+
+# ── Test B: Covariance = sample cov (pandas .cov(), ddof=1) * 252 ──────────
+def test_m1_b_covariance_formula():
+    returns_df = PRICES.pct_change(fill_method=None).dropna(how="all")
+    manual_cov = returns_df.cov().values * 252
+    cov = covariance_matrix(PRICES).values
+    check("M1-B.sample_cov_times_252", np.allclose(manual_cov, cov, atol=1e-9))
+
+
+# ── Test C: Portfolio volatility = sqrt(w^T Sigma w) ────────────────────────
+def test_m1_c_portfolio_volatility_formula():
+    cov = covariance_matrix(PRICES).values
+    n = len(TICKERS)
+    weights = np.array([1.0 / n] * n)
+    expected_vol = float(np.sqrt(weights @ cov @ weights))
+    vol = portfolio_volatility(weights, cov)
+    check("M1-C.vol_matches_quadratic_form", abs(vol - expected_vol) < 1e-9)
+
+
+# ── Test D: Sharpe = (R_p - R_f) / sigma_p ──────────────────────────────────
+def test_m1_d_sharpe_formula():
+    result = run_optimization(PRICES, method="Maximum Sharpe Ratio", risk_free_rate=0.03)
+    ret, vol, sharpe = result["expected_return"], result["expected_volatility"], result["sharpe_ratio"]
+    check("M1-D.sharpe_matches_formula", abs(sharpe - (ret - 0.03) / vol) < 1e-9, f"{sharpe} vs {(ret - 0.03) / vol}")
+
+
+# ── Test E: Every real constraint is enforced (sum=1, bounds) ──────────────
+def test_m1_e_constraints_enforced():
+    result = run_optimization(PRICES, method="Maximum Sharpe Ratio", risk_free_rate=0.05,
+                               min_weight=0.05, max_weight=0.5, allow_short=False)
+    w = result["weights"]
+    check("M1-E.sum_to_one", abs(sum(w.values()) - 1.0) < 1e-4, str(sum(w.values())))
+    check("M1-E.bounds_respected", all(0.05 - 1e-6 <= v <= 0.5 + 1e-6 for v in w.values()), str(w))
+    validation = validate_optimization_result(
+        weights=w, expected_return=result["expected_return"], expected_volatility=result["expected_volatility"],
+        sharpe_ratio=result["sharpe_ratio"], min_weight=0.05, max_weight=0.5, allow_short=False,
+        optimizer_success=True,
+    )
+    check("M1-E.passes_post_optimization_validation", validation.is_valid, str(validation.problems))
+
+
+# ── Test F: No shorting -- no material negative weights when disabled ─────
+def test_m1_f_no_shorting():
+    result = run_optimization(PRICES, method="Maximum Sharpe Ratio", risk_free_rate=0.05, allow_short=False)
+    check("M1-F.no_negative_weights", all(v >= -1e-6 for v in result["weights"].values()), str(result["weights"]))
+
+
+# ── Test G: Common overlapping period -- a later-inception ETF is not fabricated backward ──
+def test_m1_g_common_date_range_excludes_pre_inception():
+    dates = pd.bdate_range("2023-01-01", periods=100)
+    rng = np.random.default_rng(7)
+    old = pd.Series(100 + np.cumsum(rng.normal(0, 1, 100)), index=dates)
+    new = old.copy()
+    new.iloc[:40] = np.nan  # simulates a later inception date
+    df = pd.DataFrame({"OLD": old, "NEW": new})
+
+    common_start, common_end = get_common_date_range(df)
+    check("M1-G.common_start_is_later_inception", common_start == dates[40], str(common_start))
+    sliced = df.loc[(df.index >= common_start) & (df.index <= common_end)]
+    check("M1-G.no_nan_in_common_window", sliced["NEW"].isna().sum() == 0)
+
+
+# ── Test H: No backward-filling of a newly listed ETF before its inception ─
+def test_m1_h_no_backward_fill_before_inception():
+    dates = pd.bdate_range("2023-01-01", periods=100)
+    old = pd.Series(100.0 + np.arange(100) * 0.1, index=dates)
+    new = old.copy()
+    new.iloc[:40] = np.nan
+    df = pd.DataFrame({"OLD": old, "NEW": new})
+
+    common_start, common_end = get_common_date_range(df)
+    sliced = df.loc[(df.index >= common_start) & (df.index <= common_end)]
+    cleaned = clean_price_data(sliced)
+    check("M1-H.pre_inception_dates_excluded", cleaned.index.min() == dates[40], str(cleaned.index.min()))
+    check("M1-H.no_nan_remaining_after_clean", int(cleaned.isna().sum().sum()) == 0)
+
+
+# ── Test I: Insufficient observations -- controlled stop, not silent estimation ──
+def test_m1_i_insufficient_observations_policy():
+    check("M1-I.below_absolute_min_is_insufficient",
+          classify_data_sufficiency(MIN_OBSERVATIONS_ABSOLUTE - 1) == SUFFICIENCY_INSUFFICIENT)
+    check("M1-I.at_absolute_min_not_insufficient",
+          classify_data_sufficiency(MIN_OBSERVATIONS_ABSOLUTE) != SUFFICIENCY_INSUFFICIENT)
+    check("M1-I.below_recommended_is_limited", classify_data_sufficiency(59) == SUFFICIENCY_LIMITED)
+    check("M1-I.at_recommended_is_sufficient", classify_data_sufficiency(60) == SUFFICIENCY_SUFFICIENT)
+
+    # The page's own pre-existing hard stop (`len(prices_df) < 20`) must stay
+    # pinned to MIN_OBSERVATIONS_ABSOLUTE rather than silently drifting apart
+    # from the documented policy.
+    page_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "pages", "2_Portfolio_Optimizer.py")
+    with open(page_path, encoding="utf-8") as f:
+        page_src = f.read()
+    check("M1-I.page_hard_stop_matches_absolute_minimum",
+          f"len(prices_df) < {MIN_OBSERVATIONS_ABSOLUTE}" in page_src,
+          "hard-stop threshold literal not found or has drifted from MIN_OBSERVATIONS_ABSOLUTE")
+
+    # run_optimization()'s own internal guard is a second, independent
+    # safety net below the page's check -- verify it still refuses to
+    # present a genuine result for a too-short sample.
+    tiny = PRICES.iloc[:5]
+    result = run_optimization(tiny, method="Equal Weight")
+    check("M1-I.run_optimization_flags_insufficient_internally",
+          bool(result.get("error")) and "Insufficient" in result["error"], str(result.get("error")))
+
+
+# ── Test J: Methodology UI reflects ACTUAL runtime settings, never hardcoded ──
+def test_m1_j_methodology_ui_matches_runtime_settings():
+    at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("M1-J.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    all_text = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    check("M1-J.methodology_expander_present", "Methodology" in all_text)
+    check("M1-J.expected_return_section_present", "Expected Return" in all_text)
+    check("M1-J.covariance_section_present", "Covariance" in all_text)
+    check("M1-J.arithmetic_mean_estimator_shown", "Historical Arithmetic Mean" in all_text)
+    check("M1-J.sample_covariance_estimator_shown", "Sample Covariance" in all_text)
+    check("M1-J.limitations_section_present", "Model Limitations" in all_text)
+
+    rf_widget = next((w for w in at.slider if w.key == "opt_risk_free_rate_slider"), None)
+    check("M1-J.risk_free_rate_widget_found", rf_widget is not None)
+    if rf_widget is not None:
+        rf_actual = rf_widget.value / 100
+        check("M1-J.risk_free_rate_matches_runtime", f"{rf_actual:.2%}" in all_text,
+              f"{rf_actual:.2%} not found in {all_text[:200]}...")
+
+
+# ── Test K: Backtest disclosure clearly identifies fixed-allocation lookback ──
+def test_m1_k_backtest_disclosure():
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Backtest & Risk",
+                         sub_view="Historical", sub_key="opt_backtest_view")
+    exc = at.exception[0] if at.exception else None
+    check("M1-K.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    all_text = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    check("M1-K.fixed_allocation_title_shown", "Fixed-Allocation Historical Backtest" in all_text)
+    check("M1-K.disclosure_text_present", "does not represent a portfolio" in all_text)
+    check("M1-K.walkforward_disclaimer_present", "walk-forward" in all_text.lower())
+
+
+# ── Test L: zh-TW / English methodology text, no raw translation keys ─────
+def test_m1_l_i18n_methodology_and_disclosure():
+    import re
+    key_pattern = re.compile(
+        r"\bmethodology_[a-zA-Z0-9_]*\b|\bopt_common_data_period_[a-zA-Z0-9_]*\b|"
+        r"\bopt_limited_history_[a-zA-Z0-9_]*\b|\bopt_backtest_disclosure\b"
+    )
+    for lang in ("zh-TW", "en"):
+        at = _setup_ef_page(method="Equal Weight", lang=lang)
+        exc = at.exception[0] if at.exception else None
+        check(f"M1-L.{lang}.no_exception", exc is None, str(exc))
+        if exc:
+            continue
+        all_text = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+        leaked = key_pattern.findall(all_text)
+        check(f"M1-L.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
+        check(f"M1-L.{lang}.methodology_present",
+              ("計算方法" if lang == "zh-TW" else "Methodology") in all_text)
+        check(f"M1-L.{lang}.common_data_period_present",
+              ("共同資料期間" if lang == "zh-TW" else "Common Data Period") in all_text)
+
+
 def main():
     test_a_equal_weight()
     test_b_max_sharpe()
@@ -3672,6 +3868,19 @@ def main():
     test_owr_l_workspace_switch_preserves_sidebar_inputs()
     test_owr_m_language_switch_preserves_workspace_and_portfolio()
     test_owr_n_i18n_all_workspaces()
+
+    test_m1_a_expected_return_formula()
+    test_m1_b_covariance_formula()
+    test_m1_c_portfolio_volatility_formula()
+    test_m1_d_sharpe_formula()
+    test_m1_e_constraints_enforced()
+    test_m1_f_no_shorting()
+    test_m1_g_common_date_range_excludes_pre_inception()
+    test_m1_h_no_backward_fill_before_inception()
+    test_m1_i_insufficient_observations_policy()
+    test_m1_j_methodology_ui_matches_runtime_settings()
+    test_m1_k_backtest_disclosure()
+    test_m1_l_i18n_methodology_and_disclosure()
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

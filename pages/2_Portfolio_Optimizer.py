@@ -45,6 +45,10 @@ from src.financial_metrics import (
 )
 from src.database import save_portfolio, init_database
 from src.report_generator import generate_portfolio_report
+from src.methodology import (
+    validate_optimization_result, build_methodology_metadata, classify_data_sufficiency,
+    MIN_OBSERVATIONS_RECOMMENDED, SUFFICIENCY_LIMITED, SUFFICIENCY_INSUFFICIENT,
+)
 from src.charts import (
     efficient_frontier_chart, allocation_donut_chart,
     portfolio_growth_chart, drawdown_chart, apply_dark_theme
@@ -348,6 +352,16 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
                     st.caption(f"{to_yahoo_symbol(_tk)} — {t('opt_request_failed_after_retry')}")
             st.stop()
 
+        # Methodology & Model Validation (Round M1, Part 10) -- per-ticker
+        # observation counts from each ETF's OWN FULL individual history,
+        # captured HERE (before the common-date slicing below collapses
+        # every ticker to the same shared window) so a newly-listed ETF
+        # with a short individual history can be flagged to the user. Never
+        # used to change the actual estimation window -- that always uses
+        # the common overlapping period computed next.
+        _ticker_obs_counts = {tk: int(raw_prices[tk].dropna().shape[0]) if tk in raw_prices.columns else 0
+                               for tk in selected_etfs}
+
         # ── Common-start-date handling ────────────────────────────────
         # A later-inception ETF is NOT unavailable -- it just has less
         # history. Determine the true common valid-data range from the RAW
@@ -433,6 +447,13 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
         st.session_state.opt_result = result
         st.session_state.prices_df = prices_df
         st.session_state.opt_run_inputs = run_inputs
+        # Persisted for the Methodology panel (Round M1) -- these are
+        # locals inside this conditional block, so without persisting them
+        # they would not exist on a later rerun that skips re-running the
+        # optimization (e.g. a workspace switch).
+        st.session_state.opt_common_start = common_start
+        st.session_state.opt_common_end = common_end
+        st.session_state.opt_ticker_obs_counts = _ticker_obs_counts
         # Fresh id/timestamp only when a NEW successful build actually
         # happens here -- stable across simple reruns (e.g. language switch
         # or a workspace change) that don't change run_inputs, so
@@ -443,6 +464,9 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
 
 result = st.session_state.opt_result
 prices_df = st.session_state.prices_df
+common_start = st.session_state.get("opt_common_start")
+common_end = st.session_state.get("opt_common_end")
+ticker_obs_counts = st.session_state.get("opt_ticker_obs_counts") or {}
 
 if result is None or prices_df is None or prices_df.empty:
     st.info(t("msg_configure_and_run", action=t("btn_run_optimization")))
@@ -453,6 +477,26 @@ exp_ret = result["expected_return"]
 exp_vol = result["expected_volatility"]
 sharpe = result["sharpe_ratio"]
 div_ratio = result.get("diversification_ratio", 1.0)
+
+# ── Methodology & Model Validation (Round M1, Part 7) ───────────────────────
+# Systematic post-optimization validation, independent of scipy's own
+# `result.success` flag: previously, a bad underlying solve could still be
+# renormalized (via _clean_weights() in src/portfolio_optimizer.py) to sum
+# to exactly 1 before ever reaching this page, which could mask a
+# genuinely invalid result. This re-checks every condition explicitly and
+# refuses to present the portfolio if any of them fail.
+_optimizer_success = result.get("error_code") not in ("optimizer_failed", "unexpected_error")
+_validation = validate_optimization_result(
+    weights=weights, expected_return=exp_ret, expected_volatility=exp_vol, sharpe_ratio=sharpe,
+    min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
+    optimizer_success=_optimizer_success,
+)
+if not _validation.is_valid:
+    error_state(t("methodology_validation_title"), t("methodology_validation_desc"))
+    with st.expander(t("methodology_validation_title"), expanded=True):
+        for _problem_key in _validation.problems:
+            st.caption(f"• {t(_problem_key)}")
+    st.stop()
 
 # ── Cheap, workspace-independent computations ───────────────────────────────
 # Portfolio Diagnosis and a single backtest pass over the CHOSEN strategy's
@@ -508,6 +552,99 @@ with kcol4:
     st.markdown(metric_card_html(t("metric_diversification_ratio"), f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 with kcol5:
     st.markdown(metric_card_html(t("metric_method"), t_opt_method(optimization_method), color=COLORS["warning"]), unsafe_allow_html=True)
+
+# ── Methodology & Model Validation (Round M1) ───────────────────────────────
+# Common Data Period (Part 9): always-visible transparency, not just the
+# conditional "start later than requested" notice above -- shows the ACTUAL
+# window and observation count the expected-return/covariance estimates
+# were computed from, sourced from the same common_start/common_end/
+# prices_df already used by the optimizer above (never recomputed).
+_n_observations = len(prices_df)
+_data_sufficiency = classify_data_sufficiency(_n_observations)
+st.caption(
+    f"**{t('opt_common_data_period_title')}**: "
+    f"{common_start.strftime('%Y-%m-%d') if common_start is not None else '—'} → "
+    f"{common_end.strftime('%Y-%m-%d') if common_end is not None else '—'} "
+    f"({t('methodology_field_observations')}: {_n_observations})"
+)
+
+# Limited Historical Data (Part 10): flags any INDIVIDUALLY selected ETF
+# whose own full history (before common-date slicing) is short, without
+# claiming the ETF is bad -- ticker_obs_counts is the per-ticker count
+# captured before the common window collapsed everything together.
+_short_history_tickers = [
+    tk for tk, n in ticker_obs_counts.items()
+    if classify_data_sufficiency(n) in (SUFFICIENCY_LIMITED, SUFFICIENCY_INSUFFICIENT)
+]
+if _short_history_tickers:
+    st.info(f"**{t('opt_limited_history_title')}** ({', '.join(_short_history_tickers)}): {t('opt_limited_history_desc')}")
+
+# Reusable methodology metadata (Part 18) -- built once here from the
+# SAME runtime values already driving every calculation above, then
+# reused by the Methodology expander (Part 14-16) and Model Limitations
+# (Part 17) below. Never independently recomputed.
+_methodology = build_methodology_metadata(
+    risk_free_rate=risk_free_rate, min_weight=min_weight, max_weight=max_weight,
+    allow_short=allow_short, common_start=common_start, common_end=common_end,
+    observation_count=_n_observations, optimization_method=optimization_method,
+    target_return=target_return_pct,
+)
+
+with st.expander(f"📐 {t('methodology_title')}", expanded=False):
+    st.caption(t("methodology_subtitle"))
+
+    st.markdown(f"**{t('methodology_section_expected_return')}**")
+    st.caption(t("methodology_formula_expected_return"))
+    _mcol1, _mcol2, _mcol3 = st.columns(3)
+    with _mcol1:
+        st.caption(f"{t('methodology_field_estimator')}: {_methodology.return_estimator}")
+    with _mcol2:
+        st.caption(f"{t('methodology_field_return_type')}: {_methodology.return_type}")
+    with _mcol3:
+        st.caption(f"{t('methodology_field_annualization')}: × {_methodology.annualization_factor} ({t('methodology_field_return_frequency')})")
+
+    st.markdown(f"**{t('methodology_section_covariance')}**")
+    st.caption(t("methodology_formula_covariance"))
+    st.caption(f"{t('methodology_field_covariance_estimator')}: {_methodology.covariance_estimator}")
+
+    st.markdown(f"**{t('methodology_section_volatility')}**")
+    st.caption(t("methodology_formula_volatility"))
+
+    st.markdown(f"**{t('methodology_section_sharpe')}**")
+    st.caption(t("methodology_formula_sharpe"))
+    st.caption(f"{t('methodology_field_risk_free_rate')}: {risk_free_rate:.2%}")
+
+    st.markdown(f"**{t('methodology_section_constraints')}**")
+    for _c in _methodology.constraints:
+        st.caption(f"• **{t(_c.name_key)}** — {_c.meaning} ({_c.current_value}). {t(_c.purpose_key)}")
+
+    st.markdown(f"**{t('methodology_section_historical_data')}**")
+    _hcol1, _hcol2, _hcol3 = st.columns(3)
+    with _hcol1:
+        st.caption(f"{t('methodology_field_common_start')}: {_methodology.common_start or '—'}")
+    with _hcol2:
+        st.caption(f"{t('methodology_field_common_end')}: {_methodology.common_end or '—'}")
+    with _hcol3:
+        st.caption(f"{t('methodology_field_observations')}: {_methodology.observation_count}")
+    st.caption(t("opt_common_data_period_note"))
+
+    st.markdown(f"**{t('methodology_section_backtest')}**")
+    st.caption(f"{t('methodology_field_backtest_type')}: {t('methodology_value_fixed_allocation')}")
+    st.caption(t("opt_backtest_disclosure"))
+
+    st.markdown(f"**{t('methodology_section_limitations')}**")
+    _limitation_keys = [
+        "methodology_limitation_historical_not_guarantee",
+        "methodology_limitation_sensitive_to_period",
+        "methodology_limitation_sample_covariance_unstable",
+        "methodology_limitation_optimizer_sensitive",
+        "methodology_limitation_fixed_backtest",
+    ]
+    for _lk in _limitation_keys:
+        st.caption(f"• {t(_lk)}")
+
+    st.markdown(f"**{t('methodology_section_future')}**")
+    st.caption(t("methodology_future_walkforward_desc"))
 
 # ── Shared Portfolio Diagnosis rendering helpers (used by both Overview's
 # compact snapshot and Backtest & Risk's detailed view -- PRODUCT SPEC
@@ -875,6 +1012,14 @@ elif opt_workspace == "Backtest & Risk":
 
         if bt_view == "Historical":
             section_header(t("opt_backtest_title"), t("opt_backtest_sub", method=t_opt_method(optimization_method)))
+            # Methodology & Model Validation (Round M1 Part 11/12): this
+            # backtest applies TODAY's optimized weights across the FULL
+            # historical period (see backtest_portfolio() in
+            # src/portfolio_optimizer.py) -- it does not re-estimate or
+            # re-optimize at each historical date, so it is a fixed-
+            # allocation lookback illustration, not a bias-free walk-
+            # forward backtest. This disclosure is never hidden.
+            st.caption(f"ℹ️ {t('opt_backtest_disclosure')}")
             if not backtest_df.empty:
                 import plotly.graph_objects as go
                 with chart_card(t("opt_backtest_card")):
