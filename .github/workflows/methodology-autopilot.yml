@@ -134,6 +134,7 @@ jobs:
       base_sha: ${{ steps.open_pr.outputs.base_sha }}
       head_sha: ${{ steps.open_pr.outputs.head_sha }}
       pr_title: ${{ steps.open_pr.outputs.pr_title }}
+      pr_body: ${{ steps.open_pr.outputs.pr_body }}
       allowed_files_json: ${{ steps.open_pr.outputs.allowed_files_json }}
       controller_comment_id: ${{ steps.open_pr.outputs.controller_comment_id }}
     steps:

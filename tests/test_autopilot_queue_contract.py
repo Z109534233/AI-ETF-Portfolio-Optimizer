@@ -504,3 +504,21 @@ def test_task_never_advances_or_merges_unverified_repair_head():
     )
     assert "EXPECTED_TESTED_HEAD_SHA" in merge
     assert "EXPECTED_TESTED_HEAD_SHA !== process.env.EXPECTED_HEAD_SHA" in merge
+
+
+def test_cumulative_pr_exports_body_consumed_by_every_review_round():
+    text = QUEUE.read_text(encoding="utf-8")
+    create = _job_block(text, "create_cumulative_pr", "cumulative_round_1")
+    outputs_section = create[
+        create.index("    outputs:") : create.index("    steps:")
+    ]
+    assert "pr_body:" in outputs_section
+    assert "steps.open_pr.outputs.pr_body" in outputs_section
+
+    for round_name, next_name in (
+        ("cumulative_round_1", "cumulative_round_2"),
+        ("cumulative_round_2", "cumulative_round_3"),
+        ("cumulative_round_3", None),
+    ):
+        block = _job_block(text, round_name, next_name)
+        assert "needs.create_cumulative_pr.outputs.pr_body" in block
