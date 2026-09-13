@@ -218,6 +218,73 @@ SIMULATION_METHODOLOGY = {
 }
 
 
+# ============================================================================
+# M3 -- Risk Methodology
+# ============================================================================
+# Describes src/risk_analytics.py + the pre-existing src/financial_metrics.py
+# risk functions it wraps (value_at_risk, conditional_var, maximum_drawdown,
+# portfolio_diagnosis, correlation_matrix) as actually implemented.
+
+RISK_METHODOLOGY = {
+    "var_cvar": {
+        "method": "historical -- empirical percentile of realized daily returns (no parametric/Monte Carlo VaR)",
+        "confidence": "user-configurable via the confidence level passed to historical_var_cvar() (95% default)",
+        "holding_period": "1 trading day (VaR/CVaR are computed on daily returns, not scaled to any longer horizon)",
+        "window": "the full selected date range's overlapping daily returns for the current price series",
+        "insufficient_data": (
+            "if fewer than MIN_VAR_OBSERVATIONS (30) daily returns are "
+            "available, the page shows an explicit 'unavailable' state with "
+            "the observation count and requirement, never a number computed "
+            "from too little data"
+        ),
+    },
+    "max_drawdown": {
+        "formula": "min over time of (price - rolling_max(price)) / rolling_max(price)",
+        "verification": "computed directly from the SAME price series shown in the growth/backtest chart -- never a separately-sourced or hard-coded figure",
+    },
+    "concentration": {
+        "source": (
+            "largest-position, top-N concentration, effective-holdings (1/"
+            "Herfindahl), and active-position-count are ALWAYS computed from "
+            "the canonical current_portfolio weights dict (portfolio_diagnosis()) "
+            "-- the same function and the same weights Portfolio Optimizer uses "
+            "-- never from a separately-entered or independently-normalized "
+            "weight source"
+        ),
+    },
+    "correlation_vs_overlap": {
+        "return_correlation": "Pearson correlation of each ETF pair's daily returns (financial_metrics.correlation_matrix) -- a statement about how the ETFs' PRICES have moved together",
+        "holdings_overlap": (
+            "sum over shared itemized holding tickers of min(weight_in_A, "
+            "weight_in_B) -- a statement about how much of the ETFs' "
+            "UNDERLYING PORTFOLIOS are the same securities. High return "
+            "correlation does not imply holdings overlap (different segments "
+            "can move together macro-economically) and low return "
+            "correlation does not imply low overlap (a few differing "
+            "positions can dominate short-term volatility) -- the two are "
+            "never conflated or substituted for one another."
+        ),
+        "unavailable_handling": "a pair is marked unavailable (with a stated reason) rather than scored, whenever either ETF's underlying holdings cannot be retrieved",
+    },
+    "stress_scenarios": {
+        "calculation": "portfolio_impact = market_shock * portfolio_beta -- a simple linear approximation, not a full historical portfolio reconstruction or factor-model replay",
+        "provenance_labeling": (
+            "each scenario is explicitly labeled 'hypothetical' (a stated, "
+            "illustrative assumption) or 'historical' (a commonly-cited, "
+            "approximate broad-market peak-to-trough decline for a named "
+            "past event) -- see src/risk_analytics.py's STRESS_SCENARIOS; "
+            "shock magnitudes are pre-existing values, unchanged by this task"
+        ),
+        "limitation": (
+            "even 'historical' scenarios use the SAME linear beta-scaling as "
+            "hypothetical ones -- this is never a claim that the current "
+            "portfolio would have actually behaved this way during that "
+            "event, only an illustrative, beta-scaled approximation"
+        ),
+    },
+}
+
+
 def validate_optimization_result(weights: dict, mean_returns, cov_matrix,
                                   reported_return: float, reported_volatility: float,
                                   reported_sharpe: float, risk_free_rate: float,
