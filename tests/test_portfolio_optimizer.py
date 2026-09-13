@@ -338,6 +338,43 @@ def test_j_i18n():
         check(f"J.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
 
 
+# ── Test K: Methodology & Assumptions panel discloses the ACTUAL solver per
+# method -- Equal Weight uses no optimizer at all, and Risk Parity uses its
+# own fixed bounds independent of the sidebar sliders, so claiming
+# "via scipy SLSQP" + the sidebar's [min, max] bounds for either would
+# misrepresent how that method actually produced its weights ─────────────
+def test_k_methodology_disclosure_accurate_per_method():
+    at = _setup_ef_page(method="Equal Weight", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("K.equal_weight.no_exception", exc is None, str(exc))
+    if not exc:
+        corpus = "\n".join(m.value for m in at.markdown)
+        check("K.equal_weight.no_false_slsqp_claim", "via scipy SLSQP" not in corpus, "")
+        check("K.equal_weight.discloses_no_optimizer",
+              "no numerical optimizer is used" in corpus, corpus[:400])
+
+    at = _setup_ef_page(method="Risk Parity", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("K.risk_parity.no_exception", exc is None, str(exc))
+    if not exc:
+        corpus = "\n".join(m.value for m in at.markdown)
+        check("K.risk_parity.discloses_own_fixed_bounds",
+              "own fixed per-ETF bounds of [0.1%, 100%]" in corpus, corpus[:400])
+        check("K.risk_parity.discloses_rf_not_in_objective",
+              "not part of this objective" in corpus, corpus[:400])
+
+    at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("K.max_sharpe.no_exception", exc is None, str(exc))
+    if not exc:
+        corpus = "\n".join(m.value for m in at.markdown)
+        # Max Sharpe genuinely does solve via SLSQP against the sidebar's
+        # own bounds, so the original (generic) disclosure text is accurate here.
+        check("K.max_sharpe.discloses_slsqp_and_sidebar_bounds",
+              "via scipy SLSQP" in corpus and "Constraints: weights sum to 100%" in corpus,
+              corpus[:400])
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Round 2B-1: Strategy Comparison
 # ══════════════════════════════════════════════════════════════════════════
@@ -3587,6 +3624,7 @@ def main():
     _run(test_h_backtest_uses_selected_weights)
     _run(test_i_global_market_state)
     _run(test_j_i18n)
+    _run(test_k_methodology_disclosure_accurate_per_method)
 
     _run(test_sc_a_all_three_appear)
     _run(test_sc_b_weights_sum_to_one)

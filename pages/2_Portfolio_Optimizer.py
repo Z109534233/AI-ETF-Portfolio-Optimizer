@@ -521,13 +521,29 @@ with st.expander(t("opt_methodology_title"), expanded=False):
     _hist_start = prices_df.index.min().strftime("%Y-%m-%d")
     _hist_end = prices_df.index.max().strftime("%Y-%m-%d")
     _short_note = t("opt_methodology_short_note_on") if allow_short else t("opt_methodology_short_note_off")
+    # The SLSQP + sidebar-bounds + risk-free-rate description is only
+    # accurate for Maximum Sharpe / Minimum Volatility / Target Return
+    # (run_optimization() in src/portfolio_optimizer.py). Equal Weight never
+    # calls an optimizer at all (plain 1/N), and Risk Parity does use SLSQP
+    # but with its OWN fixed [0.1%, 100%] bounds -- it ignores the sidebar's
+    # min/max weight sliders entirely and doesn't use risk_free_rate in its
+    # objective. Disclosing the same SLSQP/bounds/rf text for every method
+    # would misrepresent both of these, so each gets its own accurate text.
+    if optimization_method == "Equal Weight":
+        _optimizer_desc = t("opt_methodology_optimizer_desc_equal_weight", method=t_opt_method(optimization_method))
+    elif optimization_method == "Risk Parity":
+        _optimizer_desc = t("opt_methodology_optimizer_desc_risk_parity", method=t_opt_method(optimization_method))
+    else:
+        _optimizer_desc = t(
+            "opt_methodology_optimizer_desc", method=t_opt_method(optimization_method),
+            rf=f"{risk_free_rate:.2%}", min=f"{min_weight:.0%}", max=f"{max_weight:.0%}", short_note=_short_note,
+        )
     st.markdown(
         f"- **{t('opt_methodology_return_label')}** — {t('opt_methodology_return_desc')}\n"
         f"- **{t('opt_methodology_covariance_label')}** — {t('opt_methodology_covariance_desc')}\n"
         f"- **{t('opt_methodology_history_label')}** — "
         f"{t('opt_methodology_history_value', start=_hist_start, end=_hist_end, days=len(prices_df))}\n"
-        f"- **{t('opt_methodology_optimizer_label')}** — "
-        f"{t('opt_methodology_optimizer_desc', method=t_opt_method(optimization_method), rf=f'{risk_free_rate:.2%}', min=f'{min_weight:.0%}', max=f'{max_weight:.0%}', short_note=_short_note)}\n"
+        f"- **{t('opt_methodology_optimizer_label')}** — {_optimizer_desc}\n"
         f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
         f"{t('opt_methodology_backtest_desc')}"
     )
