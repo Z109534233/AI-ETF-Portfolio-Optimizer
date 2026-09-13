@@ -242,3 +242,76 @@ def test_trusted_automation_defaults_false_and_does_not_weaken_normal_policy():
     same_repo_idx = reserve.index("Auto-fix is restricted to same-repository PRs")
     trusted_branch_idx = reserve.index("if (trustedAutomation) {")
     assert same_repo_idx < trusted_branch_idx
+
+
+# --- execution-critical needs/output wiring ----------------------------------
+
+import re
+
+
+def _declared_needs(block: str) -> set[str]:
+    match = re.search(r"(?m)^    needs:\s*(.+)$", block)
+    if not match:
+        return set()
+    raw = match.group(1).strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        return {item.strip() for item in raw[1:-1].split(",") if item.strip()}
+    return {raw}
+
+
+def _referenced_needs(block: str) -> set[str]:
+    return set(re.findall(r"needs\.([A-Za-z0-9_-]+)\.", block))
+
+
+def test_round_and_finalize_jobs_only_reference_direct_needs():
+    text = TASK.read_text(encoding="utf-8")
+    blocks = {
+        "round_1": _job_block(text, "round_1", "round_2"),
+        "round_2": _job_block(text, "round_2", "round_3"),
+        "round_3": _job_block(text, "round_3", "finalize_verdict"),
+        "finalize_verdict": _job_block(text, "finalize_verdict", "merge_gate"),
+    }
+    for name, block in blocks.items():
+        missing = _referenced_needs(block) - _declared_needs(block)
+        assert not missing, f"{name} references non-direct needs jobs: {sorted(missing)}"
+
+
+def test_create_pr_exports_every_output_consumed_by_review_rounds():
+    text = TASK.read_text(encoding="utf-8")
+    create_pr = _job_block(text, "create_pr", "round_1")
+    outputs_section = create_pr[
+        create_pr.index("    outputs:") : create_pr.index("    steps:")
+    ]
+    for required in (
+        "pr_number:",
+        "base_sha:",
+        "pr_title:",
+        "pr_body:",
+        "controller_comment_id:",
+    ):
+        assert required in outputs_section
+
+    for round_name, next_name in (
+        ("round_1", "round_2"),
+        ("round_2", "round_3"),
+        ("round_3", "finalize_verdict"),
+    ):
+        block = _job_block(text, round_name, next_name)
+        for output_name in (
+            "pr_number",
+            "base_sha",
+            "pr_title",
+            "pr_body",
+            "controller_comment_id",
+        ):
+            assert f"needs.create_pr.outputs.{output_name}" in block
+
+
+def test_autopilot_prefix_alone_cannot_skip_standard_reviewer():
+    text = REVIEWER.read_text(encoding="utf-8")
+    assert "const trustedAutopilotPr =" in text
+    assert "pr.user.login === 'github-actions[bot]'" in text
+    assert "parsed.autopilot_managed === true" in text
+    assert "Boolean(parsed.autopilot_task)" in text
+    assert "Boolean(parsed.autopilot_run_id)" in text
+    assert "if (trustedAutopilotPr)" in text

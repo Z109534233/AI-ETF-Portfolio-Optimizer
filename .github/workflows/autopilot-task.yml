@@ -519,6 +519,7 @@ jobs:
       pr_number: ${{ steps.open_pr.outputs.pr_number }}
       base_sha: ${{ steps.open_pr.outputs.base_sha }}
       pr_title: ${{ steps.open_pr.outputs.pr_title }}
+      pr_body: ${{ steps.open_pr.outputs.pr_body }}
       controller_comment_id: ${{ steps.open_pr.outputs.controller_comment_id }}
     steps:
       - name: Download task patch summary
@@ -626,7 +627,7 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `pr_body<<${delimiter}\n${body}\n${delimiter}\n`);
 
   round_1:
-    needs: create_pr
+    needs: [create_pr, apply_patch, guard_integration]
     uses: ./.github/workflows/openai-autofix-round.yml
     permissions:
       contents: write
@@ -647,7 +648,7 @@ jobs:
     secrets: inherit
 
   round_2:
-    needs: [create_pr, round_1]
+    needs: [create_pr, guard_integration, round_1]
     if: >
       needs.round_1.result == 'success' &&
       needs.round_1.outputs.verdict == 'FIX' &&
@@ -673,7 +674,7 @@ jobs:
     secrets: inherit
 
   round_3:
-    needs: [create_pr, round_2]
+    needs: [create_pr, guard_integration, round_2]
     if: >
       needs.round_2.result == 'success' &&
       needs.round_2.outputs.verdict == 'FIX' &&
@@ -699,7 +700,7 @@ jobs:
     secrets: inherit
 
   finalize_verdict:
-    needs: [create_pr, round_1, round_2, round_3]
+    needs: [create_pr, apply_patch, round_1, round_2, round_3]
     if: always()
     runs-on: ubuntu-latest
     permissions:
