@@ -127,6 +127,20 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series,
     }
 
 
+def _baseline_majority_class_accuracy(y_train: pd.Series, y_test: pd.Series) -> float:
+    """Simple baseline: always predict whichever class (up/down) was more
+    frequent in the TRAINING set (never peeking at y_test's own balance --
+    that would leak test information into the baseline itself). A trained
+    model that cannot beat this on the same held-out test set is providing
+    no directional information beyond that period's own class balance, so
+    this is computed and surfaced alongside every real model's accuracy
+    rather than left as an abstract "~50% for a coin flip" claim in prose.
+    """
+    majority_class = 1 if len(y_train) and y_train.mean() >= 0.5 else 0
+    baseline_pred = np.full(len(y_test), majority_class)
+    return float(accuracy_score(y_test, baseline_pred))
+
+
 def _compute_metrics(y_test, y_pred, y_prob) -> dict:
     """Compute classification metrics."""
     metrics = {
@@ -147,12 +161,12 @@ def _compute_metrics(y_test, y_pred, y_prob) -> dict:
 
 def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
                      model_type: str = "Random Forest",
-                     test_size: float = 0.2) -> dict:
+                     test_size: float = 0.2, lookahead: int = 1) -> dict:
     """
     Full ML pipeline: prepare data, split, train, evaluate.
     Returns results dict with metrics, feature importance, and predictions.
     """
-    X, y, index = prepare_ml_dataset(prices, volume)
+    X, y, index = prepare_ml_dataset(prices, volume, lookahead=lookahead)
 
     if X is None:
         return {"error": "Insufficient data for ML analysis. Need at least 50 observations."}
@@ -171,6 +185,23 @@ def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
         result["train_size"] = len(X_train)
         result["test_size"] = len(X_test)
         result["test_index"] = X_test.index
+        # Explicit train/test window disclosure (M5 -- issue #18 Stage 5):
+        # the page previously only showed observation COUNTS, never the
+        # actual as-of date range the "out-of-sample" test metrics apply
+        # to, which is required to judge whether a result is even current.
+        result["train_start"] = str(X_train.index.min().date())
+        result["train_end"] = str(X_train.index.max().date())
+        result["test_start"] = str(X_test.index.min().date())
+        result["test_end"] = str(X_test.index.max().date())
+        # Target definition, made explicit and derived from the actual
+        # `lookahead` argument rather than a hardcoded "next-day" string, so
+        # this can never silently drift from what prepare_ml_dataset() (and
+        # the label it built) actually computed.
+        result["lookahead_periods"] = lookahead
+        # Simple baseline (M5): a model that cannot beat "always predict the
+        # training set's majority class" on the SAME held-out test set is
+        # not demonstrating real directional skill for this ETF/period.
+        result["baseline_accuracy"] = round(_baseline_majority_class_accuracy(y_train, y_test), 4)
         result["disclaimer"] = DISCLAIMER
         result["error"] = None
         return result

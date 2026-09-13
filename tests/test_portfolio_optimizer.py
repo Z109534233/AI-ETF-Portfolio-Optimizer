@@ -16,10 +16,27 @@ i18n behavior at the page level, not just the pure engine functions.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
 
 import numpy as np
 import pandas as pd
+
+
+def _apptest_from_file(rel_path, **kwargs):
+    """Wrapper around streamlit.testing.v1.AppTest.from_file that always
+    resolves page paths relative to the repo root rather than relying on
+    AppTest's own path resolution, which changed between Streamlit
+    versions: older versions resolved relative paths against the process
+    CWD, current versions resolve them against the file that calls
+    from_file() (i.e. this tests/ directory), causing every "pages/X.py"
+    literal here to 404 as tests/pages/X.py. Accepts already-absolute
+    paths unchanged so callers don't need to know which case applies.
+    """
+    from streamlit.testing.v1 import AppTest
+
+    path = rel_path if os.path.isabs(rel_path) else os.path.join(REPO_ROOT, rel_path)
+    return AppTest.from_file(path, **kwargs)
 
 from src.portfolio_optimizer import (
     run_optimization, validate_weight_constraints, backtest_portfolio,
@@ -71,9 +88,20 @@ RESULTS = []
 
 
 def check(name: str, condition: bool, detail: str = ""):
+    """Record a checkpoint result and enforce it as a real pytest assertion.
+
+    Historically this only appended to RESULTS and printed, never raising --
+    which meant every test_* function here "passed" under pytest regardless
+    of whether its internal checks failed, since pytest only fails a test on
+    an uncaught exception. Raising AssertionError here makes pytest actually
+    fail on a false condition while still preserving the RESULTS log used by
+    main()'s standalone aggregate report.
+    """
     status = "PASS" if condition else "FAIL"
     RESULTS.append((name, status, detail))
     print(f"[{status}] {name}" + (f" -- {detail}" if detail and status == "FAIL" else ""))
+    if not condition:
+        raise AssertionError(f"{name}" + (f" -- {detail}" if detail else ""))
 
 
 def _find_run_button(at):
@@ -237,7 +265,7 @@ def test_i_global_market_state():
 
     st.page_link = lambda *a, **k: None  # pre-existing AppTest sub-page limitation, unrelated to this change
 
-    at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
 
@@ -292,7 +320,7 @@ def test_j_i18n():
     )
 
     for lang in ("zh-TW", "en"):
-        at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
         at.session_state["language"] = lang
         at.run()
         exc = at.exception[0] if at.exception else None
@@ -308,6 +336,43 @@ def test_j_i18n():
                 if label:
                     leaked += key_pattern.findall(str(label))
         check(f"J.{lang}.no_raw_keys", len(leaked) == 0, str(leaked))
+
+
+# ── Test K: Methodology & Assumptions panel discloses the ACTUAL solver per
+# method -- Equal Weight uses no optimizer at all, and Risk Parity uses its
+# own fixed bounds independent of the sidebar sliders, so claiming
+# "via scipy SLSQP" + the sidebar's [min, max] bounds for either would
+# misrepresent how that method actually produced its weights ─────────────
+def test_k_methodology_disclosure_accurate_per_method():
+    at = _setup_ef_page(method="Equal Weight", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("K.equal_weight.no_exception", exc is None, str(exc))
+    if not exc:
+        corpus = "\n".join(m.value for m in at.markdown)
+        check("K.equal_weight.no_false_slsqp_claim", "via scipy SLSQP" not in corpus, "")
+        check("K.equal_weight.discloses_no_optimizer",
+              "no numerical optimizer is used" in corpus, corpus[:400])
+
+    at = _setup_ef_page(method="Risk Parity", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("K.risk_parity.no_exception", exc is None, str(exc))
+    if not exc:
+        corpus = "\n".join(m.value for m in at.markdown)
+        check("K.risk_parity.discloses_own_fixed_bounds",
+              "own fixed per-ETF bounds of [0.1%, 100%]" in corpus, corpus[:400])
+        check("K.risk_parity.discloses_rf_not_in_objective",
+              "not part of this objective" in corpus, corpus[:400])
+
+    at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("K.max_sharpe.no_exception", exc is None, str(exc))
+    if not exc:
+        corpus = "\n".join(m.value for m in at.markdown)
+        # Max Sharpe genuinely does solve via SLSQP against the sidebar's
+        # own bounds, so the original (generic) disclosure text is accurate here.
+        check("K.max_sharpe.discloses_slsqp_and_sidebar_bounds",
+              "via scipy SLSQP" in corpus and "Constraints: weights sum to 100%" in corpus,
+              corpus[:400])
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -420,7 +485,7 @@ def test_sc_g_no_side_effects():
 
     st.page_link = lambda *a, **k: None
 
-    at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
 
@@ -454,7 +519,7 @@ def test_sc_h_switch_strategy():
 
     st.page_link = lambda *a, **k: None
 
-    at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
 
@@ -502,7 +567,7 @@ def test_sc_i_i18n():
     )
 
     for lang in ("zh-TW", "en"):
-        at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
         at.session_state["language"] = lang
         at.run()
         run_btn = _find_run_button(at)
@@ -538,7 +603,7 @@ def test_sc_j_render_output_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
 
     for lang in ("zh-TW", "en"):
-        at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
         at.session_state["language"] = lang
         at.run()
         run_btn = _find_run_button(at)
@@ -599,7 +664,7 @@ def _setup_ef_page(method=None, lang="en", tickers=None, workspace=None, sub_vie
     st.page_link = lambda *a, **k: None
     tickers = tickers if tickers is not None else _EF_TEST_TICKERS
 
-    at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     at.session_state["language"] = lang
     at.run()
 
@@ -1168,7 +1233,7 @@ def _run_receiving_page(page_path, current_portfolio, lang="en", extra_session=N
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
-    at = AppTest.from_file(page_path, default_timeout=180)
+    at = _apptest_from_file(page_path, default_timeout=180)
     at.session_state["language"] = lang
     if current_portfolio is not None:
         at.session_state["current_portfolio"] = current_portfolio
@@ -1258,6 +1323,59 @@ def test_ph_c_min_vol_handoff_to_risk_analytics():
     _check_handoff_holdings_shown("PH-C.risk_analytics", cp["weights"], corpus)
     check("PH-C.risk_analytics_shows_strategy",
           "Minimum Volatility" in corpus, corpus[:0])
+
+
+# ── PH-K: Equal Weight build -> Market Intelligence's Portfolio Impact
+# section prefers the canonical current_portfolio over any saved database
+# record (Issue #18 Stage 7) ─────────────────────────────────────────────
+def test_ph_k_handoff_to_market_intelligence_prefers_current_portfolio():
+    at, cp = _build_current_portfolio_via_optimizer("Equal Weight")
+    check("PH-K.optimizer_no_exception", not at.exception, str(at.exception))
+    check("PH-K.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+
+    mi_at = _run_receiving_page("pages/8_Market_Intelligence.py", cp)
+    exc2 = mi_at.exception[0] if mi_at.exception else None
+    check("PH-K.market_intelligence_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    corpus = "\n".join(m.value for m in mi_at.markdown)
+    strategy_label = "Equal Weight"
+    check("PH-K.shows_current_portfolio_strategy_label", strategy_label in corpus, corpus[:0])
+    check("PH-K.uses_current_portfolio_caption",
+          "current portfolio" in corpus.lower(), corpus[:0])
+
+
+# ── PH-J: Maximum Sharpe build -> AI Advisor receives exact weights and
+# synthesizes them (Issue #18 Stage 6/7) ─────────────────────────────────
+def test_ph_j_max_sharpe_handoff_to_ai_advisor():
+    at, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("PH-J.optimizer_no_exception", not at.exception, str(at.exception))
+    check("PH-J.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+
+    ai_at = _run_receiving_page("pages/6_AI_Advisor.py", cp)
+    exc2 = ai_at.exception[0] if ai_at.exception else None
+    check("PH-J.ai_advisor_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    corpus = "\n".join(m.value for m in ai_at.markdown)
+    _check_handoff_holdings_shown("PH-J.ai_advisor", cp["weights"], corpus)
+    check("PH-J.ai_advisor_uses_current_portfolio_source",
+          "current portfolio" in corpus.lower() or "current_portfolio" in ai_at.session_state,
+          corpus[:0])
+    ai_result = ai_at.session_state["ai_result"] if "ai_result" in ai_at.session_state else None
+    check("PH-J.ai_result_built", ai_result is not None)
+    if ai_result is not None:
+        ctx = ai_result["context"]
+        check("PH-J.context_portfolio_source_is_current", ctx["portfolio_source"] == "current", ctx["portfolio_source"])
+        check("PH-J.context_weights_match_handoff", ctx["portfolio"]["weights"] == cp["weights"],
+              f"{ctx['portfolio']['weights']} vs {cp['weights']}")
+        check("PH-J.context_strategy_matches", ctx["portfolio"]["strategy"] == cp["strategy"], ctx["portfolio"]["strategy"])
+        check("PH-J.narrative_mentions_top_holding",
+              max(cp["weights"], key=cp["weights"].get) in ai_result["analysis"], "")
 
 
 # ── PH-D: current_portfolio remains available across a plain rerun
@@ -1375,6 +1493,7 @@ def test_ph_i_handoff_no_raw_keys():
     for page_path, name in (
         ("pages/3_Investment_Simulator.py", "simulator"),
         ("pages/4_Risk_Analytics.py", "risk"),
+        ("pages/6_AI_Advisor.py", "ai_advisor"),
     ):
         for portfolio, state_label in ((cp, "with_portfolio"), (None, "empty_state")):
             for lang in ("zh-TW", "en"):
@@ -1413,7 +1532,7 @@ def _setup_sim_page(lang="en", current_portfolio=None, simulation_mode=None,
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
 
-    at = AppTest.from_file("pages/3_Investment_Simulator.py", default_timeout=180)
+    at = _apptest_from_file("pages/3_Investment_Simulator.py", default_timeout=180)
     at.session_state["language"] = lang
     if current_portfolio is not None:
         at.session_state["current_portfolio"] = current_portfolio
@@ -1590,7 +1709,13 @@ def test_sim_f_historical_simulation_without_portfolio():
           next((b for b in at.button if b.key == "sim_run_btn"), None) is None)
     corpus = "\n".join(m.value for m in at.markdown)
     check("SIM-F.no_future_projection_results_section", "Simulation Results" not in corpus, corpus[:200])
-    check("SIM-F.no_historical_kpis_without_portfolio", "kpi-card" not in corpus, "")
+    # NOTE: checks for an actual rendered KPI card DIV, not the bare
+    # substring "kpi-card" -- load_css() unconditionally injects the whole
+    # assets/style.css (including the ".kpi-card { ... }" class selector)
+    # into a <style> markdown element on every page load, so a plain
+    # substring check always matches regardless of whether any KPI card
+    # was ever rendered.
+    check("SIM-F.no_historical_kpis_without_portfolio", '<div class="kpi-card">' not in corpus, "")
 
 
 # ── SIM-G: probability metric label matches its actual definition ───────
@@ -1929,6 +2054,65 @@ def test_hist_k_cross_page_handoff_unchanged():
     check("HIST-K.tickers_unchanged", cp_in_simulator["tickers"] == cp["tickers"], cp_in_simulator["tickers"])
 
 
+# ── HIST-L: a ticker whose price download fails must be visibly excluded,
+# with the DISPLAYED allocation matching what was ACTUALLY invested (i.e.
+# renormalized over the survivors), never silently showing the original
+# pre-drop weights while the backtest itself quietly redistributes capital
+# to a different, unstated allocation ────────────────────────────────────
+def test_hist_l_missing_ticker_redistribution_disclosed_accurately():
+    import src.data_loader as data_loader_mod
+    import pandas as pd
+
+    def _fake_download(tickers, start_date, end_date, price_field="Close"):
+        dates = pd.bdate_range("2015-01-01", "2024-12-31")
+        data = {}
+        for tk in tickers:
+            if tk == "ZZMISSING":
+                continue  # simulates a download failure for this one ticker
+            rng = np.random.default_rng(abs(hash(tk)) % (2**32))
+            data[tk] = 100 * np.cumprod(1 + rng.normal(0.0003, 0.01, len(dates)))
+        return pd.DataFrame(data, index=dates)
+
+    original = data_loader_mod.download_etf_data
+    data_loader_mod.download_etf_data = _fake_download
+    try:
+        cp = {
+            "strategy": "Equal Weight", "market": "United States",
+            "tickers": ["VOO", "ZZMISSING"], "weights": {"VOO": 0.5, "ZZMISSING": 0.5},
+            "investment_amount": 10000.0, "expected_return": 0.1, "volatility": 0.15,
+            "sharpe_ratio": 0.6,
+        }
+        at = _run_receiving_page("pages/3_Investment_Simulator.py", cp, lang="en")
+        for w in at.selectbox:
+            if w.key == "simulation_mode":
+                w.set_value("Historical Simulation")
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("HIST-L.no_exception", exc is None, str(exc))
+        if exc:
+            return
+
+        warnings_text = "\n".join(w.value for w in at.warning)
+        check("HIST-L.missing_ticker_surfaced", "ZZMISSING" in warnings_text, warnings_text)
+        check("HIST-L.warning_is_translated_not_hardcoded",
+              "No usable historical price data for" in warnings_text, warnings_text)
+
+        corpus = "\n".join(c.value for c in at.caption)
+        check("HIST-L.disclaimer_shows_100pct_voo_not_50pct",
+              "VOO 100.00%" in corpus, corpus)
+        check("HIST-L.disclaimer_omits_missing_ticker",
+              "ZZMISSING" not in corpus, corpus)
+        check("HIST-L.redistribution_explicitly_noted",
+              "redistributes their weight" in corpus, corpus)
+
+        active_weights = at.session_state["hist_params"]["active_weights"]
+        check("HIST-L.active_weights_excludes_missing", "ZZMISSING" not in active_weights, active_weights)
+        check("HIST-L.active_weights_sums_to_one",
+              abs(sum(active_weights.values()) - 1.0) < 1e-9, active_weights)
+    finally:
+        data_loader_mod.download_etf_data = original
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Taiwan ETF Universe expansion. Pure data/architecture tests (TWU-*) need
 # no network access -- src/etf_database.py is a static in-memory snapshot
@@ -2128,7 +2312,7 @@ def test_twu_regression_multiselect_survives_unrelated_rerun():
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
 
-    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
     region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
@@ -2168,7 +2352,7 @@ def test_twu_cross_page_consistency():
     new_ticker = "00713"  # not in the old hardcoded 6-ticker Taiwan list
     check("TWU-cross.new_ticker_not_in_old_list", new_ticker not in _OLD_HARDCODED_TAIWAN_TICKERS)
 
-    etf_at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    etf_at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     etf_at.session_state["language"] = "en"
     etf_at.run()
     region_w = next((w for w in etf_at.selectbox if w.key == "selected_region"), None)
@@ -2191,7 +2375,7 @@ def test_twu_cross_page_consistency():
         except Exception:
             return None
 
-    opt_at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    opt_at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     opt_at.session_state["language"] = "en"
     opt_at.session_state["selected_region"] = sget(etf_at, "selected_region")
     opt_at.session_state["_selected_region_shadow"] = sget(etf_at, "_selected_region_shadow")
@@ -2245,7 +2429,7 @@ def test_taf_c_d_management_style_filter_with_search():
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
 
-    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
     region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
@@ -2346,7 +2530,7 @@ def test_taf_k_market_state_unchanged_during_search():
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
 
-    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
     region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
@@ -2642,7 +2826,7 @@ def test_hld_j_i18n():
         _hld_mod._cached_fetch_raw.clear()
         with patch.object(_hld_mod, "_fetch_yahoo_topholdings_raw",
                            lambda sym: (_HLD_FIXTURE_0050, True)):
-            at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+            at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
             at.session_state["language"] = lang
             at.run()
             # ETF Analysis Full Page Workspace Redesign: Holdings content
@@ -2772,7 +2956,7 @@ def test_geu_a_benchmark_regression_us_taiwan_uk():
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
 
-    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
 
@@ -2854,7 +3038,7 @@ def test_geu_e_new_etf_selection_persists_across_views():
         except Exception:
             return default
 
-    etf_at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    etf_at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     etf_at.session_state["language"] = "en"
     etf_at.run()
     region_w = next(w for w in etf_at.selectbox if w.key == "selected_region")
@@ -2875,7 +3059,7 @@ def test_geu_e_new_etf_selection_persists_across_views():
     # session_state carryover (two separate AppTest instances do NOT share
     # session_state automatically -- see test_twu_cross_page_consistency's
     # docstring precedent -- so it's seeded explicitly here).
-    opt_at = AppTest.from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    opt_at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     opt_at.session_state["language"] = "en"
     opt_at.session_state["selected_region"] = sget(etf_at.session_state, "selected_region")
     opt_at.session_state["_selected_region_shadow"] = sget(etf_at.session_state, "_selected_region_shadow")
@@ -2962,7 +3146,7 @@ def test_geu_k_i18n():
 
     key_pattern = re.compile(r"\betf_filter_[a-zA-Z0-9_]*\b|\bfield_benchmark[a-zA-Z0-9_]*\b")
     for lang in ("zh-TW", "en"):
-        at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+        at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
         at.session_state["language"] = lang
         at.run()
         region_w = next(w for w in at.selectbox if w.key == "selected_region")
@@ -2992,7 +3176,7 @@ def _wsr_app(lang="en", region=None, tickers=None):
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
-    at = AppTest.from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     at.session_state["language"] = lang
     at.run()
     if region:
@@ -3016,6 +3200,43 @@ def _wsr_switch(at, workspace):
     ws.set_value(workspace)
     at.run()
     return at.exception[0] if at.exception else None
+
+
+# ── ETF Analysis: a ticker whose price download fails must be explicitly
+# named as excluded from THIS page's comparisons -- not just covered by
+# download_etf_data()'s own generic Yahoo-suffixed-symbol warning, which
+# never says "this was one of your selections" ──────────────────────────
+def test_etf_partial_download_failure_names_missing_selected_ticker():
+    import src.data_loader as data_loader_mod
+    import pandas as pd
+
+    def _fake_download(tickers, start_date, end_date, price_field="Close"):
+        dates = pd.bdate_range(start_date, end_date)
+        data = {}
+        for tk in tickers:
+            if tk == "VTI":
+                continue  # simulates this one ticker's download failing
+            rng = np.random.default_rng(abs(hash(tk)) % (2**32))
+            data[tk] = 100 * np.cumprod(1 + rng.normal(0.0003, 0.01, len(dates)))
+        return pd.DataFrame(data, index=dates)
+
+    original = data_loader_mod.download_etf_data
+    data_loader_mod.download_etf_data = _fake_download
+    try:
+        at = _wsr_app(region="United States", tickers=["VOO", "VTI"])
+        exc = at.exception[0] if at.exception else None
+        check("ETF-PARTIAL.no_exception", exc is None, str(exc))
+        if exc:
+            return
+        warnings_text = "\n".join(w.value for w in at.warning)
+        check("ETF-PARTIAL.names_dropped_ticker", "VTI" in warnings_text, warnings_text)
+        check("ETF-PARTIAL.explains_excluded_from_page",
+              "excluded from this page" in warnings_text, warnings_text)
+        # The surviving ticker must still be fully usable, not blocked.
+        all_text = "\n".join(m.value for m in at.markdown)
+        check("ETF-PARTIAL.survivor_still_usable", exc is None and "VOO" in all_text, "")
+    finally:
+        data_loader_mod.download_etf_data = original
 
 
 # ── Test A: Overview does not render every other workspace's content ────────
@@ -3243,7 +3464,13 @@ def test_owr_a_overview_lazy_rendering():
     check("OWR-A.diagnosis_snapshot_present", "Portfolio Diagnosis" in all_text)
     check("OWR-A.no_strategy_comparison", "Strategy Comparison" not in all_text)
     check("OWR-A.no_efficient_frontier_title", "Efficient Frontier" not in all_text)
-    check("OWR-A.no_backtest_card", "Backtest" not in all_text)
+    # NOTE: checks for the Backtest & Risk workspace's OWN card/section
+    # content (e.g. "Historical Backtest" / "Portfolio Backtest vs Equal
+    # Weight"), not the bare substring "Backtest" -- the always-visible
+    # Methodology & Assumptions panel (M1, present on every workspace by
+    # product spec) legitimately discloses the "Backtest Type" / historical
+    # backtest convention regardless of which workspace is active.
+    check("OWR-A.no_backtest_card", t("opt_backtest_card") not in all_text and t("opt_backtest_title") not in all_text)
     check("OWR-A.no_allocation_table_card", "Allocation Table" not in all_text)
     # Strategy Lab / Backtest & Risk's own sub-nav widgets must not even
     # exist in the tree yet (not just be visually hidden).
@@ -3519,159 +3746,179 @@ def test_owr_n_i18n_all_workspaces():
             check(f"OWR-N.{lang}.no_raw_keys_{label}", len(leaked) == 0, str(leaked))
 
 
+def _run(fn):
+    """Call a test_* function, catching AssertionError so main() can
+    still aggregate a full RESULTS report across all checks instead of
+    aborting at the first failure (check() now raises -- see above).
+    Unexpected exceptions are also caught and recorded as a failure so a
+    single broken test does not prevent the rest of the suite from
+    reporting, matching this script's original standalone behavior.
+    """
+    try:
+        fn()
+    except AssertionError:
+        pass
+    except Exception as e:
+        RESULTS.append((fn.__name__, "FAIL", f"unexpected exception: {e}"))
+        print(f"[FAIL] {fn.__name__} -- unexpected exception: {e}")
+
+
 def main():
-    test_a_equal_weight()
-    test_b_max_sharpe()
-    test_c_min_volatility()
-    test_d_strategy_outputs()
-    test_e_infeasible_min()
-    test_f_infeasible_max()
-    test_g_result_consistency()
-    test_h_backtest_uses_selected_weights()
-    test_i_global_market_state()
-    test_j_i18n()
+    _run(test_a_equal_weight)
+    _run(test_b_max_sharpe)
+    _run(test_c_min_volatility)
+    _run(test_d_strategy_outputs)
+    _run(test_e_infeasible_min)
+    _run(test_f_infeasible_max)
+    _run(test_g_result_consistency)
+    _run(test_h_backtest_uses_selected_weights)
+    _run(test_i_global_market_state)
+    _run(test_j_i18n)
+    _run(test_k_methodology_disclosure_accurate_per_method)
 
-    test_sc_a_all_three_appear()
-    test_sc_b_weights_sum_to_one()
-    test_sc_c_best_sharpe_badge_correct()
-    test_sc_d_lowest_vol_badge_correct()
-    test_sc_e_largest_position_correct()
-    test_sc_f_concentration_threshold()
-    test_sc_g_no_side_effects()
-    test_sc_h_switch_strategy()
-    test_sc_i_i18n()
-    test_sc_j_render_output_no_raw_keys()
+    _run(test_sc_a_all_three_appear)
+    _run(test_sc_b_weights_sum_to_one)
+    _run(test_sc_c_best_sharpe_badge_correct)
+    _run(test_sc_d_lowest_vol_badge_correct)
+    _run(test_sc_e_largest_position_correct)
+    _run(test_sc_f_concentration_threshold)
+    _run(test_sc_g_no_side_effects)
+    _run(test_sc_h_switch_strategy)
+    _run(test_sc_i_i18n)
+    _run(test_sc_j_render_output_no_raw_keys)
 
-    test_ef_a_equal_weight_current()
-    test_ef_b_max_sharpe_current_matches_comparison()
-    test_ef_c_min_vol_current_matches_comparison()
-    test_ef_d_frontier_only_feasible()
-    test_ef_d2_no_hook_near_min_vol()
-    test_ef_e_frontier_respects_constraints()
-    test_ef_f_monte_carlo_visually_secondary()
-    test_ef_g_no_duplicate_legend_labels()
-    test_ef_h_zh_no_raw_keys()
-    test_ef_i_en_no_raw_keys()
-    test_ef_j_switch_strategy_no_side_effects()
+    _run(test_ef_a_equal_weight_current)
+    _run(test_ef_b_max_sharpe_current_matches_comparison)
+    _run(test_ef_c_min_vol_current_matches_comparison)
+    _run(test_ef_d_frontier_only_feasible)
+    _run(test_ef_d2_no_hook_near_min_vol)
+    _run(test_ef_e_frontier_respects_constraints)
+    _run(test_ef_f_monte_carlo_visually_secondary)
+    _run(test_ef_g_no_duplicate_legend_labels)
+    _run(test_ef_h_zh_no_raw_keys)
+    _run(test_ef_i_en_no_raw_keys)
+    _run(test_ef_j_switch_strategy_no_side_effects)
 
-    test_pd_a_equal_weight()
-    test_pd_b_max_sharpe_structural()
-    test_pd_c_min_vol_structural()
-    test_pd_d_effective_holdings_formula()
-    test_pd_e_no_side_effects_on_rerender()
-    test_pd_f_switch_strategy_updates_diagnosis()
-    test_pd_g_zh_no_raw_keys()
-    test_pd_h_en_no_raw_keys()
-    test_pd_i_tooltips_present()
-    test_pd_j_top2_status_thresholds()
-    test_pd_k_concentrated_summary_interpolation()
+    _run(test_pd_a_equal_weight)
+    _run(test_pd_b_max_sharpe_structural)
+    _run(test_pd_c_min_vol_structural)
+    _run(test_pd_d_effective_holdings_formula)
+    _run(test_pd_e_no_side_effects_on_rerender)
+    _run(test_pd_f_switch_strategy_updates_diagnosis)
+    _run(test_pd_g_zh_no_raw_keys)
+    _run(test_pd_h_en_no_raw_keys)
+    _run(test_pd_i_tooltips_present)
+    _run(test_pd_j_top2_status_thresholds)
+    _run(test_pd_k_concentrated_summary_interpolation)
 
-    test_ph_a_equal_weight_handoff_to_simulator()
-    test_ph_b_max_sharpe_handoff_to_simulator()
-    test_ph_c_min_vol_handoff_to_risk_analytics()
-    test_ph_d_current_portfolio_persists_across_rerun()
-    test_ph_e_simulator_empty_state()
-    test_ph_f_risk_analytics_empty_state()
-    test_ph_g_language_switch_preserves_portfolio()
-    test_ph_h_market_state_unchanged_through_handoff()
-    test_ph_i_handoff_no_raw_keys()
+    _run(test_ph_a_equal_weight_handoff_to_simulator)
+    _run(test_ph_b_max_sharpe_handoff_to_simulator)
+    _run(test_ph_c_min_vol_handoff_to_risk_analytics)
+    _run(test_ph_d_current_portfolio_persists_across_rerun)
+    _run(test_ph_e_simulator_empty_state)
+    _run(test_ph_f_risk_analytics_empty_state)
+    _run(test_ph_g_language_switch_preserves_portfolio)
+    _run(test_ph_h_market_state_unchanged_through_handoff)
+    _run(test_ph_i_handoff_no_raw_keys)
 
-    test_sim_a_current_portfolio_arrives_intact()
-    test_sim_b_portfolio_historical_statistics_drives_simulation()
-    test_sim_c_market_scenario_drives_simulation()
-    test_sim_d_custom_assumptions_drive_simulation()
-    test_sim_e_switching_assumption_source_preserves_inputs()
-    test_sim_f_historical_simulation_without_portfolio()
-    test_sim_g_probability_label_matches_definition()
-    test_sim_h_advanced_settings_affect_model()
-    test_sim_i_i18n()
+    _run(test_sim_a_current_portfolio_arrives_intact)
+    _run(test_sim_b_portfolio_historical_statistics_drives_simulation)
+    _run(test_sim_c_market_scenario_drives_simulation)
+    _run(test_sim_d_custom_assumptions_drive_simulation)
+    _run(test_sim_e_switching_assumption_source_preserves_inputs)
+    _run(test_sim_f_historical_simulation_without_portfolio)
+    _run(test_sim_g_probability_label_matches_definition)
+    _run(test_sim_h_advanced_settings_affect_model)
+    _run(test_sim_i_i18n)
 
-    test_hist_a_initial_allocation()
-    test_hist_b_contributions()
-    test_hist_c_zero_contribution()
-    test_hist_d_zero_weight_holdings_no_effect()
-    test_hist_e_date_alignment()
-    test_hist_f_value_vs_contributions_distinct()
-    test_hist_g_max_drawdown()
-    test_hist_h_xirr()
-    test_hist_i_mode_switching_preserves_state()
-    test_hist_j_i18n()
-    test_hist_k_cross_page_handoff_unchanged()
+    _run(test_hist_a_initial_allocation)
+    _run(test_hist_b_contributions)
+    _run(test_hist_c_zero_contribution)
+    _run(test_hist_d_zero_weight_holdings_no_effect)
+    _run(test_hist_e_date_alignment)
+    _run(test_hist_f_value_vs_contributions_distinct)
+    _run(test_hist_g_max_drawdown)
+    _run(test_hist_h_xirr)
+    _run(test_hist_i_mode_switching_preserves_state)
+    _run(test_hist_j_i18n)
+    _run(test_hist_k_cross_page_handoff_unchanged)
+    _run(test_hist_l_missing_ticker_redistribution_disclosed_accurately)
 
-    test_twu_data_validation()
-    test_twu_a_taiwan_universe_much_larger()
-    test_twu_b_0050_searchable()
-    test_twu_c_new_etf_searchable_by_name_and_issuer()
-    test_twu_d_bond_etfs_included()
-    test_twu_e_active_management_style_architecture()
-    test_twu_f_leveraged_inverse_identified()
-    test_twu_g_twse_tpex_mapping_distinct()
-    test_twu_h_yahoo_failure_does_not_delete_from_universe()
-    test_twu_regression_multiselect_survives_unrelated_rerun()
-    test_twu_cross_page_consistency()
+    _run(test_twu_data_validation)
+    _run(test_twu_a_taiwan_universe_much_larger)
+    _run(test_twu_b_0050_searchable)
+    _run(test_twu_c_new_etf_searchable_by_name_and_issuer)
+    _run(test_twu_d_bond_etfs_included)
+    _run(test_twu_e_active_management_style_architecture)
+    _run(test_twu_f_leveraged_inverse_identified)
+    _run(test_twu_g_twse_tpex_mapping_distinct)
+    _run(test_twu_h_yahoo_failure_does_not_delete_from_universe)
+    _run(test_twu_regression_multiselect_survives_unrelated_rerun)
+    _run(test_twu_cross_page_consistency)
 
-    test_taf_a_search_00981a_uppercase()
-    test_taf_b_search_00981a_lowercase()
-    test_taf_c_d_management_style_filter_with_search()
-    test_taf_e_f_00403a_00406a_conditional()
-    test_taf_g_00631l_leveraged()
-    test_taf_h_00632r_inverse()
-    test_taf_i_no_integer_ticker_conversion()
-    test_taf_j_leading_zeros_intact()
-    test_taf_k_market_state_unchanged_during_search()
+    _run(test_taf_a_search_00981a_uppercase)
+    _run(test_taf_b_search_00981a_lowercase)
+    _run(test_taf_c_d_management_style_filter_with_search)
+    _run(test_taf_e_f_00403a_00406a_conditional)
+    _run(test_taf_g_00631l_leveraged)
+    _run(test_taf_h_00632r_inverse)
+    _run(test_taf_i_no_integer_ticker_conversion)
+    _run(test_taf_j_leading_zeros_intact)
+    _run(test_taf_k_market_state_unchanged_during_search)
 
-    test_hld_a_0050_holdings_load()
-    test_hld_b_search_ticker_and_name()
-    test_hld_c_top10_exact()
-    test_hld_d_concentration_formulas()
-    test_hld_e_data_date_present()
-    test_hld_f_active_etf_00981a()
-    test_hld_g_non_equity_asset_handling()
-    test_hld_h_cache_avoids_repeat_fetch()
-    test_hld_i_source_unavailable_handling()
-    test_hld_j_i18n()
-    test_hld_k_us_adapter_and_canonical_identification()
-    test_hld_l_lse_adapter_and_related_trading_lines()
-    test_hld_m_bond_etf_asset_type_default()
+    _run(test_hld_a_0050_holdings_load)
+    _run(test_hld_b_search_ticker_and_name)
+    _run(test_hld_c_top10_exact)
+    _run(test_hld_d_concentration_formulas)
+    _run(test_hld_e_data_date_present)
+    _run(test_hld_f_active_etf_00981a)
+    _run(test_hld_g_non_equity_asset_handling)
+    _run(test_hld_h_cache_avoids_repeat_fetch)
+    _run(test_hld_i_source_unavailable_handling)
+    _run(test_hld_j_i18n)
+    _run(test_hld_k_us_adapter_and_canonical_identification)
+    _run(test_hld_l_lse_adapter_and_related_trading_lines)
+    _run(test_hld_m_bond_etf_asset_type_default)
 
-    test_geu_a_benchmark_regression_us_taiwan_uk()
-    test_geu_b_taiwan_universe_not_old_curated_list()
-    test_geu_c_us_universe_not_old_curated_list()
-    test_geu_d_uk_universe_not_old_curated_list()
-    test_geu_e_new_etf_selection_persists_across_views()
-    test_geu_f_provider_failure_does_not_delete_bulk_etf()
-    test_geu_g_taiwan_required_searches()
-    test_geu_h_us_required_searches()
-    test_geu_i_uk_required_searches()
-    test_geu_j_master_schema_integrity()
-    test_geu_k_i18n()
+    _run(test_geu_a_benchmark_regression_us_taiwan_uk)
+    _run(test_geu_b_taiwan_universe_not_old_curated_list)
+    _run(test_geu_c_us_universe_not_old_curated_list)
+    _run(test_geu_d_uk_universe_not_old_curated_list)
+    _run(test_geu_e_new_etf_selection_persists_across_views)
+    _run(test_geu_f_provider_failure_does_not_delete_bulk_etf)
+    _run(test_geu_g_taiwan_required_searches)
+    _run(test_geu_h_us_required_searches)
+    _run(test_geu_i_uk_required_searches)
+    _run(test_geu_j_master_schema_integrity)
+    _run(test_geu_k_i18n)
 
-    test_wsr_a_overview_does_not_render_everything()
-    test_wsr_b_performance_navigation_preserves_focus_etf()
-    test_wsr_c_risk_navigation_works()
-    test_wsr_d_holdings_retains_focus_etf()
-    test_wsr_e_compare_multi_etf_works()
-    test_wsr_f_compare_single_etf_empty_state()
-    test_wsr_g_deep_analysis_works()
-    test_wsr_h_collapsed_sidebar_settings_preserved()
-    test_wsr_i_benchmark_not_reset_by_workspace_switch()
-    test_wsr_j_no_redundant_market_data_downloads_between_workspaces()
-    test_wsr_k_i18n_all_workspaces()
+    _run(test_etf_partial_download_failure_names_missing_selected_ticker)
+    _run(test_wsr_a_overview_does_not_render_everything)
+    _run(test_wsr_b_performance_navigation_preserves_focus_etf)
+    _run(test_wsr_c_risk_navigation_works)
+    _run(test_wsr_d_holdings_retains_focus_etf)
+    _run(test_wsr_e_compare_multi_etf_works)
+    _run(test_wsr_f_compare_single_etf_empty_state)
+    _run(test_wsr_g_deep_analysis_works)
+    _run(test_wsr_h_collapsed_sidebar_settings_preserved)
+    _run(test_wsr_i_benchmark_not_reset_by_workspace_switch)
+    _run(test_wsr_j_no_redundant_market_data_downloads_between_workspaces)
+    _run(test_wsr_k_i18n_all_workspaces)
 
-    test_owr_a_overview_lazy_rendering()
-    test_owr_b_allocation_shows_canonical_weights()
-    test_owr_c_strategy_comparison_works()
-    test_owr_d_efficient_frontier_works()
-    test_owr_e_stratlab_subview_switch_preserves_portfolio()
-    test_owr_f_historical_performance_works()
-    test_owr_g_drawdown_analysis_works()
-    test_owr_h_diagnosis_values_consistent_across_views()
-    test_owr_i_save_portfolio_receives_current_portfolio()
-    test_owr_j_simulator_handoff_unaffected_by_redesign()
-    test_owr_k_risk_analytics_handoff_unaffected_by_redesign()
-    test_owr_l_workspace_switch_preserves_sidebar_inputs()
-    test_owr_m_language_switch_preserves_workspace_and_portfolio()
-    test_owr_n_i18n_all_workspaces()
+    _run(test_owr_a_overview_lazy_rendering)
+    _run(test_owr_b_allocation_shows_canonical_weights)
+    _run(test_owr_c_strategy_comparison_works)
+    _run(test_owr_d_efficient_frontier_works)
+    _run(test_owr_e_stratlab_subview_switch_preserves_portfolio)
+    _run(test_owr_f_historical_performance_works)
+    _run(test_owr_g_drawdown_analysis_works)
+    _run(test_owr_h_diagnosis_values_consistent_across_views)
+    _run(test_owr_i_save_portfolio_receives_current_portfolio)
+    _run(test_owr_j_simulator_handoff_unaffected_by_redesign)
+    _run(test_owr_k_risk_analytics_handoff_unaffected_by_redesign)
+    _run(test_owr_l_workspace_switch_preserves_sidebar_inputs)
+    _run(test_owr_m_language_switch_preserves_workspace_and_portfolio)
+    _run(test_owr_n_i18n_all_workspaces)
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")

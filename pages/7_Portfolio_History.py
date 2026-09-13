@@ -14,11 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import load_all_portfolios, delete_portfolio, init_database
 from src.etf_database import get_country
+from src.financial_metrics import portfolio_diagnosis
 from src.charts import allocation_donut_chart, apply_dark_theme, CHART_COLORS
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, empty_state
+    chart_card, render_footer, empty_state, error_state
 )
 from src.i18n import t, t_opt_method, t_country
 
@@ -37,8 +38,86 @@ with st.sidebar:
     render_sidebar_nav()
     render_sidebar_footer()
 
+
+def _safe_pct(value, decimals: int = 2) -> str:
+    """Format a fraction as a percentage, or "—" for a missing/corrupt value
+    (e.g. a NULL numeric column on a record saved before a schema change or
+    edited outside the app) instead of crashing the whole page on one bad row."""
+    try:
+        return f"{float(value):.{decimals}%}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _safe_num(value, fmt: str = ",.0f") -> str:
+    try:
+        return f"{float(value):{fmt}}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _infer_market_from_holdings(holdings: dict):
+    """The saved-portfolio schema does not persist which market/region a
+    portfolio was built from (src/database.py's Portfolio table has no
+    `market` column). Rather than a schema migration, infer it from the
+    saved tickers' known country at reload time -- the same ETF database
+    already used everywhere else for this -- via a simple majority vote.
+    Returns None (handled gracefully downstream) if no ticker is recognized.
+    """
+    countries = [get_country(tk) for tk in holdings if get_country(tk)]
+    if not countries:
+        return None
+    return max(set(countries), key=countries.count)
+
+
+def _set_as_current_portfolio(p: dict) -> None:
+    """Reload a saved portfolio into the ONE canonical
+    st.session_state["current_portfolio"] object (same shape Portfolio
+    Optimizer builds it -- see pages/2_Portfolio_Optimizer.py) so Investment
+    Simulator / Risk Analytics / AI Advisor can consume it directly without
+    the user having to rebuild it in the Optimizer. largest_position/
+    effective_holdings are recomputed from the saved weights (portfolio_diagnosis,
+    the same function the Optimizer itself uses) rather than fabricated,
+    since the DB does not store them. Fields the DB schema has no column for
+    (market, investment_goal, risk_tolerance, investment_horizon, max_drawdown,
+    historical_start_date/end_date) are set to None/inferred rather than guessed;
+    every downstream reader already treats these as optional via .get().
+    """
+    holdings = p["holdings"] or {}
+    diag = portfolio_diagnosis(holdings) if holdings else None
+    st.session_state.current_portfolio = {
+        "portfolio_id": f"history-{p['id']}",
+        "strategy": p["optimization_method"],
+        "market": _infer_market_from_holdings(holdings),
+        "tickers": list(holdings.keys()),
+        "weights": dict(holdings),
+        "investment_amount": p["investment_amount"],
+        "investment_goal": None,
+        "risk_tolerance": None,
+        "investment_horizon": None,
+        "expected_return": p["expected_return"],
+        "volatility": p["expected_volatility"],
+        "sharpe_ratio": p["sharpe_ratio"],
+        "max_drawdown": None,
+        "largest_position": (
+            {"ticker": diag["largest_ticker"], "weight": diag["largest_weight"]} if diag else None
+        ),
+        "effective_holdings": diag["effective_holdings"] if diag else None,
+        "historical_start_date": None,
+        "historical_end_date": None,
+        "generated_at": p["created_at"],
+    }
+    st.session_state["_hist_just_set_name"] = p["name"]
+
+
 # ── Load Portfolios ───────────────────────────────────────────────────────────
-portfolios = load_all_portfolios()
+try:
+    portfolios = load_all_portfolios(raise_on_error=True)
+except Exception as e:
+    error_state(t("hist_load_error_title"), t("hist_load_error_desc", error=str(e)))
+    disclaimer_box()
+    render_footer()
+    st.stop()
 
 if not portfolios:
     empty_state(
@@ -48,27 +127,42 @@ if not portfolios:
     )
     st.stop()
 
+_just_set_name = st.session_state.pop("_hist_just_set_name", None)
+if _just_set_name:
+    st.success(t("hist_set_as_current_success", name=_just_set_name))
+
 # ── Summary Table ─────────────────────────────────────────────────────────────
 section_header(t("hist_saved_portfolios_count", count=len(portfolios)))
 
 summary_rows = []
+_has_corrupt_record = False
 for p in portfolios:
-    holdings_str = ", ".join([f"{tk} ({w:.0%})" for tk, w in
-                               sorted(p["holdings"].items(), key=lambda x: x[1], reverse=True)[:5]])
+    holdings = p["holdings"] or {}
+    try:
+        holdings_str = ", ".join([f"{tk} ({w:.0%})" for tk, w in
+                                   sorted(holdings.items(), key=lambda x: x[1], reverse=True)[:5]])
+    except (TypeError, ValueError):
+        holdings_str = "—"
+        _has_corrupt_record = True
     summary_rows.append({
         "ID": p["id"],
-        t("hist_col_name"): p["name"],
+        t("hist_col_name"): p["name"] or "—",
         t("hist_col_created"): p["created_at"],
-        t("hist_col_method"): t_opt_method(p["optimization_method"]),
-        t("hist_col_investment"): f"${p['investment_amount']:,.0f}",
-        t("hist_col_exp_return"): f"{p['expected_return']:.2%}",
-        t("hist_col_exp_volatility"): f"{p['expected_volatility']:.2%}",
-        t("hist_col_sharpe"): f"{p['sharpe_ratio']:.2f}",
+        t("hist_col_method"): t_opt_method(p["optimization_method"]) if p["optimization_method"] else "—",
+        t("hist_col_investment"): f"${_safe_num(p['investment_amount'])}",
+        t("hist_col_exp_return"): _safe_pct(p["expected_return"]),
+        t("hist_col_exp_volatility"): _safe_pct(p["expected_volatility"]),
+        t("hist_col_sharpe"): _safe_num(p["sharpe_ratio"], ",.2f"),
         t("hist_col_holdings"): holdings_str,
     })
+    if any(v is None for v in (p["investment_amount"], p["expected_return"],
+                                p["expected_volatility"], p["sharpe_ratio"])):
+        _has_corrupt_record = True
 
 summary_df = pd.DataFrame(summary_rows)
 with chart_card(t("hist_summary_card")):
+    if _has_corrupt_record:
+        st.caption(t("hist_corrupt_record_notice"))
     st.dataframe(summary_df.set_index("ID"), use_container_width=True)
 
     # ── Download History ──────────────────────────────────────────────────────
@@ -87,17 +181,32 @@ selected_portfolio = next((p for p in portfolios if p["id"] == selected_id), Non
 if selected_portfolio:
     col_left, col_right = st.columns([1, 1])
 
+    _current = st.session_state.get("current_portfolio")
+    _is_current = bool(_current and _current.get("portfolio_id") == f"history-{selected_portfolio['id']}")
+
     with col_left:
         with chart_card(selected_portfolio["name"], selected_portfolio["created_at"]):
+            if _is_current:
+                st.caption(f"✓ {t('hist_current_portfolio_badge')}")
             detail_data = {
-                t("metric_optimization_method"): t_opt_method(selected_portfolio["optimization_method"]),
-                t("field_investment_amount_usd"): f"${selected_portfolio['investment_amount']:,.2f}",
-                t("metric_expected_annual_return"): f"{selected_portfolio['expected_return']:.2%}",
-                t("metric_expected_volatility"): f"{selected_portfolio['expected_volatility']:.2%}",
-                t("metric_sharpe_ratio"): f"{selected_portfolio['sharpe_ratio']:.2f}",
+                t("metric_optimization_method"): (
+                    t_opt_method(selected_portfolio["optimization_method"])
+                    if selected_portfolio["optimization_method"] else "—"
+                ),
+                t("field_investment_amount_usd"): f"${_safe_num(selected_portfolio['investment_amount'], ',.2f')}",
+                t("metric_expected_annual_return"): _safe_pct(selected_portfolio["expected_return"]),
+                t("metric_expected_volatility"): _safe_pct(selected_portfolio["expected_volatility"]),
+                t("metric_sharpe_ratio"): _safe_num(selected_portfolio["sharpe_ratio"], ",.2f"),
             }
             for k, v in detail_data.items():
                 st.metric(k, v)
+
+            if selected_portfolio["holdings"]:
+                st.button(
+                    t("hist_set_as_current_btn"), key=f"hist_set_current_{selected_portfolio['id']}",
+                    type="primary", use_container_width=True, help=t("hist_set_as_current_help"),
+                    on_click=_set_as_current_portfolio, args=(selected_portfolio,),
+                )
 
             if selected_portfolio["notes"]:
                 st.markdown(f"**{t('hist_notes_label')}**: {selected_portfolio['notes']}")
@@ -108,7 +217,7 @@ if selected_portfolio:
                     {t("hist_col_ticker"): tk,
                      t("hist_col_region"): t_country(get_country(tk)) if get_country(tk) else t("hist_region_unknown"),
                      t("hist_col_weight"): f"{w:.2%}",
-                     t("hist_col_amount"): f"${w * selected_portfolio['investment_amount']:,.2f}"}
+                     t("hist_col_amount"): f"${w * (selected_portfolio['investment_amount'] or 0):,.2f}"}
                     for tk, w in sorted(selected_portfolio["holdings"].items(), key=lambda x: x[1], reverse=True)
                 ])
                 st.markdown(f"**{t('hist_holdings_label')}**")
@@ -137,26 +246,36 @@ if len(portfolios) >= 2:
     port_b = next((p for p in portfolios if p["id"] == id_b), None)
 
     if port_a and port_b:
-        # Comparison table
+        # Comparison table. Effective Holdings (inverse-HHI) is recomputed
+        # from each portfolio's actual saved weights via the same
+        # portfolio_diagnosis() the Optimizer itself uses -- a genuinely
+        # available concentration metric, not a hard-coded/estimated one --
+        # so "5 ETFs selected" vs. "5 ETFs actually diversifying risk" stays
+        # visible when comparing, not just raw holdings count.
+        diag_a = portfolio_diagnosis(port_a["holdings"]) if port_a["holdings"] else None
+        diag_b = portfolio_diagnosis(port_b["holdings"]) if port_b["holdings"] else None
         metric_col = t("hist_col_name")
         compare_data = {
             metric_col: [t("metric_optimization_method"), t("field_investment_amount_usd"), t("metric_expected_return"),
-                         t("metric_expected_volatility"), t("metric_sharpe_ratio"), t("metric_number_of_holdings")],
+                         t("metric_expected_volatility"), t("metric_sharpe_ratio"), t("metric_number_of_holdings"),
+                         t("hist_col_effective_holdings")],
             port_a["name"]: [
-                t_opt_method(port_a["optimization_method"]),
-                f"${port_a['investment_amount']:,.0f}",
-                f"{port_a['expected_return']:.2%}",
-                f"{port_a['expected_volatility']:.2%}",
-                f"{port_a['sharpe_ratio']:.2f}",
+                t_opt_method(port_a["optimization_method"]) if port_a["optimization_method"] else "—",
+                f"${_safe_num(port_a['investment_amount'])}",
+                _safe_pct(port_a["expected_return"]),
+                _safe_pct(port_a["expected_volatility"]),
+                _safe_num(port_a["sharpe_ratio"], ",.2f"),
                 str(len(port_a["holdings"])),
+                f"{diag_a['effective_holdings']:.2f}" if diag_a else "—",
             ],
             port_b["name"]: [
-                t_opt_method(port_b["optimization_method"]),
-                f"${port_b['investment_amount']:,.0f}",
-                f"{port_b['expected_return']:.2%}",
-                f"{port_b['expected_volatility']:.2%}",
-                f"{port_b['sharpe_ratio']:.2f}",
+                t_opt_method(port_b["optimization_method"]) if port_b["optimization_method"] else "—",
+                f"${_safe_num(port_b['investment_amount'])}",
+                _safe_pct(port_b["expected_return"]),
+                _safe_pct(port_b["expected_volatility"]),
+                _safe_num(port_b["sharpe_ratio"], ",.2f"),
                 str(len(port_b["holdings"])),
+                f"{diag_b['effective_holdings']:.2f}" if diag_b else "—",
             ],
         }
         compare_df = pd.DataFrame(compare_data).set_index(metric_col)

@@ -127,10 +127,19 @@ def save_portfolio(name: str, weights: dict, investment_amount: float,
         session.close()
 
 
-def load_all_portfolios() -> list:
-    """Load all saved portfolios from the database."""
+def load_all_portfolios(raise_on_error: bool = False) -> list:
+    """Load all saved portfolios from the database.
+
+    `raise_on_error=False` (default, existing behavior preserved for
+    current callers) swallows any failure and returns [] -- indistinguishable
+    from a genuinely empty table. Portfolio History needs to tell those two
+    states apart (a real DB/connection error vs. "no portfolios saved yet"),
+    so it passes `raise_on_error=True` and handles the exception itself.
+    """
     session = get_session()
     if session is None:
+        if raise_on_error:
+            raise RuntimeError("Could not open a database session.")
         return []
     try:
         portfolios = session.query(Portfolio).order_by(Portfolio.created_at.desc()).all()
@@ -152,6 +161,8 @@ def load_all_portfolios() -> list:
         return result
     except Exception as e:
         print(f"Error loading portfolios: {e}")
+        if raise_on_error:
+            raise
         return []
     finally:
         session.close()

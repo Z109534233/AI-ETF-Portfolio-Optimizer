@@ -147,7 +147,7 @@ model_name = result["model_name"]
 section_header(t("ml_results_title", model=t_model_type(model_name), ticker=ticker_used),
                t("ml_results_sub", train=result["train_size"], test=result["test_size"]))
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.markdown(metric_card_html(t("metric_accuracy"), f"{metrics['Accuracy']:.2%}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col2:
@@ -156,11 +156,39 @@ with col3:
     st.markdown(metric_card_html(t("metric_recall"), f"{metrics['Recall']:.2%}", color=COLORS["purple"]), unsafe_allow_html=True)
 with col4:
     st.markdown(metric_card_html(t("metric_f1_score"), f"{metrics['F1 Score']:.2%}", color=COLORS["warning"]), unsafe_allow_html=True)
+with col5:
+    st.markdown(metric_card_html(
+        t("metric_baseline_accuracy"), f"{result['baseline_accuracy']:.2%}",
+        color=COLORS["text_muted"],
+    ), unsafe_allow_html=True)
 
 if metrics.get("ROC AUC") != "N/A":
     col1, col2 = st.columns([1, 3])
     with col1:
         st.markdown(metric_card_html(t("metric_roc_auc"), f"{metrics['ROC AUC']:.4f}", color=COLORS["cyan"]), unsafe_allow_html=True)
+
+# ── Baseline comparison (M5 -- Stage 5): every model's accuracy is judged
+# against a simple "always predict the training set's majority class"
+# baseline computed on the SAME held-out test set, not left as an abstract
+# "~50% for a coin flip" claim buried in prose -- so a user can see
+# concretely whether THIS model, on THIS ETF/period, beat a trivial rule.
+_baseline_diff_pp = (metrics["Accuracy"] - result["baseline_accuracy"]) * 100
+if _baseline_diff_pp > 0:
+    st.caption(f"📊 {t('ml_beats_baseline', diff=f'{_baseline_diff_pp:.1f}')}")
+else:
+    st.caption(f"⚠️ {t('ml_does_not_beat_baseline', diff=f'{abs(_baseline_diff_pp):.1f}')}")
+st.caption(t("ml_baseline_help"))
+
+# ── Target / data-window disclosure (M5): the target definition and the
+# actual out-of-sample test date range were previously never shown -- only
+# observation COUNTS -- leaving "is this out-of-sample?" and "as of when?"
+# unanswered. i18n keys ml_prediction/ml_next_day_direction existed but
+# were dead (never referenced here); this replaces that gap outright.
+with st.expander(t("ml_target_definition_label"), expanded=False):
+    st.markdown(f"- **{t('ml_target_definition_label')}** — "
+                f"{t('ml_target_definition_value', lookahead=result['lookahead_periods'])}")
+    st.markdown(f"- **{t('ml_data_window_label')}** — "
+                f"{t('ml_data_window_value', train_start=result['train_start'], train_end=result['train_end'], train=result['train_size'], test_start=result['test_start'], test_end=result['test_end'], test=result['test_size'])}")
 
 # ── Charts ────────────────────────────────────────────────────────────────────
 section_header(t("ml_diagnostics_title"))

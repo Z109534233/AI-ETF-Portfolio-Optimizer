@@ -331,14 +331,27 @@ if simulation_mode == "Historical Simulation":
         with st.spinner(t("hist_running")):
             _missing = set(active_tickers) - set(hist_wide_prices.columns)
             if _missing:
-                st.warning(f"No usable price data for: {', '.join(sorted(_missing))}. "
-                           "These tickers were excluded from the historical simulation.")
+                st.warning(t("hist_missing_ticker_warning", tickers=", ".join(sorted(_missing))))
             _prepared = prepare_historical_prices(
                 hist_wide_prices, pd.Timestamp(effective_start), pd.Timestamp(effective_end),
             )
-            active_weights = {
-                tk: w for tk, w in current_portfolio["weights"].items() if tk in active_tickers
-            }
+            # Weights used for the backtest -- and for the "allocation used"
+            # disclaimer below -- must be the tickers ACTUALLY present in
+            # _prepared (active_tickers minus any that failed to download),
+            # renormalized to sum to 1. historical_backtest() already
+            # renormalizes internally over whatever tickers exist in its
+            # price columns, silently redistributing a missing ticker's
+            # capital to the survivors -- previously the disclaimer still
+            # showed the ORIGINAL pre-drop weights (including the missing
+            # ticker's), which no longer matched what was actually invested
+            # once a download failure occurred. Computing it the same way
+            # here means the displayed allocation always matches reality.
+            _backtest_tickers = [tk for tk in active_tickers if tk not in _missing]
+            _raw_weights = {tk: current_portfolio["weights"][tk] for tk in _backtest_tickers}
+            _raw_total = sum(_raw_weights.values())
+            active_weights = (
+                {tk: w / _raw_total for tk, w in _raw_weights.items()} if _raw_total > 0 else {}
+            )
             _bt = historical_backtest(
                 _prepared, active_weights,
                 initial_investment=initial_investment, monthly_contribution=monthly_contribution,
@@ -350,6 +363,7 @@ if simulation_mode == "Historical Simulation":
             "strategy": current_portfolio.get("strategy"),
             "market": current_portfolio.get("market"),
             "active_weights": active_weights,
+            "redistributed_from_missing": bool(_missing),
         }
 
     hist_result = st.session_state.hist_result
@@ -371,6 +385,8 @@ if simulation_mode == "Historical Simulation":
         f"{tk} {w:.2%}" for tk, w in sorted(hist_params["active_weights"].items(), key=lambda kv: -kv[1])
     )
     st.caption(f"{t('hist_allocation_disclaimer')} {_active_weights_text}")
+    if hist_params.get("redistributed_from_missing"):
+        st.caption(t("hist_allocation_redistributed_note"))
     st.caption(f"**{t('opt_methodology_backtest_value')}** — {t('sim_methodology_hist_lookahead')}")
 
     # ── Methodology & Assumptions (M2) ───────────────────────────────────
