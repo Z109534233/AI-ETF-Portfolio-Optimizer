@@ -691,6 +691,18 @@ TRANSLATIONS = {
         "sim_scenario_bear": "空頭市場",
         "sim_scenario_sideways": "盤整市場",
 
+        # ── Investment Simulator: Methodology & Assumptions (M2) ─────────
+        "sim_methodology_title": "方法論與假設",
+        "sim_methodology_mc_subtitle": "這個蒙地卡羅推估實際上是如何計算的",
+        "sim_methodology_mc_distribution": "每月報酬率為獨立常態分配抽樣，其平均值與標準差由假設的年化報酬率／波動率換算為月度數值。",
+        "sim_methodology_mc_contribution": "每月投入金額，會在該月的模擬報酬套用之後才加入投資組合。",
+        "sim_methodology_mc_fees_inflation": "年費會先換算為月費率，並在每次模擬抽樣前自平均月報酬率中扣除。通膨並不會改變模擬本身的（名目）路徑——畫面上顯示的「實質」（通膨調整後）數值，是另外將名目路徑除以複利通膨係數計算而得。",
+        "sim_methodology_mc_purpose": "這是在既定假設下，對可能結果範圍所做的推估，並非對市場實際表現的預測或保證。",
+        "sim_methodology_hist_subtitle": "這個歷史模擬實際上是如何計算的",
+        "sim_methodology_hist_rebalancing": "再平衡慣例：每月一次。兩次再平衡之間，持股股數維持不變（不進行每日再平衡）；每個新曆月的第一個交易日，會將部位按市值計算、加入當月投入金額（如有），並將總額重新分配回目標權重。",
+        "sim_methodology_hist_lookahead": "此模擬套用「目前投資組合最佳化」所產生的權重於整段歷史區間——也就是說，所使用的權重是根據包含該測試期間之後（或更晚）資料所選出的。這在架構上即屬於前視偏誤（look-ahead bias），本結果絕不代表這個策略在實際時間中真的會被這樣選擇或再平衡。",
+        "sim_methodology_hist_xirr": "年化資金加權報酬率（XIRR）是根據實際的帶日期現金流（起始投入與每筆每月投入，皆以其實際日期計算，加上期末價值視為結算現金流）求解而得——若無法穩定求解，畫面會顯示「無法取得」，而非捏造一個數字。",
+
         # ── Risk Analytics Page ──────────────────────────────────────────
         "risk_title": "風險分析",
         "risk_subtitle": "評估投資組合風險、回撤與壓力情境，做出更審慎的投資決策。",
@@ -1809,6 +1821,18 @@ TRANSLATIONS = {
         "sim_scenario_base": "Base Case",
         "sim_scenario_bear": "Bear Market",
         "sim_scenario_sideways": "Sideways Market",
+
+        # ── Investment Simulator: Methodology & Assumptions (M2) ─────────
+        "sim_methodology_title": "Methodology & Assumptions",
+        "sim_methodology_mc_subtitle": "How this Monte Carlo projection is actually calculated",
+        "sim_methodology_mc_distribution": "Independent monthly returns are drawn from a Normal distribution, with a mean and standard deviation derived from the assumed annual return/volatility.",
+        "sim_methodology_mc_contribution": "Each month's contribution is added to the portfolio AFTER that month's simulated return is applied.",
+        "sim_methodology_mc_fees_inflation": "The annual fee is converted to a monthly rate and subtracted from the mean monthly return before each simulated draw. Inflation never alters the simulated (nominal) path itself -- the 'Real' (inflation-adjusted) values shown are a separate calculation, dividing the nominal path by compounded monthly inflation.",
+        "sim_methodology_mc_purpose": "This is a projection of a range of plausible outcomes under the stated assumptions, not a prediction or guarantee of what markets will actually do.",
+        "sim_methodology_hist_subtitle": "How this historical simulation is actually calculated",
+        "sim_methodology_hist_rebalancing": "Rebalancing convention: monthly. Shares are held constant between rebalance points (no daily rebalancing); on the first trading day of each new calendar month, the position is marked to market, that month's contribution (if any) is added, and the total is reallocated back to the target weights.",
+        "sim_methodology_hist_lookahead": "This applies the CURRENT Portfolio Optimizer weights across the entire historical window shown -- i.e. weights chosen using information that includes data from later in (or after) the very period being tested. This is look-ahead bias by construction; this result is never evidence the strategy would actually have been selected or rebalanced this way in real time.",
+        "sim_methodology_hist_xirr": "Annualized Money-Weighted Return (XIRR) is solved from the actual dated cash flows (the initial investment and every monthly contribution, each on its real date, plus the final value as a closing cash flow) -- shown as unavailable, never a fabricated number, when it cannot be solved robustly.",
 
         # ── Risk Analytics Page ──────────────────────────────────────────
         "risk_title": "Risk Analytics",

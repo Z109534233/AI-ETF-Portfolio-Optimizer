@@ -371,6 +371,19 @@ if simulation_mode == "Historical Simulation":
         f"{tk} {w:.2%}" for tk, w in sorted(hist_params["active_weights"].items(), key=lambda kv: -kv[1])
     )
     st.caption(f"{t('hist_allocation_disclaimer')} {_active_weights_text}")
+    st.caption(f"**{t('opt_methodology_backtest_value')}** — {t('sim_methodology_hist_lookahead')}")
+
+    # ── Methodology & Assumptions (M2) ───────────────────────────────────
+    # Compact disclosure of the ACTUAL historical-simulation methodology --
+    # see src/methodology.py's SIMULATION_METHODOLOGY, the single source of
+    # truth this panel and tests/test_methodology_m2.py both read from.
+    with st.expander(t("sim_methodology_title"), expanded=False):
+        st.caption(t("sim_methodology_hist_subtitle"))
+        st.markdown(
+            f"- {t('sim_methodology_hist_rebalancing')}\n"
+            f"- {t('sim_methodology_hist_lookahead')}\n"
+            f"- {t('sim_methodology_hist_xirr')}"
+        )
 
     # ── Backtest Setup ────────────────────────────────────────────────────
     with chart_card(t("hist_backtest_setup_title")):
@@ -526,6 +539,22 @@ with chart_card(t("sim_projection_setup_title")):
     st.markdown(
         f'<div style="display:flex;flex-wrap:wrap;gap:10px 28px;">{_setup_items_html}</div>',
         unsafe_allow_html=True,
+    )
+
+# ── Methodology & Assumptions (M2) ──────────────────────────────────────────
+# Compact disclosure of the ACTUAL Monte Carlo methodology -- see
+# src/methodology.py's SIMULATION_METHODOLOGY, the single source of truth
+# this panel and tests/test_methodology_m2.py both read from. The actual
+# runtime values (return/volatility/fee/inflation/n_simulations) are already
+# shown verbatim in the Projection Setup card just above -- this panel only
+# explains HOW those numbers are used, never restates or recomputes them.
+with st.expander(t("sim_methodology_title"), expanded=False):
+    st.caption(t("sim_methodology_mc_subtitle"))
+    st.markdown(
+        f"- {t('sim_methodology_mc_distribution')}\n"
+        f"- {t('sim_methodology_mc_contribution')}\n"
+        f"- {t('sim_methodology_mc_fees_inflation')}\n"
+        f"- {t('sim_methodology_mc_purpose')}"
     )
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────

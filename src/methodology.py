@@ -108,6 +108,116 @@ PORTFOLIO_OPTIMIZATION_METHODOLOGY = {
 }
 
 
+# ============================================================================
+# M2 -- Simulation & Backtest Methodology
+# ============================================================================
+# Describes src/simulator.py as actually implemented -- see
+# simulate_investment(), historical_backtest(), prepare_historical_prices(),
+# and xirr() for the code this metadata must always match.
+
+SIMULATION_METHODOLOGY = {
+    "monte_carlo": {
+        "purpose": (
+            "a projection of a RANGE of plausible future outcomes under "
+            "stated assumptions -- never a prediction or guarantee of what "
+            "markets will actually do."
+        ),
+        "distribution": "independent monthly returns drawn from a Normal distribution",
+        "timestep": "monthly",
+        "n_simulations": "user-configurable (default 1,000; 200-5,000)",
+        "contribution_timing": (
+            "the monthly contribution is added to the portfolio AFTER that "
+            "month's simulated return is applied, at every month of the horizon"
+        ),
+        "fees": (
+            "an annual fee is converted to an equivalent monthly rate and "
+            "subtracted directly from the mean monthly return before each "
+            "random draw"
+        ),
+        "inflation_treatment": (
+            "nominal paths are simulated first; a separate 'real' "
+            "(inflation-adjusted) path is derived by dividing by a "
+            "compounded monthly inflation factor -- inflation never alters "
+            "the nominal simulation itself"
+        ),
+        "reported_percentiles": (
+            "10th (pessimistic) / 50th (median) / 90th (optimistic) as "
+            "headline KPIs, plus a 5/25/50/75/95 percentile table"
+        ),
+        "assumption_modes": {
+            "Portfolio Historical Statistics": (
+                "the CURRENT portfolio's own historical expected return/ "
+                "volatility from Portfolio Optimizer, used as a forward "
+                "assumption -- labeled as a historical estimate, never a "
+                "prediction"
+            ),
+            "Market Scenario": (
+                "one of 4 hard-coded hypothetical return/volatility pairs "
+                "(Bull/Base/Bear/Sideways) -- labeled as hypothetical, not "
+                "a market forecast"
+            ),
+            "Custom Assumptions": "user-entered return/volatility, used as-is",
+        },
+    },
+    "historical_simulation": {
+        "data": (
+            "real downloaded ETF prices only -- no synthetic or fabricated "
+            "returns are ever used in Historical Simulation mode"
+        ),
+        "start_date": (
+            "constrained to the common valid-data window across every "
+            "active ticker (the same get_common_date_range() logic as "
+            "Portfolio Optimizer); a user-chosen start earlier than that "
+            "window is clamped forward to the common start, never backfilled"
+        ),
+        "pre_inception_handling": (
+            "prepare_historical_prices() only forward-fills genuine "
+            "mid-series gaps within the requested window; any date before a "
+            "ticker's own first valid price is never included, let alone filled"
+        ),
+    },
+    "rebalancing": {
+        "convention": "monthly",
+        "mechanics": (
+            "shares are held constant (pure mark-to-market) between "
+            "rebalance points -- no daily rebalancing. On the first trading "
+            "day of every calendar month after the starting month, the "
+            "position is marked to market, the monthly contribution (which "
+            "may be $0) is added, and the total is reallocated back to the "
+            "target weights in the same step."
+        ),
+    },
+    "contributions_and_returns": {
+        "total_invested": (
+            "initial_investment + sum of every monthly contribution actually "
+            "made over the simulated/backtested period"
+        ),
+        "gain": "final portfolio value - total_invested",
+        "fractional_shares": "assumed (a simplification -- not a real brokerage constraint)",
+        "xirr": (
+            "money-weighted annualized return solved from the ACTUAL dated "
+            "cash flows (initial investment + every monthly contribution, "
+            "each on its real date, plus the final value as a single "
+            "liquidating inflow) via Brent's method; returns None (shown as "
+            "unavailable, never a fabricated number) if it cannot be solved "
+            "robustly"
+        ),
+    },
+    "backtest_label": {
+        "type": "Fixed-Allocation Historical Backtest",
+        "look_ahead_bias": (
+            "the weights applied throughout the ENTIRE historical window "
+            "are the CURRENT Portfolio Optimizer result -- i.e. weights "
+            "chosen using information that includes data from later in (or "
+            "after) the very window being tested. This is look-ahead bias "
+            "by construction, and is never described as walk-forward or as "
+            "evidence the strategy would have been selected this way in "
+            "real time."
+        ),
+    },
+}
+
+
 def validate_optimization_result(weights: dict, mean_returns, cov_matrix,
                                   reported_return: float, reported_volatility: float,
                                   reported_sharpe: float, risk_free_rate: float,
