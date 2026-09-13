@@ -385,3 +385,23 @@ def test_autopilot_does_not_claim_unused_bubblewrap_sandbox():
     assert "bubblewrap" not in task_text
     assert "not an OS/container" in doc_text
     assert "read-only repository permission" in doc_text
+
+
+def test_runtime_protected_prefix_policy_matches_contract():
+    text = TASK.read_text(encoding="utf-8")
+    prepare = _job_block(text, "prepare_context", "claude_patch")
+    validate = _job_block(text, "validate_patch", "apply_patch")
+    expected = "protected = ('.github/', 'automation/')"
+    assert expected in prepare
+    assert expected in validate
+    assert ".github/workflows/" not in prepare.split("protected =", 1)[1].split("\n", 1)[0]
+    assert ".github/actions/" not in validate.split("protected =", 1)[1].split("\n", 1)[0]
+
+
+def test_merge_gate_requires_confirmed_merge_and_verified_branch_head():
+    text = TASK.read_text(encoding="utf-8")
+    block = _job_block(text, "merge_gate", "report_status")
+    assert "const result = await github.rest.pulls.merge" in block
+    assert "if (!result.data.merged)" in block
+    assert "mergedBranch.data.commit.sha !== result.data.sha" in block
+    assert "Task PR merge confirmed at integration SHA" in block

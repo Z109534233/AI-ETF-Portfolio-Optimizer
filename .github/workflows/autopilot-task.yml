@@ -104,7 +104,7 @@ jobs:
           import os
           import pathlib
 
-          protected = ('.github/workflows/', '.github/actions/', 'automation/')
+          protected = ('.github/', 'automation/')
           task_id = os.environ['TASK_ID']
 
           spec_path = pathlib.Path('automation/tasks') / f'{task_id}.json'
@@ -336,7 +336,7 @@ jobs:
           import shlex
           import subprocess
 
-          protected = ('.github/workflows/', '.github/actions/', 'automation/')
+          protected = ('.github/', 'automation/')
           manifest = json.load(open('task_context/manifest.json', encoding='utf-8'))
           allowed = set(manifest.get('allowed_files', []))
           proposal = json.load(open('patch_artifact/claude_patch.json', encoding='utf-8'))
@@ -815,13 +815,36 @@ jobs:
               return;
             }
 
-            await github.rest.pulls.merge({
+            const result = await github.rest.pulls.merge({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: prNumber,
               merge_method: 'squash',
               sha: process.env.EXPECTED_HEAD_SHA
             });
+            if (!result.data.merged) {
+              core.setFailed(
+                'GitHub merge API did not confirm the task PR was merged: ' +
+                (result.data.message || 'unknown reason')
+              );
+              return;
+            }
+
+            const mergedBranch = await github.rest.repos.getBranch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              branch: integrationBranch
+            });
+            if (!result.data.sha ||
+                mergedBranch.data.commit.sha !== result.data.sha) {
+              core.setFailed(
+                'Integration branch head does not match the confirmed merge result.'
+              );
+              return;
+            }
+            core.notice(
+              'Task PR merge confirmed at integration SHA ' + result.data.sha
+            );
 
   report_status:
     needs: [create_pr, finalize_verdict, merge_gate]
