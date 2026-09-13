@@ -2000,6 +2000,65 @@ def test_hist_k_cross_page_handoff_unchanged():
     check("HIST-K.tickers_unchanged", cp_in_simulator["tickers"] == cp["tickers"], cp_in_simulator["tickers"])
 
 
+# ── HIST-L: a ticker whose price download fails must be visibly excluded,
+# with the DISPLAYED allocation matching what was ACTUALLY invested (i.e.
+# renormalized over the survivors), never silently showing the original
+# pre-drop weights while the backtest itself quietly redistributes capital
+# to a different, unstated allocation ────────────────────────────────────
+def test_hist_l_missing_ticker_redistribution_disclosed_accurately():
+    import src.data_loader as data_loader_mod
+    import pandas as pd
+
+    def _fake_download(tickers, start_date, end_date, price_field="Close"):
+        dates = pd.bdate_range("2015-01-01", "2024-12-31")
+        data = {}
+        for tk in tickers:
+            if tk == "ZZMISSING":
+                continue  # simulates a download failure for this one ticker
+            rng = np.random.default_rng(abs(hash(tk)) % (2**32))
+            data[tk] = 100 * np.cumprod(1 + rng.normal(0.0003, 0.01, len(dates)))
+        return pd.DataFrame(data, index=dates)
+
+    original = data_loader_mod.download_etf_data
+    data_loader_mod.download_etf_data = _fake_download
+    try:
+        cp = {
+            "strategy": "Equal Weight", "market": "United States",
+            "tickers": ["VOO", "ZZMISSING"], "weights": {"VOO": 0.5, "ZZMISSING": 0.5},
+            "investment_amount": 10000.0, "expected_return": 0.1, "volatility": 0.15,
+            "sharpe_ratio": 0.6,
+        }
+        at = _run_receiving_page("pages/3_Investment_Simulator.py", cp, lang="en")
+        for w in at.selectbox:
+            if w.key == "simulation_mode":
+                w.set_value("Historical Simulation")
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("HIST-L.no_exception", exc is None, str(exc))
+        if exc:
+            return
+
+        warnings_text = "\n".join(w.value for w in at.warning)
+        check("HIST-L.missing_ticker_surfaced", "ZZMISSING" in warnings_text, warnings_text)
+        check("HIST-L.warning_is_translated_not_hardcoded",
+              "No usable historical price data for" in warnings_text, warnings_text)
+
+        corpus = "\n".join(c.value for c in at.caption)
+        check("HIST-L.disclaimer_shows_100pct_voo_not_50pct",
+              "VOO 100.00%" in corpus, corpus)
+        check("HIST-L.disclaimer_omits_missing_ticker",
+              "ZZMISSING" not in corpus, corpus)
+        check("HIST-L.redistribution_explicitly_noted",
+              "redistributes their weight" in corpus, corpus)
+
+        active_weights = at.session_state["hist_params"]["active_weights"]
+        check("HIST-L.active_weights_excludes_missing", "ZZMISSING" not in active_weights, active_weights)
+        check("HIST-L.active_weights_sums_to_one",
+              abs(sum(active_weights.values()) - 1.0) < 1e-9, active_weights)
+    finally:
+        data_loader_mod.download_etf_data = original
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Taiwan ETF Universe expansion. Pure data/architecture tests (TWU-*) need
 # no network access -- src/etf_database.py is a static in-memory snapshot
@@ -3089,6 +3148,43 @@ def _wsr_switch(at, workspace):
     return at.exception[0] if at.exception else None
 
 
+# ── ETF Analysis: a ticker whose price download fails must be explicitly
+# named as excluded from THIS page's comparisons -- not just covered by
+# download_etf_data()'s own generic Yahoo-suffixed-symbol warning, which
+# never says "this was one of your selections" ──────────────────────────
+def test_etf_partial_download_failure_names_missing_selected_ticker():
+    import src.data_loader as data_loader_mod
+    import pandas as pd
+
+    def _fake_download(tickers, start_date, end_date, price_field="Close"):
+        dates = pd.bdate_range(start_date, end_date)
+        data = {}
+        for tk in tickers:
+            if tk == "VTI":
+                continue  # simulates this one ticker's download failing
+            rng = np.random.default_rng(abs(hash(tk)) % (2**32))
+            data[tk] = 100 * np.cumprod(1 + rng.normal(0.0003, 0.01, len(dates)))
+        return pd.DataFrame(data, index=dates)
+
+    original = data_loader_mod.download_etf_data
+    data_loader_mod.download_etf_data = _fake_download
+    try:
+        at = _wsr_app(region="United States", tickers=["VOO", "VTI"])
+        exc = at.exception[0] if at.exception else None
+        check("ETF-PARTIAL.no_exception", exc is None, str(exc))
+        if exc:
+            return
+        warnings_text = "\n".join(w.value for w in at.warning)
+        check("ETF-PARTIAL.names_dropped_ticker", "VTI" in warnings_text, warnings_text)
+        check("ETF-PARTIAL.explains_excluded_from_page",
+              "excluded from this page" in warnings_text, warnings_text)
+        # The surviving ticker must still be fully usable, not blocked.
+        all_text = "\n".join(m.value for m in at.markdown)
+        check("ETF-PARTIAL.survivor_still_usable", exc is None and "VOO" in all_text, "")
+    finally:
+        data_loader_mod.download_etf_data = original
+
+
 # ── Test A: Overview does not render every other workspace's content ────────
 def test_wsr_a_overview_does_not_render_everything():
     at = _wsr_app()
@@ -3692,6 +3788,7 @@ def main():
     _run(test_hist_i_mode_switching_preserves_state)
     _run(test_hist_j_i18n)
     _run(test_hist_k_cross_page_handoff_unchanged)
+    _run(test_hist_l_missing_ticker_redistribution_disclosed_accurately)
 
     _run(test_twu_data_validation)
     _run(test_twu_a_taiwan_universe_much_larger)
@@ -3741,6 +3838,7 @@ def main():
     _run(test_geu_j_master_schema_integrity)
     _run(test_geu_k_i18n)
 
+    _run(test_etf_partial_download_failure_names_missing_selected_ticker)
     _run(test_wsr_a_overview_does_not_render_everything)
     _run(test_wsr_b_performance_navigation_preserves_focus_etf)
     _run(test_wsr_c_risk_navigation_works)

@@ -155,6 +155,17 @@ if etf_prices.empty:
     error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
     st.stop()
 
+# download_etf_data() already emits a generic warning naming any
+# Yahoo-suffixed symbol that failed to download, but that is not the same
+# as telling the user which of THEIR selected ETFs were consequently
+# dropped from this page's comparisons/charts -- unlike Portfolio
+# Optimizer (which hard-stops on any partial failure), this page tolerates
+# a partial result so the surviving ETFs stay usable, but that must never
+# be silent about which of the user's own choices got excluded.
+_missing_selected_etfs = [tk for tk in selected_etfs if tk not in etf_prices.columns]
+if _missing_selected_etfs:
+    st.warning(t("etf_partial_data_warning", tickers=", ".join(_missing_selected_etfs)))
+
 _lang = get_language()
 
 # ── Focus ETF (drives Header / KPI row / Overview / Performance / Risk /
