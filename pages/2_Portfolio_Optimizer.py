@@ -509,6 +509,35 @@ with kcol4:
 with kcol5:
     st.markdown(metric_card_html(t("metric_method"), t_opt_method(optimization_method), color=COLORS["warning"]), unsafe_allow_html=True)
 
+# ── Methodology & Assumptions (M1) ──────────────────────────────────────────
+# Compact, always-visible (independent of which workspace is open) disclosure
+# of the ACTUAL calculation methodology -- see src/methodology.py, the single
+# source of truth this panel and tests/test_methodology_m1.py both read from.
+# Runtime values (dates, risk-free rate, bounds) are read straight off the
+# already-computed prices_df/result/sidebar inputs, never recomputed or
+# guessed, so this can never drift from what the KPIs above actually show.
+with st.expander(t("opt_methodology_title"), expanded=False):
+    st.caption(t("opt_methodology_subtitle"))
+    _hist_start = prices_df.index.min().strftime("%Y-%m-%d")
+    _hist_end = prices_df.index.max().strftime("%Y-%m-%d")
+    _short_note = t("opt_methodology_short_note_on") if allow_short else t("opt_methodology_short_note_off")
+    st.markdown(
+        f"- **{t('opt_methodology_return_label')}** — {t('opt_methodology_return_desc')}\n"
+        f"- **{t('opt_methodology_covariance_label')}** — {t('opt_methodology_covariance_desc')}\n"
+        f"- **{t('opt_methodology_history_label')}** — "
+        f"{t('opt_methodology_history_value', start=_hist_start, end=_hist_end, days=len(prices_df))}\n"
+        f"- **{t('opt_methodology_optimizer_label')}** — "
+        f"{t('opt_methodology_optimizer_desc', method=t_opt_method(optimization_method), rf=f'{risk_free_rate:.2%}', min=f'{min_weight:.0%}', max=f'{max_weight:.0%}', short_note=_short_note)}\n"
+        f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
+        f"{t('opt_methodology_backtest_desc')}"
+    )
+    _validation = result.get("validation")
+    if _validation is not None:
+        if _validation.get("is_valid"):
+            st.success(t("opt_methodology_validation_pass"))
+        else:
+            st.warning(t("opt_methodology_validation_fail", issues="; ".join(_validation.get("issues", []))))
+
 # ── Shared Portfolio Diagnosis rendering helpers (used by both Overview's
 # compact snapshot and Backtest & Risk's detailed view -- PRODUCT SPEC
 # section 16: never render the FULL diagnosis twice, only a compact
@@ -875,6 +904,7 @@ elif opt_workspace == "Backtest & Risk":
 
         if bt_view == "Historical":
             section_header(t("opt_backtest_title"), t("opt_backtest_sub", method=t_opt_method(optimization_method)))
+            st.caption(f"**{t('opt_methodology_backtest_value')}** — {t('opt_methodology_backtest_desc')}")
             if not backtest_df.empty:
                 import plotly.graph_objects as go
                 with chart_card(t("opt_backtest_card")):

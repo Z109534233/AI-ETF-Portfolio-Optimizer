@@ -18,9 +18,13 @@ from src.data_cleaner import clean_price_data
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import (
     annualized_return, annualized_volatility, sharpe_ratio, sortino_ratio,
-    maximum_drawdown, calmar_ratio, beta, alpha, value_at_risk, conditional_var,
+    maximum_drawdown, calmar_ratio, beta, alpha,
     downside_deviation, tracking_error, information_ratio,
     correlation_matrix, covariance_matrix, drawdown_series, diversification_ratio
+)
+from src.risk_analytics import (
+    historical_var_cvar, concentration_from_weights, holdings_overlap_matrix,
+    STRESS_SCENARIOS,
 )
 from src.charts import (
     correlation_heatmap, return_distribution_chart, drawdown_chart,
@@ -53,6 +57,7 @@ page_header(t("risk_title"), t("risk_subtitle"))
 render_current_portfolio_handoff(
     t("handoff_empty_state_title"), t("handoff_empty_state_body_risk"),
 )
+current_portfolio = st.session_state.get("current_portfolio")
 
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
@@ -153,8 +158,13 @@ sr = sharpe_ratio(port_prices, risk_free_rate)
 so_r = sortino_ratio(port_prices, risk_free_rate)
 mdd = maximum_drawdown(port_prices)
 cal = calmar_ratio(port_prices)
-var95 = value_at_risk(port_prices, 0.95)
-cvar95 = conditional_var(port_prices, 0.95)
+# Historical VaR/CVaR (M3): same value_at_risk()/conditional_var() estimator
+# as before, wrapped so method/confidence/holding period/window are always
+# disclosed, and so too little data produces an explicit "unavailable"
+# state instead of a number computed from a handful of days.
+var_cvar_result = historical_var_cvar(port_prices, confidence=0.95)
+var95 = var_cvar_result["var"] if var_cvar_result["available"] else None
+cvar95 = var_cvar_result["cvar"] if var_cvar_result["available"] else None
 dd_dev = downside_deviation(port_prices, risk_free_rate)
 
 col1, col2, col3, col4 = st.columns(4)
@@ -168,8 +178,38 @@ with col3:
     st.markdown(metric_card_html(t("metric_maximum_drawdown"), f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
     st.markdown(metric_card_html(t("metric_calmar_ratio"), f"{cal:.2f}", color=COLORS["warning"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html(t("metric_var_95"), f"{var95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
-    st.markdown(metric_card_html(t("metric_cvar_95"), f"{cvar95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    if var_cvar_result["available"]:
+        st.markdown(metric_card_html(t("metric_var_95"), f"{var95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+        st.markdown(metric_card_html(t("metric_cvar_95"), f"{cvar95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+    else:
+        st.markdown(metric_card_html(t("metric_var_95"), t("risk_var_unavailable"), color=COLORS["text_muted"]), unsafe_allow_html=True)
+        st.markdown(metric_card_html(t("metric_cvar_95"), t("risk_var_unavailable"), color=COLORS["text_muted"]), unsafe_allow_html=True)
+if not var_cvar_result["available"]:
+    st.caption(t("risk_var_unavailable_reason", reason=var_cvar_result["reason"]))
+
+# ── Methodology & Assumptions (M3) ──────────────────────────────────────
+# Compact disclosure of the ACTUAL risk methodology -- see
+# src/methodology.py's RISK_METHODOLOGY, the single source of truth this
+# panel and tests/test_methodology_m3.py both read from.
+with st.expander(t("risk_methodology_title"), expanded=False):
+    st.caption(t("risk_methodology_subtitle"))
+    if var_cvar_result["available"]:
+        _var_window = t(
+            "risk_methodology_var_window_value",
+            start=var_cvar_result["window_start"], end=var_cvar_result["window_end"],
+            n=var_cvar_result["n_observations"],
+        )
+    else:
+        _var_window = t("risk_var_unavailable")
+    _var_confidence_pct = f"{var_cvar_result['confidence']:.0%}"
+    _var_desc = t("risk_methodology_var_desc", confidence=_var_confidence_pct)
+    st.markdown(
+        f"- **{t('risk_methodology_var_label')}** — {_var_desc} {_var_window}\n"
+        f"- **{t('risk_methodology_mdd_label')}** — {t('risk_methodology_mdd_desc')}\n"
+        f"- **{t('risk_methodology_concentration_label')}** — {t('risk_methodology_concentration_desc')}\n"
+        f"- **{t('risk_methodology_correlation_label')}** — {t('risk_methodology_correlation_desc')}\n"
+        f"- **{t('risk_methodology_stress_label')}** — {t('risk_methodology_stress_desc')}"
+    )
 
 # Benchmark metrics
 if bench_prices is not None and len(bench_prices) > 10:
@@ -253,10 +293,12 @@ with chart_card(t("risk_detail_card")):
             x=port_returns * 100, nbinsx=60,
             marker_color=COLORS["primary"], opacity=0.8, name=t("chart_portfolio_returns")
         ))
-        fig_port_dist.add_vline(x=float(var95 * 100), line_dash="dash", line_color=COLORS["danger"],
-                                 annotation_text=f"{t('metric_var_95')}: {var95:.2%}")
-        fig_port_dist.add_vline(x=float(cvar95 * 100), line_dash="dash", line_color=COLORS["warning"],
-                                 annotation_text=f"{t('metric_cvar_95')}: {cvar95:.2%}")
+        if var95 is not None:
+            fig_port_dist.add_vline(x=float(var95 * 100), line_dash="dash", line_color=COLORS["danger"],
+                                     annotation_text=f"{t('metric_var_95')}: {var95:.2%}")
+        if cvar95 is not None:
+            fig_port_dist.add_vline(x=float(cvar95 * 100), line_dash="dash", line_color=COLORS["warning"],
+                                     annotation_text=f"{t('metric_cvar_95')}: {cvar95:.2%}")
         fig_port_dist.update_layout(title=t("chart_portfolio_daily_return_dist"),
                                      xaxis_title=t("chart_daily_return_pct"), yaxis_title=t("chart_frequency"))
         st.plotly_chart(apply_dark_theme(fig_port_dist), use_container_width=True, key="risk_return_distribution_portfolio")
@@ -266,6 +308,36 @@ with chart_card(t("risk_detail_card")):
             corr = correlation_matrix(etf_prices)
             fig_corr = correlation_heatmap(corr)
             st.plotly_chart(fig_corr, use_container_width=True, key="risk_correlation_heatmap")
+            st.caption(t("risk_correlation_vs_overlap_note"))
+
+            # Holdings Overlap (M3): a DIFFERENT measure than the return
+            # correlation above -- see RISK_METHODOLOGY["correlation_vs_overlap"].
+            # Opt-in (unchecked by default) since it fetches each ETF's
+            # underlying holdings on demand rather than automatically on
+            # every page load/rerun.
+            show_overlap = st.checkbox(t("risk_show_holdings_overlap"), value=False, key="risk_show_overlap_cb")
+            if show_overlap:
+                with st.spinner(t("risk_loading_holdings_overlap")):
+                    overlap = holdings_overlap_matrix(list(etf_prices.columns))
+                overlap_rows = []
+                for (pair_a, pair_b), res in overlap.items():
+                    if res["available"]:
+                        overlap_rows.append({
+                            t("risk_col_pair"): f"{pair_a} / {pair_b}",
+                            t("risk_col_overlap_score"): f"{res['overlap_score']:.1%}",
+                            t("risk_col_shared_holdings"): res["shared_holdings_count"],
+                        })
+                    else:
+                        overlap_rows.append({
+                            t("risk_col_pair"): f"{pair_a} / {pair_b}",
+                            t("risk_col_overlap_score"): t("risk_overlap_unavailable"),
+                            t("risk_col_shared_holdings"): "—",
+                        })
+                if overlap_rows:
+                    st.dataframe(
+                        pd.DataFrame(overlap_rows).set_index(t("risk_col_pair")),
+                        use_container_width=True,
+                    )
         else:
             st.info(t("risk_select_2_correlation"))
 
@@ -290,36 +362,72 @@ with chart_card(t("risk_detail_card")):
                                       xaxis_title=t("chart_etf"), yaxis_title=t("chart_risk_contribution_pct"))
                 st.plotly_chart(apply_dark_theme(fig_rc), use_container_width=True, key="risk_contribution_bar")
 
+# ── Portfolio Concentration (M3) ─────────────────────────────────────────
+# Deliberately SEPARATE from this page's own ad-hoc weight sliders above
+# (which let you explore risk for ANY ETF/weight combination): concentration
+# and effective-holdings metrics must be verifiable against the canonical
+# current_portfolio built in Portfolio Optimizer, never a different,
+# page-local weight source -- see RISK_METHODOLOGY["concentration"].
+if current_portfolio and current_portfolio.get("weights"):
+    section_header(t("risk_canonical_concentration_title"), t("risk_canonical_concentration_sub"))
+    _canon_diag = concentration_from_weights(current_portfolio["weights"])
+    ccol1, ccol2, ccol3, ccol4 = st.columns(4)
+    with ccol1:
+        st.markdown(metric_card_html(
+            t("opt_col_largest_position"),
+            f"{_canon_diag['largest_ticker']} {_canon_diag['largest_weight']:.2%}",
+            color=COLORS["primary"],
+        ), unsafe_allow_html=True)
+    with ccol2:
+        st.markdown(metric_card_html(
+            t("opt_diag_top2_concentration"), f"{_canon_diag['top2_concentration']:.2%}", color=COLORS["purple"],
+        ), unsafe_allow_html=True)
+    with ccol3:
+        st.markdown(metric_card_html(
+            t("opt_diag_effective_holdings"),
+            f"{_canon_diag['effective_holdings']:.2f} / {_canon_diag['selected_holdings']}",
+            color=COLORS["cyan"],
+        ), unsafe_allow_html=True)
+    with ccol4:
+        st.markdown(metric_card_html(
+            t("opt_diag_active_etfs"),
+            f"{_canon_diag['active_holdings']} / {_canon_diag['selected_holdings']}",
+            color=COLORS["warning"],
+        ), unsafe_allow_html=True)
+    st.caption(t("risk_canonical_concentration_note"))
+
 # ── Stress Tests ──────────────────────────────────────────────────────────────
 section_header(t("risk_stress_test_title"), t("risk_stress_test_caption"))
-
-stress_scenarios = {
-    t("risk_scenario_equity_decline"): -0.30,
-    t("risk_scenario_rate_shock"): -0.15,
-    t("risk_scenario_high_vol"): -0.20,
-    t("risk_scenario_defensive"): 0.05,
-    t("risk_scenario_2008"): -0.50,
-    t("risk_scenario_covid"): -0.34,
-    t("risk_scenario_tech_bubble"): -0.45,
-}
+st.caption(t("risk_stress_methodology_note"))
 
 scenario_col = t("risk_col_scenario")
+provenance_col = t("risk_col_provenance")
 shock_col = t("risk_col_market_shock")
 beta_col = t("risk_col_portfolio_beta")
 impact_col = t("risk_col_estimated_impact")
 dollar_impact_col = t("risk_col_impact_10k")
 
+_PROVENANCE_LABEL_KEY = {
+    "hypothetical": "risk_provenance_hypothetical",
+    "historical": "risk_provenance_historical",
+}
+
+# Shock magnitudes and scenario identity are UNCHANGED from before this task
+# (see src/risk_analytics.py's STRESS_SCENARIOS docstring) -- this task only
+# adds the Provenance column and methodology disclosure above.
+if bench_prices is not None:
+    b_val = beta(port_prices, bench_prices)
+else:
+    b_val = 1.0
+
 stress_rows = []
-for scenario_name, market_shock in stress_scenarios.items():
-    # Approximate portfolio impact based on beta and weights
-    if bench_prices is not None:
-        b_val = beta(port_prices, bench_prices)
-    else:
-        b_val = 1.0
+for _scenario in STRESS_SCENARIOS.values():
+    market_shock = _scenario["shock"]
     port_impact = market_shock * b_val
     dollar_impact = port_impact * 10000  # Assume $10,000 portfolio
     stress_rows.append({
-        scenario_col: scenario_name,
+        scenario_col: t(_scenario["i18n_key"]),
+        provenance_col: t(_PROVENANCE_LABEL_KEY[_scenario["provenance"]]),
         shock_col: f"{market_shock:.0%}",
         beta_col: f"{b_val:.2f}",
         impact_col: f"{port_impact:.2%}",
@@ -332,6 +440,8 @@ with chart_card(t("risk_stress_test_impact_card")):
         style_signed_columns(stress_df, [impact_col, dollar_impact_col]),
         use_container_width=True,
     )
+    for _scenario in STRESS_SCENARIOS.values():
+        st.caption(f"**{t(_scenario['i18n_key'])}** ({t(_PROVENANCE_LABEL_KEY[_scenario['provenance']])}) — {t(_scenario['note_i18n_key'])}")
 
 disclaimer_box()
 render_footer()
