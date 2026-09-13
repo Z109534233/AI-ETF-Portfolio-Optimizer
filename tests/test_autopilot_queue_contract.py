@@ -151,8 +151,12 @@ def test_validate_patch_job_has_no_ai_secrets_and_enforces_allowlist():
     block = _job_block(text, "validate_patch", "apply_patch")
     assert "OPENAI_API_KEY" not in block
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in block
-    assert "'.github/workflows/'" in block
-    assert "'.github/actions/'" in block
+    # Protected prefixes were later broadened from enumerating
+    # '.github/workflows/' + '.github/actions/' separately to a single
+    # '.github/' prefix that protects the whole directory (a strictly wider,
+    # not weaker, guard) -- see test_runtime_protected_prefix_policy_matches_contract,
+    # which pins this exact broader tuple as the intended current contract.
+    assert "'.github/'" in block
     assert "'automation/'" in block
     assert "escaped the task-spec allowlist" in block
     assert "git', 'apply', '--check'" in block
@@ -218,8 +222,14 @@ def test_normal_reviewer_still_enabled_for_non_autopilot_prs():
     text = REVIEWER.read_text(encoding="utf-8")
     assert "pull_request_target:" in text
     assert "types: [opened, synchronize, reopened, ready_for_review]" in text
-    # the autopilot skip must be scoped to autopilot/ head refs, not a blanket disable
-    assert "pr.head.ref.startsWith('autopilot/')" in text
+    # The autopilot skip must be scoped to autopilot/ head refs, not a blanket
+    # disable. This was later hardened from a plain
+    # pr.head.ref.startsWith('autopilot/') check to one tied to the exact
+    # run_id parsed out of the trusted controller-comment marker, so a PR
+    # merely named "autopilot/*" can no longer skip review on its own -- see
+    # test_autopilot_prefix_alone_cannot_skip_standard_reviewer, which pins
+    # this stricter branchMatchesRun contract as intended-current.
+    assert "pr.head.ref.startsWith(`autopilot/${markerRunId}/`)" in text
     assert "OWNER" in text and "MEMBER" in text and "COLLABORATOR" in text
 
 
@@ -238,9 +248,16 @@ def test_trusted_automation_defaults_false_and_does_not_weaken_normal_policy():
     assert "pr.head.ref.startsWith('autopilot/')" in reserve
     # a normal call can never satisfy an autopilot-managed controller state or vice versa
     assert "trustedAutomation !== (state.autopilot_managed === true)" in reserve
-    # the same-repository check is unconditional for both paths
+    # the same-repository check is unconditional for both paths, and must
+    # precede the branch/author-authorization checks. NOTE: search for the
+    # *branch-authorization* trustedAutomation block specifically (the one
+    # guarding pr.head.ref.startsWith('autopilot/')), not just the first
+    # "if (trustedAutomation) {" text in the file -- a later round added an
+    # earlier, unrelated "if (trustedAutomation) {" block that validates the
+    # task_allowed_files_json allowlist shape, which a plain .index() search
+    # would match instead and produce a false ordering failure.
     same_repo_idx = reserve.index("Auto-fix is restricted to same-repository PRs")
-    trusted_branch_idx = reserve.index("if (trustedAutomation) {")
+    trusted_branch_idx = reserve.index("pr.head.ref.startsWith('autopilot/')")
     assert same_repo_idx < trusted_branch_idx
 
 
