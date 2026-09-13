@@ -88,25 +88,20 @@ jobs:
               )
               .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
-            const queueManaged = trustedComments.some((comment) => {
-              const match = (comment.body || '').match(statePattern);
-              if (!match) return false;
-              try {
-                const parsed = JSON.parse(match[1]);
-                return parsed.autopilot_managed === true &&
-                  Boolean(parsed.autopilot_task) &&
-                  Boolean(parsed.autopilot_run_id);
-              } catch {
-                return false;
-              }
-            });
+            const queueBodyMarker = (pr.body || '').match(
+              /^<!-- methodology-autopilot-managed:v1 run_id=(\d+) task_id=([A-Za-z0-9_-]+) -->/
+            );
+            const markerRunId = queueBodyMarker ? queueBodyMarker[1] : '';
+            const branchMatchesRun =
+              Boolean(markerRunId) &&
+              pr.head.ref.startsWith(`autopilot/${markerRunId}/`);
 
             const trustedAutopilotPr =
               sameRepo &&
-              pr.head.ref.startsWith('autopilot/') &&
               pr.user &&
               pr.user.login === 'github-actions[bot]' &&
-              queueManaged;
+              Boolean(queueBodyMarker) &&
+              branchMatchesRun;
 
             if (trustedAutopilotPr) {
               core.notice(

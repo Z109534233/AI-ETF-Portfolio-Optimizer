@@ -310,8 +310,59 @@ def test_create_pr_exports_every_output_consumed_by_review_rounds():
 def test_autopilot_prefix_alone_cannot_skip_standard_reviewer():
     text = REVIEWER.read_text(encoding="utf-8")
     assert "const trustedAutopilotPr =" in text
+    assert "methodology-autopilot-managed:v1" in text
     assert "pr.user.login === 'github-actions[bot]'" in text
-    assert "parsed.autopilot_managed === true" in text
-    assert "Boolean(parsed.autopilot_task)" in text
-    assert "Boolean(parsed.autopilot_run_id)" in text
+    assert "pr.body || ''" in text
+    assert "branchMatchesRun" in text
     assert "if (trustedAutopilotPr)" in text
+
+
+def test_queue_marker_is_present_atomically_in_pr_creation_body():
+    task_text = TASK.read_text(encoding="utf-8")
+    queue_text = QUEUE.read_text(encoding="utf-8")
+    assert "methodology-autopilot-managed:v1" in _job_block(task_text, "create_pr", "round_1")
+    assert "methodology-autopilot-managed:v1" in _job_block(
+        queue_text, "create_cumulative_pr", "cumulative_round_1"
+    )
+
+
+def test_every_trusted_task_repair_round_receives_task_allowlist():
+    text = TASK.read_text(encoding="utf-8")
+    create_pr = _job_block(text, "create_pr", "round_1")
+    assert "allowed_files_json:" in create_pr
+    assert "JSON.stringify(manifest.allowed_files || [])" in create_pr
+    for round_name, next_name in (
+        ("round_1", "round_2"),
+        ("round_2", "round_3"),
+        ("round_3", "finalize_verdict"),
+    ):
+        block = _job_block(text, round_name, next_name)
+        assert "trusted_automation: true" in block
+        assert (
+            "task_allowed_files_json: ${{ needs.create_pr.outputs.allowed_files_json }}"
+            in block
+        )
+
+
+def test_reusable_repair_enforces_trusted_task_allowlist():
+    text = ROUND.read_text(encoding="utf-8")
+    assert "task_allowed_files_json:" in text
+    reserve = _job_block(text, "reserve", "prepare_context")
+    validate = _job_block(text, "validate_patch", "apply_patch")
+    assert "trusted_automation repair requires a non-empty task allowlist" in reserve
+    assert "TASK_ALLOWED_FILES_JSON" in validate
+    assert "Patch escaped the trusted task allowlist" in validate
+
+
+def test_cumulative_repair_rounds_receive_union_allowlist():
+    text = QUEUE.read_text(encoding="utf-8")
+    create = _job_block(text, "create_cumulative_pr", "cumulative_round_1")
+    assert "cumulativeAllowed" in create
+    assert "allowed_files_json:" in create
+    for round_name, next_name in (
+        ("cumulative_round_1", "cumulative_round_2"),
+        ("cumulative_round_2", "cumulative_round_3"),
+        ("cumulative_round_3", "report_cumulative_status"),
+    ):
+        block = _job_block(text, round_name, next_name)
+        assert "task_allowed_files_json:" in block

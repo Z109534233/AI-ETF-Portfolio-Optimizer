@@ -134,8 +134,16 @@ jobs:
       base_sha: ${{ steps.open_pr.outputs.base_sha }}
       head_sha: ${{ steps.open_pr.outputs.head_sha }}
       pr_title: ${{ steps.open_pr.outputs.pr_title }}
+      allowed_files_json: ${{ steps.open_pr.outputs.allowed_files_json }}
       controller_comment_id: ${{ steps.open_pr.outputs.controller_comment_id }}
     steps:
+      - name: Checkout trusted task specifications
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.main_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
       # NOTE: this job only ever calls github.rest.pulls.create - it has no
       # merge action of any kind. Nothing in this workflow merges into main.
       - name: Open ONE cumulative PR from the integration branch to main (human merge required)
@@ -149,7 +157,22 @@ jobs:
             const fs = require('fs');
             const integrationBranch = process.env.INTEGRATION_BRANCH;
             const title = 'Methodology autopilot: M1-M4 cumulative changes';
+            const queueMarker =
+              `<!-- methodology-autopilot-managed:v1 run_id=${context.runId} task_id=CUMULATIVE -->`;
+
+            const taskIds = ['M1', 'M2', 'M3', 'M4'];
+            const cumulativeAllowed = new Set();
+            for (const taskId of taskIds) {
+              const spec = JSON.parse(
+                fs.readFileSync(`automation/tasks/${taskId}.json`, 'utf8')
+              );
+              for (const path of (spec.allowed_files || [])) {
+                cumulativeAllowed.add(path);
+              }
+            }
+
             const body = [
+              queueMarker,
               '### Methodology autopilot cumulative PR (M1 -> M4)',
               '',
               `This PR cumulates all four methodology tasks completed on top of trusted main commit \`${process.env.MAIN_SHA}\`.`,
@@ -206,6 +229,7 @@ jobs:
             core.setOutput('base_sha', pr.data.base.sha);
             core.setOutput('head_sha', pr.data.head.sha);
             core.setOutput('pr_title', title);
+            core.setOutput('allowed_files_json', JSON.stringify([...cumulativeAllowed].sort()));
             core.setOutput('controller_comment_id', String(comment.data.id));
 
             const delimiter = 'EOF_BODY';
@@ -234,6 +258,7 @@ jobs:
       attempt_count: 0
       autofix_allowed: true
       trusted_automation: true
+      task_allowed_files_json: ${{ needs.create_cumulative_pr.outputs.allowed_files_json }}
     secrets: inherit
 
   cumulative_round_2:
@@ -260,6 +285,7 @@ jobs:
       attempt_count: ${{ fromJSON(needs.cumulative_round_1.outputs.attempt_count) }}
       autofix_allowed: true
       trusted_automation: true
+      task_allowed_files_json: ${{ needs.create_cumulative_pr.outputs.allowed_files_json }}
     secrets: inherit
 
   cumulative_round_3:
@@ -286,4 +312,5 @@ jobs:
       attempt_count: ${{ fromJSON(needs.cumulative_round_2.outputs.attempt_count) }}
       autofix_allowed: true
       trusted_automation: true
+      task_allowed_files_json: ${{ needs.create_cumulative_pr.outputs.allowed_files_json }}
     secrets: inherit

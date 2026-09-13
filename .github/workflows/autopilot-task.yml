@@ -520,6 +520,7 @@ jobs:
       base_sha: ${{ steps.open_pr.outputs.base_sha }}
       pr_title: ${{ steps.open_pr.outputs.pr_title }}
       pr_body: ${{ steps.open_pr.outputs.pr_body }}
+      allowed_files_json: ${{ steps.open_pr.outputs.allowed_files_json }}
       controller_comment_id: ${{ steps.open_pr.outputs.controller_comment_id }}
     steps:
       - name: Download task patch summary
@@ -561,7 +562,10 @@ jobs:
             const allowed = (manifest.allowed_files || []).map((c) => `- \`${c}\``).join('\n');
 
             const title = `${taskId}: ${manifest.title}`;
+            const queueMarker =
+              `<!-- methodology-autopilot-managed:v1 run_id=${context.runId} task_id=${taskId} -->`;
             const body = [
+              queueMarker,
               `### Trusted task specification: ${taskId} — ${manifest.title}`,
               '',
               'This PR was created by the methodology autopilot queue. It targets the',
@@ -621,6 +625,7 @@ jobs:
             core.setOutput('pr_number', String(pr.data.number));
             core.setOutput('base_sha', pr.data.base.sha);
             core.setOutput('pr_title', title);
+            core.setOutput('allowed_files_json', JSON.stringify(manifest.allowed_files || []));
             core.setOutput('controller_comment_id', String(comment.data.id));
 
             const delimiter = 'EOF_BODY';
@@ -645,6 +650,7 @@ jobs:
       attempt_count: 0
       autofix_allowed: true
       trusted_automation: true
+      task_allowed_files_json: ${{ needs.create_pr.outputs.allowed_files_json }}
     secrets: inherit
 
   round_2:
@@ -671,6 +677,7 @@ jobs:
       attempt_count: ${{ fromJSON(needs.round_1.outputs.attempt_count) }}
       autofix_allowed: true
       trusted_automation: true
+      task_allowed_files_json: ${{ needs.create_pr.outputs.allowed_files_json }}
     secrets: inherit
 
   round_3:
@@ -697,6 +704,7 @@ jobs:
       attempt_count: ${{ fromJSON(needs.round_2.outputs.attempt_count) }}
       autofix_allowed: true
       trusted_automation: true
+      task_allowed_files_json: ${{ needs.create_pr.outputs.allowed_files_json }}
     secrets: inherit
 
   finalize_verdict:
