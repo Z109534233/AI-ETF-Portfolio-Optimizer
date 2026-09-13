@@ -71,6 +71,12 @@ def simulate_investment(
         "median_gain": float(np.median(final_values)) - total_contributed,
         "probability_profit": float(np.mean(final_values > total_contributed)),
         "probability_double": float(np.mean(final_values > 2 * initial_investment)),
+        # Raw counts behind "probability_profit", so the UI can render the
+        # empirical frequency honestly ("X / N simulated paths ended above
+        # contributions") instead of implying a real-world guaranteed
+        # probability -- see pages/3_Investment_Simulator.py.
+        "positive_outcome_count": int(np.sum(final_values > total_contributed)),
+        "n_simulations": int(n_simulations),
     }
 
     # Annual table (median path)
@@ -98,7 +104,7 @@ def simulate_investment(
     # Create paths DataFrame (sample for performance)
     sample_n = min(n_simulations, 200)
     sample_indices = np.random.choice(n_simulations, sample_n, replace=False)
-    date_index = pd.date_range(start="today", periods=months + 1, freq="M")
+    date_index = pd.date_range(start="today", periods=months + 1, freq="ME")
     paths_df = pd.DataFrame(
         paths[:, sample_indices],
         index=date_index,

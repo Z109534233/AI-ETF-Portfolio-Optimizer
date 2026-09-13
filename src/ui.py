@@ -899,7 +899,7 @@ def style_signed_columns(df, columns):
         color = COLORS["success"] if num >= 0 else COLORS["danger"]
         return f"color:{color}; font-weight:600;"
 
-    return df.style.applymap(_color, subset=columns)
+    return df.style.map(_color, subset=columns)
 
 
 # ── Footer ──────────────────────────────────────────────────────────────────────

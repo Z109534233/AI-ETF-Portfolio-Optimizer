@@ -344,7 +344,7 @@ with chart_card(t("risk_detail_card")):
     with tab5:
         # Risk contribution
         if len(etf_prices.columns) >= 2:
-            cov = covariance_matrix(etf_prices).values
+            cov = covariance_matrix(etf_prices).values.copy()
             cov += np.eye(len(etf_prices.columns)) * 1e-8
             port_vol_val = np.sqrt(weights_arr @ cov @ weights_arr)
             if port_vol_val > 0:

@@ -829,7 +829,7 @@ elif opt_workspace == "Strategy Lab":
             returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
             mean_returns = returns_df.mean().values
             cov_df = covariance_matrix(prices_df)
-            cov = cov_df.values
+            cov = cov_df.values.copy()
 
             if cov.shape != (n_tickers, n_tickers):
                 error_state(
