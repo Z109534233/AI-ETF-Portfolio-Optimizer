@@ -110,7 +110,7 @@ def test_task_specs_cannot_allow_github_or_automation_paths():
 # --- initial Claude implementation job is read-only/tool-less/pinned -------
 
 
-def test_claude_job_is_read_only_context_and_pinned():
+def test_claude_job_is_toolless_bounded_context_and_pinned():
     text = TASK.read_text(encoding="utf-8")
     block = _job_block(text, "claude_patch", "validate_patch")
     assert "contents: read" in block
@@ -121,8 +121,8 @@ def test_claude_job_is_read_only_context_and_pinned():
     )
     assert "github_token: ${{ github.token }}" in block
     assert "--permission-mode dontAsk" in block
-    assert '--tools "Read"' in block
-    assert '--tools ""' not in block
+    assert '--tools ""' in block
+    assert '--tools "Read"' not in block
     assert "--output-format json" in block
     assert '"patch"' in block and '"summary"' in block
     assert "CLAUDE_CODE_OAUTH_TOKEN" in block
@@ -525,14 +525,23 @@ def test_cumulative_pr_exports_body_consumed_by_every_review_round():
         assert "needs.create_cumulative_pr.outputs.pr_body" in block
 
 
-def test_initial_claude_prompt_keeps_source_contents_out_of_action_input():
+def test_initial_claude_prompt_is_bounded_and_toolless():
     text = TASK.read_text(encoding="utf-8")
+    prepare = _job_block(text, "prepare_context", "claude_patch")
     block = _job_block(text, "claude_patch", "validate_patch")
-    assert "Build compact prompt before secret-bearing step" in block
-    assert "task_context/manifest.json" in block
-    assert "snapshot_file" in block
-    assert "Read every snapshot_file" in block
-    assert "sections = []" not in block
-    assert "''.join(sections)" not in block
-    assert "Compact Claude prompt unexpectedly exceeds 40 KB" in block
-    assert '--tools "Read"' in block
+    assert "FULL_FILE_LIMIT = 22_000" in prepare
+    assert "EXCERPT_FILE_LIMIT = 14_000" in prepare
+    assert "TOTAL_CONTEXT_LIMIT = 80_000" in prepare
+    assert "context_excerpt_keywords" in prepare
+    assert "Build bounded prompt before secret-bearing step" in block
+    assert "prompt_bytes > 100_000" in block
+    assert '--tools ""' in block
+    assert '--tools "Read"' not in block
+    assert "BOUNDED TASK CONTEXT" in block
+
+
+def test_large_context_requires_explicit_trusted_excerpt_keywords():
+    text = TASK.read_text(encoding="utf-8")
+    prepare = _job_block(text, "prepare_context", "claude_patch")
+    assert "Large context file requires context_excerpt_keywords" in prepare
+    assert "No excerpt keyword matched required large context file" in prepare

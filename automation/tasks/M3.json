@@ -30,5 +30,56 @@
   "prohibited": [
     "No ETF application/business-logic changes outside of this task's methodology and disclosure scope.",
     "Do not fabricate risk figures that are not derivable from real portfolio data."
-  ]
+  ],
+  "context_excerpt_keywords": {
+    "src/financial_metrics.py": [
+      "var",
+      "cvar",
+      "drawdown",
+      "volatility",
+      "correlation",
+      "concentration",
+      "return"
+    ],
+    "src/holdings.py": [
+      "overlap",
+      "concentration",
+      "effective",
+      "top",
+      "weight",
+      "holding"
+    ],
+    "pages/4_Risk_Analytics.py": [
+      "var",
+      "cvar",
+      "drawdown",
+      "correlation",
+      "overlap",
+      "concentration",
+      "stress",
+      "methodology",
+      "risk"
+    ],
+    "src/i18n.py": [
+      "risk",
+      "var",
+      "cvar",
+      "drawdown",
+      "overlap",
+      "concentration",
+      "stress",
+      "methodology",
+      "correlation"
+    ],
+    "src/methodology.py": [
+      "risk",
+      "var",
+      "cvar",
+      "drawdown",
+      "overlap",
+      "concentration",
+      "stress",
+      "correlation"
+    ]
+  }
 }

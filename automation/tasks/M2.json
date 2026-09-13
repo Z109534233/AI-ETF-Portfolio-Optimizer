@@ -28,5 +28,66 @@
   "prohibited": [
     "No ETF application/business-logic changes outside of this task's methodology and disclosure scope.",
     "Do not introduce new external data sources or paid APIs."
-  ]
+  ],
+  "context_excerpt_keywords": {
+    "src/simulator.py": [
+      "monte",
+      "simulation",
+      "contribution",
+      "rebalance",
+      "xirr",
+      "inflation",
+      "fee",
+      "historical",
+      "percentile",
+      "scenario",
+      "projection"
+    ],
+    "src/data_loader.py": [
+      "historical",
+      "price",
+      "inception",
+      "common",
+      "fill",
+      "download",
+      "date"
+    ],
+    "pages/3_Investment_Simulator.py": [
+      "monte",
+      "simulation",
+      "contribution",
+      "rebalance",
+      "xirr",
+      "inflation",
+      "fee",
+      "historical",
+      "percentile",
+      "assumption",
+      "projection"
+    ],
+    "src/i18n.py": [
+      "simulation",
+      "monte",
+      "historical",
+      "contribution",
+      "rebalance",
+      "xirr",
+      "inflation",
+      "fee",
+      "percentile",
+      "assumption",
+      "projection",
+      "methodology"
+    ],
+    "src/methodology.py": [
+      "simulation",
+      "monte",
+      "backtest",
+      "contribution",
+      "xirr",
+      "rebalance",
+      "look-ahead",
+      "projection"
+    ]
+  }
 }

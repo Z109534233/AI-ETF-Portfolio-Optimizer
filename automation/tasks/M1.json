@@ -30,5 +30,66 @@
   "prohibited": [
     "Do not silently replace the existing sample covariance estimator with Ledoit-Wolf shrinkage or any other estimator without explicit disclosure.",
     "Do not add Black-Litterman, CAPM, true walk-forward optimization, Monte Carlo simulation, VaR, or sentiment-driven features as part of this task."
-  ]
+  ],
+  "context_excerpt_keywords": {
+    "src/portfolio_optimizer.py": [
+      "expected return",
+      "return",
+      "covariance",
+      "sharpe",
+      "risk_free",
+      "risk-free",
+      "constraint",
+      "bounds",
+      "weight",
+      "history",
+      "optimization"
+    ],
+    "src/financial_metrics.py": [
+      "return",
+      "volatility",
+      "sharpe",
+      "covariance",
+      "drawdown",
+      "annual",
+      "risk-free",
+      "risk_free"
+    ],
+    "src/data_loader.py": [
+      "close",
+      "adj close",
+      "pct_change",
+      "download",
+      "history",
+      "dropna",
+      "fill",
+      "common",
+      "inception"
+    ],
+    "pages/2_Portfolio_Optimizer.py": [
+      "expected return",
+      "covariance",
+      "sharpe",
+      "risk-free",
+      "risk_free",
+      "constraint",
+      "backtest",
+      "history",
+      "methodology",
+      "optimization",
+      "weight"
+    ],
+    "src/i18n.py": [
+      "optimizer",
+      "methodology",
+      "sharpe",
+      "covariance",
+      "expected return",
+      "backtest",
+      "risk-free",
+      "risk_free",
+      "insufficient",
+      "historical"
+    ]
+  }
 }

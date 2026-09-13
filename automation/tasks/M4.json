@@ -29,5 +29,65 @@
   "prohibited": [
     "No ETF application/business-logic changes outside of this task's methodology and disclosure scope.",
     "Do not fabricate validation metrics that are not backed by real labeled data."
-  ]
+  ],
+  "context_excerpt_keywords": {
+    "src/market_intelligence.py": [
+      "sentiment",
+      "impact",
+      "affected",
+      "confidence",
+      "relevance",
+      "source",
+      "as_of",
+      "as-of",
+      "neutral",
+      "bullish",
+      "bearish",
+      "gmis"
+    ],
+    "src/news.py": [
+      "sentiment",
+      "source",
+      "timestamp",
+      "market",
+      "headline"
+    ],
+    "pages/8_Market_Intelligence.py": [
+      "sentiment",
+      "impact",
+      "affected",
+      "confidence",
+      "relevance",
+      "source",
+      "neutral",
+      "bullish",
+      "bearish",
+      "methodology",
+      "validation"
+    ],
+    "src/i18n.py": [
+      "sentiment",
+      "impact",
+      "affected",
+      "confidence",
+      "relevance",
+      "source",
+      "neutral",
+      "bullish",
+      "bearish",
+      "methodology",
+      "validation"
+    ],
+    "src/methodology.py": [
+      "sentiment",
+      "impact",
+      "relevance",
+      "confidence",
+      "validation",
+      "source",
+      "neutral",
+      "bullish",
+      "bearish"
+    ]
+  }
 }
