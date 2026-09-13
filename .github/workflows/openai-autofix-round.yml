@@ -53,6 +53,8 @@ on:
         value: ${{ jobs.finalize.outputs.attempt_count }}
       status:
         value: ${{ jobs.finalize.outputs.status }}
+      tested_head_sha:
+        value: ${{ jobs.finalize.outputs.tested_head_sha }}
 
 jobs:
   review:
@@ -937,6 +939,7 @@ jobs:
       head_sha: ${{ steps.final.outputs.head_sha }}
       attempt_count: ${{ steps.final.outputs.attempt_count }}
       status: ${{ steps.final.outputs.status }}
+      tested_head_sha: ${{ steps.final.outputs.tested_head_sha }}
     steps:
       - name: Finalize round and persistent controller state
         id: final
@@ -965,6 +968,7 @@ jobs:
             let headSha = process.env.INPUT_HEAD;
             let attempts = Number(process.env.INPUT_COUNT);
             let status = 'no-repair';
+            let testedHeadSha = '';
             let shouldUpdateState = false;
 
             if (initialVerdict === 'FIX' && autofixAllowed) {
@@ -989,6 +993,7 @@ jobs:
                   }
                 } else {
                   headSha = process.env.APPLIED_HEAD;
+                  testedHeadSha = process.env.APPLIED_HEAD;
                   verdict = process.env.POST_VERDICT || 'STOP';
                   if (verdict === 'PASS') {
                     status = 'completed';
@@ -1063,3 +1068,4 @@ jobs:
             core.setOutput('head_sha', headSha);
             core.setOutput('attempt_count', String(attempts));
             core.setOutput('status', status);
+            core.setOutput('tested_head_sha', testedHeadSha);

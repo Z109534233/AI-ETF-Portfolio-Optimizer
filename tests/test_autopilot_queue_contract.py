@@ -473,3 +473,34 @@ def test_trusted_repair_validator_executes_with_valid_allowlist(tmp_path):
     assert result.returncode == 0, result.stderr + result.stdout
     assert (tmp_path / "validated.patch").is_file()
     assert target.read_text(encoding="utf-8") == "new\n"
+
+
+def test_every_repair_round_tests_repaired_head_before_post_review():
+    text = ROUND.read_text(encoding="utf-8")
+    test_patch = _job_block(text, "test_patch", "post_review")
+    post_review = _job_block(text, "post_review", "finalize")
+    finalize = _job_block(text, "finalize")
+
+    assert "ref: ${{ needs.apply_patch.outputs.head_sha }}" in test_patch
+    assert "python -m pytest -q" in test_patch
+    assert "if: needs.test_patch.result == 'success'" in post_review
+    assert "process.env.TEST_RESULT === 'success'" in finalize
+    assert "tested_head_sha" in finalize
+
+
+def test_task_never_advances_or_merges_unverified_repair_head():
+    text = TASK.read_text(encoding="utf-8")
+    round_2 = _job_block(text, "round_2", "round_3")
+    round_3 = _job_block(text, "round_3", "finalize_verdict")
+    merge = _job_block(text, "merge_gate", "report_status")
+
+    assert (
+        "needs.round_1.outputs.tested_head_sha == needs.round_1.outputs.head_sha"
+        in round_2
+    )
+    assert (
+        "needs.round_2.outputs.tested_head_sha == needs.round_2.outputs.head_sha"
+        in round_3
+    )
+    assert "EXPECTED_TESTED_HEAD_SHA" in merge
+    assert "EXPECTED_TESTED_HEAD_SHA !== process.env.EXPECTED_HEAD_SHA" in merge

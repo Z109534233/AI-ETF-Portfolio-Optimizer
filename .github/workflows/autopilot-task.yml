@@ -469,6 +469,8 @@ jobs:
   test:
     needs: apply_patch
     runs-on: ubuntu-latest
+    outputs:
+      tested_head_sha: ${{ steps.mark_tested.outputs.tested_head_sha }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -504,6 +506,12 @@ jobs:
             fi
             python -m pytest -q
           fi
+
+      - name: Mark initial implementation head as tested
+        id: mark_tested
+        env:
+          TESTED_HEAD: ${{ needs.apply_patch.outputs.head_sha }}
+        run: echo "tested_head_sha=$TESTED_HEAD" >> "$GITHUB_OUTPUT"
 
   create_pr:
     needs: [guard_integration, apply_patch, test]
@@ -629,7 +637,7 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `pr_body<<${delimiter}\n${body}\n${delimiter}\n`);
 
   round_1:
-    needs: [create_pr, apply_patch, guard_integration]
+    needs: [create_pr, apply_patch, guard_integration, test]
     uses: ./.github/workflows/openai-autofix-round.yml
     permissions:
       contents: write
@@ -656,6 +664,7 @@ jobs:
       needs.round_1.result == 'success' &&
       needs.round_1.outputs.verdict == 'FIX' &&
       needs.round_1.outputs.status == 'completed' &&
+      needs.round_1.outputs.tested_head_sha == needs.round_1.outputs.head_sha &&
       fromJSON(needs.round_1.outputs.attempt_count) < 3
     uses: ./.github/workflows/openai-autofix-round.yml
     permissions:
@@ -683,6 +692,7 @@ jobs:
       needs.round_2.result == 'success' &&
       needs.round_2.outputs.verdict == 'FIX' &&
       needs.round_2.outputs.status == 'completed' &&
+      needs.round_2.outputs.tested_head_sha == needs.round_2.outputs.head_sha &&
       fromJSON(needs.round_2.outputs.attempt_count) < 3
     uses: ./.github/workflows/openai-autofix-round.yml
     permissions:
@@ -705,7 +715,7 @@ jobs:
     secrets: inherit
 
   finalize_verdict:
-    needs: [create_pr, apply_patch, round_1, round_2, round_3]
+    needs: [create_pr, apply_patch, test, round_1, round_2, round_3]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -713,6 +723,7 @@ jobs:
     outputs:
       final_verdict: ${{ steps.pick.outputs.final_verdict }}
       final_head_sha: ${{ steps.pick.outputs.final_head_sha }}
+      final_tested_head_sha: ${{ steps.pick.outputs.final_tested_head_sha }}
     steps:
       - name: Pick the verdict/head from the last round that actually ran
         id: pick
@@ -727,27 +738,53 @@ jobs:
           R3_VERDICT: ${{ needs.round_3.outputs.verdict }}
           R3_HEAD: ${{ needs.round_3.outputs.head_sha }}
           APPLY_HEAD: ${{ needs.apply_patch.outputs.head_sha }}
+          INITIAL_TESTED_HEAD: ${{ needs.test.outputs.tested_head_sha }}
+          R1_TESTED_HEAD: ${{ needs.round_1.outputs.tested_head_sha }}
+          R2_TESTED_HEAD: ${{ needs.round_2.outputs.tested_head_sha }}
+          R3_TESTED_HEAD: ${{ needs.round_3.outputs.tested_head_sha }}
         run: |
           python - <<'PY'
           import os
 
-          verdict = ''
+          verdict = 'STOP'
           head = os.environ.get('APPLY_HEAD', '')
-          if os.environ.get('R3_RESULT') == 'success':
-              verdict = os.environ.get('R3_VERDICT', '')
-              head = os.environ.get('R3_HEAD') or head
-          elif os.environ.get('R2_RESULT') == 'success':
-              verdict = os.environ.get('R2_VERDICT', '')
-              head = os.environ.get('R2_HEAD') or head
-          elif os.environ.get('R1_RESULT') == 'success':
-              verdict = os.environ.get('R1_VERDICT', '')
-              head = os.environ.get('R1_HEAD') or head
-          else:
-              verdict = 'STOP'
+          tested = os.environ.get('INITIAL_TESTED_HEAD', '')
+
+          rounds = [
+              (
+                  os.environ.get('R1_RESULT'),
+                  os.environ.get('R1_VERDICT', ''),
+                  os.environ.get('R1_HEAD', ''),
+                  os.environ.get('R1_TESTED_HEAD', ''),
+              ),
+              (
+                  os.environ.get('R2_RESULT'),
+                  os.environ.get('R2_VERDICT', ''),
+                  os.environ.get('R2_HEAD', ''),
+                  os.environ.get('R2_TESTED_HEAD', ''),
+              ),
+              (
+                  os.environ.get('R3_RESULT'),
+                  os.environ.get('R3_VERDICT', ''),
+                  os.environ.get('R3_HEAD', ''),
+                  os.environ.get('R3_TESTED_HEAD', ''),
+              ),
+          ]
+          for result, round_verdict, round_head, round_tested in rounds:
+              if result != 'success':
+                  continue
+              verdict = round_verdict or 'STOP'
+              if round_head:
+                  head = round_head
+              if round_tested:
+                  tested = round_tested
+              elif head != tested:
+                  tested = ''
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
               out.write(f'final_verdict={verdict}\n')
               out.write(f'final_head_sha={head}\n')
+              out.write(f'final_tested_head_sha={tested}\n')
           PY
         shell: bash
 
@@ -775,10 +812,19 @@ jobs:
           INTEGRATION_BRANCH: ${{ inputs.integration_branch }}
           EXPECTED_BASE_SHA: ${{ needs.guard_integration.outputs.task_base_sha }}
           EXPECTED_HEAD_SHA: ${{ needs.finalize_verdict.outputs.final_head_sha }}
+          EXPECTED_TESTED_HEAD_SHA: ${{ needs.finalize_verdict.outputs.final_tested_head_sha }}
         with:
           script: |
             const prNumber = Number(process.env.PR_NUMBER);
             const integrationBranch = process.env.INTEGRATION_BRANCH;
+
+            if (!process.env.EXPECTED_TESTED_HEAD_SHA ||
+                process.env.EXPECTED_TESTED_HEAD_SHA !== process.env.EXPECTED_HEAD_SHA) {
+              core.setFailed(
+                'Final PASS head is not proven to be the exact secret-free tested head.'
+              );
+              return;
+            }
 
             if (integrationBranch === 'main') {
               core.setFailed('Refusing to auto-merge a task PR into main.');

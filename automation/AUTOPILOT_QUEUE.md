@@ -78,8 +78,11 @@ For each task (`M1`..`M4`), given the current integration branch:
    `github-actions[bot]` auto-fix controller comment
    (`<!-- openai-autofix-controller:v3 -->`) with `autopilot_managed: true`.
 9. `round_1` / `round_2` / `round_3` - call the existing reusable
-   `openai-autofix-round.yml` with `trusted_automation: true`, exactly as
-   `openai-reviewer.yml` does for human PRs, capped at 3 repair attempts.
+   `openai-autofix-round.yml` with `trusted_automation: true`, capped at 3
+   repair attempts. Every repair inside that reusable workflow must pass its
+   secret-free `test_patch` job before `post_review` runs. The reusable
+   workflow exposes `tested_head_sha`, and later rounds/merge accept a repaired
+   head only when it exactly matches that tested SHA.
 10. `finalize_verdict` - resolves the verdict/head SHA from whichever round
     actually ran (or `STOP` if none did).
 11. `merge_gate` - runs **only if the final verdict is `PASS`**. It
