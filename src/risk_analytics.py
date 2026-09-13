@@ -9,8 +9,10 @@ window/provenance) and explicit "unavailable" states pages/4_Risk_Analytics.py
 needs to disclose exactly what each number is and where it comes from.
 """
 
+import math
 from typing import Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 
 from src.financial_metrics import (
@@ -164,3 +166,157 @@ STRESS_SCENARIOS = {
         "note_i18n_key": "risk_scenario_note_tech_bubble",
     },
 }
+
+
+# ============================================================================
+# VaR Backtesting -- out-of-sample exception count + Kupiec Proportion-of-
+# Failures (unconditional coverage) test (Issue #20 section 5B).
+# ============================================================================
+
+# A rolling VaR backtest needs enough post-window forecast days for the
+# exception rate to mean anything at all -- below this, the page must say
+# so explicitly rather than run a Kupiec test on (e.g.) 5 forecasts.
+MIN_BACKTEST_FORECASTS = 60
+
+
+def kupiec_pof_test(n_forecasts: int, n_exceptions: int, confidence: float = 0.95) -> dict:
+    """Kupiec (1995) Proportion-of-Failures unconditional coverage test.
+
+    Null hypothesis H0: the true exception probability equals
+    `1 - confidence` (i.e. the VaR model is correctly calibrated at this
+    confidence level). The likelihood-ratio statistic
+        LR_POF = -2 * ln[ L(p) / L(pi_hat) ]
+    is asymptotically chi-squared with 1 degree of freedom under H0, where
+    `p = 1 - confidence` is the expected exception probability and
+    `pi_hat = n_exceptions / n_forecasts` is the observed exception rate.
+
+    Mathematically correct at the boundaries (n_exceptions == 0 or ==
+    n_forecasts): the binomial log-likelihood's x*log(pi) / (n-x)*log(1-pi)
+    terms are each skipped when their own coefficient (x or n-x) is zero,
+    which is the correct calibration of x*log(x) -> 0 as x -> 0 -- so this
+    never evaluates log(0) and never raises, and pi_hat's own likelihood
+    (the unconstrained MLE) is correctly 0 (i.e. a perfect log-likelihood
+    of 0 under log-probability) at the boundary.
+
+    Returns {"lr_stat": float, "p_value": float, "exception_rate": float,
+    "expected_rate": float}. The p-value only tells you how compatible the
+    OBSERVED exception count is with the stated confidence level under
+    H0 -- a high p-value does not "prove" the model is correct, and this
+    function makes no pass/fail judgement itself; callers must state the
+    null hypothesis explicitly rather than claim the model "passed".
+    """
+    if n_forecasts <= 0:
+        raise ValueError("n_forecasts must be positive")
+    if not (0 < confidence < 1):
+        raise ValueError("confidence must be strictly between 0 and 1")
+
+    p = 1.0 - confidence
+    x = n_exceptions
+    n = n_forecasts
+    pi_hat = x / n
+
+    def _log_likelihood(prob: float, x: int, n: int) -> float:
+        ll = 0.0
+        if x > 0:
+            ll += x * math.log(prob)
+        if n - x > 0:
+            ll += (n - x) * math.log(1.0 - prob)
+        return ll
+
+    ll_null = _log_likelihood(p, x, n)
+    ll_alt = _log_likelihood(pi_hat, x, n)
+    lr_stat = max(0.0, -2.0 * (ll_null - ll_alt))
+
+    # 1-df chi-squared survival function via the regularized upper
+    # incomplete gamma function Q(1/2, lr/2) -- avoids adding a scipy.stats
+    # dependency for a single well-known closed form: for k=1 d.f.,
+    # P(X > lr) = erfc(sqrt(lr / 2)).
+    p_value = math.erfc(math.sqrt(lr_stat / 2.0))
+
+    return {
+        "lr_stat": lr_stat, "p_value": p_value,
+        "exception_rate": pi_hat, "expected_rate": p,
+    }
+
+
+def var_exception_backtest(prices: pd.Series, confidence: float = 0.95,
+                            window: int = 250,
+                            min_forecasts: int = MIN_BACKTEST_FORECASTS) -> dict:
+    """Out-of-sample historical VaR exception backtest with NO look-ahead:
+    at every forecast date, the VaR threshold is estimated using ONLY the
+    trailing `window` daily returns strictly BEFORE that date, then
+    compared against that date's actually realized return one step ahead.
+    An "exception" is a realized daily return more negative than the
+    forecast VaR threshold.
+
+    This is a genuinely rolling/expanding walk-forward evaluation, not a
+    single in-sample percentile: the VaR estimate at forecast index i uses
+    returns[i-window:i] only, so no forecast ever sees data from its own or
+    a later date -- see tests/test_risk_analytics.py's no-look-ahead
+    regression test.
+
+    Returns a dict:
+      available=False + reason -- when there is not enough return history
+        for at least `min_forecasts` forecasts after reserving `window`
+        observations to seed the first estimate.
+      available=True -- method/window/confidence disclosure, n_forecasts,
+        n_exceptions, expected_exceptions (= n_forecasts * (1-confidence)),
+        exception_rate, backtest_start/end dates, and the Kupiec POF
+        test's lr_stat/p_value/exception_rate/expected_rate (see
+        kupiec_pof_test's docstring for what the p-value does and does not
+        establish).
+    """
+    returns = daily_returns(prices) if prices is not None else pd.Series(dtype=float)
+    n = len(returns)
+    n_possible_forecasts = n - window
+
+    if n_possible_forecasts < min_forecasts:
+        return {
+            "available": False,
+            "reason": (
+                f"only {max(n_possible_forecasts, 0)} out-of-sample forecast day(s) possible "
+                f"with a {window}-day trailing window ({n} total daily return observations); "
+                f"at least {min_forecasts} are required for a meaningful backtest"
+            ),
+            "method": "historical (rolling trailing window, one-step-ahead)",
+            "window": window,
+            "confidence": confidence,
+        }
+
+    exceptions = 0
+    for i in range(window, n):
+        train_window = returns.iloc[i - window:i]
+        var_threshold = value_at_risk_from_returns(train_window, confidence)
+        realized_return = returns.iloc[i]
+        if realized_return < var_threshold:
+            exceptions += 1
+
+    n_forecasts = n_possible_forecasts
+    kupiec = kupiec_pof_test(n_forecasts, exceptions, confidence)
+
+    return {
+        "available": True,
+        "method": "historical (rolling trailing window, one-step-ahead forecast)",
+        "window": window,
+        "confidence": confidence,
+        "backtest_start": str(returns.index[window].date()),
+        "backtest_end": str(returns.index[-1].date()),
+        "n_forecasts": n_forecasts,
+        "n_exceptions": exceptions,
+        "expected_exceptions": n_forecasts * (1.0 - confidence),
+        "exception_rate": kupiec["exception_rate"],
+        "kupiec_lr_stat": kupiec["lr_stat"],
+        "kupiec_p_value": kupiec["p_value"],
+    }
+
+
+def value_at_risk_from_returns(returns: pd.Series, confidence: float = 0.95) -> float:
+    """Historical VaR percentile computed directly from an already-realized
+    daily-return series (rather than a price series) -- the same empirical-
+    percentile method as financial_metrics.value_at_risk(), factored out so
+    var_exception_backtest() can apply it to a TRAILING WINDOW of returns
+    at each forecast date without re-deriving returns from a resliced price
+    series each time."""
+    if returns.empty:
+        return 0.0
+    return float(np.percentile(returns, (1 - confidence) * 100))
