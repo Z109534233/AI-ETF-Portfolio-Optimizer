@@ -110,22 +110,21 @@ def test_task_specs_cannot_allow_github_or_automation_paths():
 # --- initial Claude implementation job is read-only/tool-less/pinned -------
 
 
-def test_claude_job_is_toolless_bounded_context_and_pinned():
+def test_claude_job_uses_stdin_toolless_cli_without_github_token():
     text = TASK.read_text(encoding="utf-8")
     block = _job_block(text, "claude_patch", "validate_patch")
-    assert "contents: read" in block
     assert "contents: write" not in block
-    assert (
-        "uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f"
-        in block
-    )
-    assert "github_token: ${{ github.token }}" in block
+    assert "anthropics/claude-code-action@" not in block
+    assert "curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.269" in block
+    assert '< "$GITHUB_WORKSPACE/claude_prompt.txt"' in block
+    assert "env -i" in block
     assert "--permission-mode dontAsk" in block
     assert '--tools ""' in block
-    assert '--tools "Read"' not in block
+    assert "--no-session-persistence" in block
     assert "--output-format json" in block
-    assert '"patch"' in block and '"summary"' in block
     assert "CLAUDE_CODE_OAUTH_TOKEN" in block
+    assert "GITHUB_TOKEN:" not in block
+    assert "github_token:" not in block
 
 
 # --- write/apply job has no AI secrets --------------------------------------
@@ -525,7 +524,7 @@ def test_cumulative_pr_exports_body_consumed_by_every_review_round():
         assert "needs.create_cumulative_pr.outputs.pr_body" in block
 
 
-def test_initial_claude_prompt_is_bounded_and_toolless():
+def test_initial_claude_prompt_is_bounded_and_piped_via_stdin():
     text = TASK.read_text(encoding="utf-8")
     prepare = _job_block(text, "prepare_context", "claude_patch")
     block = _job_block(text, "claude_patch", "validate_patch")
@@ -533,10 +532,12 @@ def test_initial_claude_prompt_is_bounded_and_toolless():
     assert "EXCERPT_FILE_LIMIT = 14_000" in prepare
     assert "TOTAL_CONTEXT_LIMIT = 80_000" in prepare
     assert "context_excerpt_keywords" in prepare
-    assert "Build bounded prompt before secret-bearing step" in block
-    assert "prompt_bytes > 100_000" in block
+    assert "Build bounded prompt file before secret-bearing step" in block
+    assert "Bounded Claude stdin prompt" in block
+    assert "claude_prompt.txt" in block
+    assert '< "$GITHUB_WORKSPACE/claude_prompt.txt"' in block
+    assert "prompt: ${{" not in block
     assert '--tools ""' in block
-    assert '--tools "Read"' not in block
     assert "BOUNDED TASK CONTEXT" in block
 
 
@@ -545,3 +546,14 @@ def test_large_context_requires_explicit_trusted_excerpt_keywords():
     prepare = _job_block(text, "prepare_context", "claude_patch")
     assert "Large context file requires context_excerpt_keywords" in prepare
     assert "No excerpt keyword matched required large context file" in prepare
+
+
+def test_secret_bearing_claude_step_has_minimal_environment_and_empty_cwd():
+    text = TASK.read_text(encoding="utf-8")
+    block = _job_block(text, "claude_patch", "validate_patch")
+    assert 'EMPTY_DIR="$RUNNER_TEMP/claude-empty"' in block
+    assert 'cd "$EMPTY_DIR"' in block
+    assert "env -i" in block
+    assert 'CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN"' in block
+    assert 'PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"' in block
+    assert "actions/checkout@" not in block

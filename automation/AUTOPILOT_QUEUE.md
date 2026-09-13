@@ -50,11 +50,18 @@ For each task (`M1`..`M4`), given the current integration branch:
      included in full; larger declared files are reduced to keyword excerpts
      defined in the trusted task spec, capped at 14 KB per large file and
      80 KB total context;
-   - hard-fails if the final action prompt exceeds 100 KB, keeping it below the
-     runner's per-argument/environment size limit that caused the original M1 failure;
-   - runs with `github_token: ${{ github.token }}`,
-     `--permission-mode dontAsk`, `--tools ""`, `--output-format json`, and a
-     structured JSON schema `{patch, summary}`;
+   - writes the bounded prompt to `claude_prompt.txt` and pipes it to the
+     Claude Code CLI through stdin instead of passing source text through a
+     GitHub Action input/environment variable. The workflow caps this prompt at
+     100 KB; Claude Code's documented piped-stdin limit is 10 MB;
+   - installs the exact CLI version 2.1.269 in a step with no AI credential,
+     then invokes it from an empty working directory with `env -i`;
+   - the secret-bearing invocation receives only the Claude OAuth token plus
+     minimal HOME/PATH values. It receives no GitHub token and no repository
+     checkout;
+   - runs with `--permission-mode dontAsk`, `--tools ""`,
+     `--no-session-persistence`, `--output-format json`, and a structured
+     JSON schema `{patch, summary}`;
    - Claude is tool-less: it is not given shell, filesystem read/write,
      network-search, or GitHub mutation tools.
 

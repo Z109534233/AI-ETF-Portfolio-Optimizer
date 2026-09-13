@@ -267,27 +267,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
     steps:
-      - name: Checkout trusted automation only (integration branch base commit)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.guard_integration.outputs.task_base_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Download text-only task context
+      - name: Download bounded text-only task context
         uses: actions/download-artifact@v4
         with:
           name: task-context-${{ github.run_id }}-${{ inputs.task_id }}
           path: task_context
 
-      - name: Build bounded prompt before secret-bearing step
-        id: prompt
+      - name: Build bounded prompt file before secret-bearing step
         run: |
           python - <<'PY'
           import json
-          import os
-          import secrets
+          from pathlib import Path
 
           manifest = json.load(open('task_context/manifest.json', encoding='utf-8'))
           sections = []
@@ -341,53 +333,56 @@ jobs:
           Produce a standard unified git diff that applies to the task branch.
           """
 
-          prompt_bytes = len(prompt.encode('utf-8'))
-          if prompt_bytes > 100_000:
+          encoded = prompt.encode('utf-8')
+          if len(encoded) > 100_000:
               raise SystemExit(
-                  f'Bounded Claude prompt is {prompt_bytes} bytes; limit is 100000.'
+                  f'Bounded Claude stdin prompt is {len(encoded)} bytes; limit is 100000.'
               )
-
-          while True:
-              delimiter = 'EOF_' + secrets.token_hex(24)
-              if delimiter not in prompt:
-                  break
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-              out.write(f"value<<{delimiter}\n")
-              out.write(prompt)
-              if not prompt.endswith('\n'):
-                  out.write('\n')
-              out.write(f"{delimiter}\n")
+          Path('claude_prompt.txt').write_bytes(encoded)
           PY
 
-      - name: Generate initial implementation patch with Claude in tool-less mode
-        id: claude
-        uses: anthropics/claude-code-action@56cf60fde42f7b19c3abfd5c9c48b69a1288461f
+      - name: Install exact Claude Code CLI version without AI credentials
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.269
+          "$HOME/.local/bin/claude" --version
+
+      - name: Generate initial implementation patch through stdin in tool-less mode
         env:
-          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ github.token }}
-          prompt: ${{ steps.prompt.outputs.value }}
-          claude_args: >-
-            --permission-mode dontAsk
-            --tools ""
-            --output-format json
-            --max-turns 8
-            --json-schema '{"type":"object","additionalProperties":false,"properties":{"patch":{"type":"string"},"summary":{"type":"string"}},"required":["patch","summary"]}'
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          EMPTY_DIR="$RUNNER_TEMP/claude-empty"
+          mkdir -p "$EMPTY_DIR"
+          (
+            cd "$EMPTY_DIR"
+            env -i \
+              HOME="$HOME" \
+              PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+              CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN" \
+              CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 \
+              "$HOME/.local/bin/claude" -p \
+                --permission-mode dontAsk \
+                --tools "" \
+                --no-session-persistence \
+                --output-format json \
+                --max-turns 8 \
+                --json-schema '{"type":"object","additionalProperties":false,"properties":{"patch":{"type":"string"},"summary":{"type":"string"}},"required":["patch","summary"]}' \
+                < "$GITHUB_WORKSPACE/claude_prompt.txt" \
+                > "$GITHUB_WORKSPACE/claude_result.json"
+          )
 
       - name: Persist structured patch output
-        env:
-          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
         run: |
           python - <<'PY'
           import json
-          import os
           from pathlib import Path
 
-          raw = os.environ.get('STRUCTURED_OUTPUT', '')
-          data = json.loads(raw)
-          if set(data) != {'patch', 'summary'}:
-              raise SystemExit('Claude structured output has unexpected keys.')
+          result = json.load(open('claude_result.json', encoding='utf-8'))
+          data = result.get('structured_output')
+          if isinstance(data, str):
+              data = json.loads(data)
+          if not isinstance(data, dict) or set(data) != {'patch', 'summary'}:
+              raise SystemExit('Claude structured output has unexpected shape.')
           Path('claude_patch.json').write_text(
               json.dumps(data, ensure_ascii=False, indent=2),
               encoding='utf-8'
