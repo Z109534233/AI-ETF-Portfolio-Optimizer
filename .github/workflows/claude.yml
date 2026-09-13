@@ -47,6 +47,6 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           claude_args: >-
-            --allowedTools "Read,Edit,Write,Bash(git:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(pip:*),Bash(pip3:*),Bash(gh:*),Bash(ln:*),Bash(mkdir:*),Bash(rm:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(sed:*),Bash(head:*),Bash(tail:*),Bash(timeout:*)"
-            --max-turns 120
+            --allowedTools "Read,Edit,Write,Bash(git:*),Bash(python:*),Bash(python3:*),Bash(pytest:*),Bash(pip:*),Bash(pip3:*),Bash(gh:*),Bash(ln:*),Bash(mkdir:*),Bash(rm:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(sed:*),Bash(head:*),Bash(tail:*),Bash(timeout:*),Bash(curl:*),Bash(streamlit:*),Bash(sleep:*),Bash(ps:*),Bash(kill:*)"
+            --max-turns 200
 
