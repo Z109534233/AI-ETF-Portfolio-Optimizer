@@ -46,14 +46,18 @@ For each task (`M1`..`M4`), given the current integration branch:
    - uses the pinned `anthropics/claude-code-action` commit
      `56cf60fde42f7b19c3abfd5c9c48b69a1288461f`;
    - has `contents: read` only, and no repository-write credential;
+   - receives only a compact task instruction in the action input; large source
+     contents remain in the downloaded `task_context/` artifact so the runner
+     never tries to place hundreds of KB into the process environment/argument list;
    - runs with `github_token: ${{ github.token }}`,
-     `--permission-mode dontAsk`, `--tools ""`, `--output-format json`, and a
-     structured JSON schema `{patch, summary}`;
-   - returns only a unified diff and a summary; built-in Claude tools are
-     disabled, so the model is not given shell/filesystem/GitHub mutation tools.
+     `--permission-mode dontAsk`, `--tools "Read"`, `--output-format json`, and
+     a structured JSON schema `{patch, summary}`;
+   - the only Claude tool exposed is `Read`, used to inspect the bounded
+     `task_context` snapshots. Claude is not given shell, filesystem-write,
+     network-search, or GitHub mutation tools.
 
-   This is credential separation plus tool suppression, not an OS/container
-   sandbox around the third-party Claude Code action itself. The action runs
+   This is credential separation plus a read-only tool boundary, not an
+   OS/container sandbox around the third-party Claude Code action itself. The action runs
    normally on the GitHub-hosted runner and may make the network calls required
    for its OAuth/API operation. The security boundary is that this job has
    read-only repository permission and no repository-write credential; patch
