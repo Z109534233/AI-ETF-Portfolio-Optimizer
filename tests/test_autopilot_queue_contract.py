@@ -362,7 +362,7 @@ def test_cumulative_repair_rounds_receive_union_allowlist():
     for round_name, next_name in (
         ("cumulative_round_1", "cumulative_round_2"),
         ("cumulative_round_2", "cumulative_round_3"),
-        ("cumulative_round_3", "report_cumulative_status"),
+        ("cumulative_round_3", None),
     ):
         block = _job_block(text, round_name, next_name)
         assert "task_allowed_files_json:" in block
