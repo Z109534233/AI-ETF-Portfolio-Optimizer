@@ -37,8 +37,9 @@ For each task (`M1`..`M4`), given the current integration branch:
    exact commit.
 3. `prepare_context` - a **secret-free** job that reads
    `automation/tasks/<task_id>.json` and snapshots only the task's
-   `context_files` as bounded plain text (size-limited, same discipline as
-   Round 1's repair context).
+   `context_files` as bounded plain text. Every declared context file is
+   required: missing, binary, or over-limit context fails the task immediately
+   instead of being silently omitted.
 4. `claude_patch` - the **only** job with a Claude credential. It:
    - checks out the trusted base commit only (never untrusted PR content
      that doesn't exist yet at this point in the pipeline);
@@ -48,8 +49,16 @@ For each task (`M1`..`M4`), given the current integration branch:
    - runs with `github_token: ${{ github.token }}`,
      `--permission-mode dontAsk`, `--tools ""`, `--output-format json`, and a
      structured JSON schema `{patch, summary}`;
-   - returns only a unified diff and a summary - no tool calls, no shell, no
-     network access beyond the pinned action's own OAuth call.
+   - returns only a unified diff and a summary; built-in Claude tools are
+     disabled, so the model is not given shell/filesystem/GitHub mutation tools.
+
+   This is credential separation plus tool suppression, not an OS/container
+   sandbox around the third-party Claude Code action itself. The action runs
+   normally on the GitHub-hosted runner and may make the network calls required
+   for its OAuth/API operation. The security boundary is that this job has
+   read-only repository permission and no repository-write credential; patch
+   validation and repository writes happen later in separate jobs with no AI
+   credentials.
 5. `validate_patch` - a **secret-free** job that independently enforces the
    task's `allowed_files` allowlist, rejects `.github/` and `automation/`
    paths, rejects path traversal and renames, enforces a patch size limit,
@@ -103,13 +112,13 @@ mixed.
 
 ## Avoiding event recursion
 
-Every branch and PR the queue creates uses a head ref starting with
-`autopilot/`. `openai-reviewer.yml`'s `pull_request_target` controller job
-detects that prefix and exits immediately (no comment is created, no round
-is started) because the autopilot queue calls `openai-autofix-round.yml`
-directly with `trusted_automation: true`. Normal user-authored PRs (any
-other head ref) are completely unaffected and continue to work exactly as
-in Round 1.
+Every queue PR contains an atomic hidden queue marker in its PR body at
+creation time and uses an `autopilot/<run_id>/...` head ref. The standard
+`pull_request_target` reviewer skips only when all of these are true: the PR
+is same-repository, authored by `github-actions[bot]`, has a valid queue
+marker whose run id matches the head ref, and is therefore identifiable before
+the controller comment exists. A user-controlled branch prefix by itself is
+never enough to bypass the normal reviewer.
 
 ## Stopping and resuming
 

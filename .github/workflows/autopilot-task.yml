@@ -143,12 +143,14 @@ jobs:
           for path in context_files:
               fp = pathlib.Path(path)
               if not fp.is_file():
-                  continue
+                  raise SystemExit(f'Required task context file is missing: {path}')
               data = fp.read_bytes()
               if b'\0' in data:
-                  continue
+                  raise SystemExit(f'Required task context file is binary: {path}')
               if len(data) > 180_000:
-                  continue
+                  raise SystemExit(
+                      f'Required task context file exceeds 180 KB limit: {path}'
+                  )
               total += len(data)
               if total > 700_000:
                   raise SystemExit('Task context exceeds 700 KB.')
@@ -258,11 +260,6 @@ jobs:
                   out.write('\n')
               out.write(f"{delimiter}\n")
           PY
-
-      - name: Install Claude subprocess isolation dependency
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap
 
       - name: Generate initial implementation patch with Claude in tool-less mode
         id: claude

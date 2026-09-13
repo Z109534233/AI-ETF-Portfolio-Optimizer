@@ -366,3 +366,22 @@ def test_cumulative_repair_rounds_receive_union_allowlist():
     ):
         block = _job_block(text, round_name, next_name)
         assert "task_allowed_files_json:" in block
+
+
+def test_required_task_context_fails_closed_instead_of_silent_skip():
+    text = TASK.read_text(encoding="utf-8")
+    block = _job_block(text, "prepare_context", "claude_patch")
+    assert "Required task context file is missing" in block
+    assert "Required task context file is binary" in block
+    assert "Required task context file exceeds 180 KB limit" in block
+    required_loop = block[block.index("for path in context_files:") :]
+    assert "if not fp.is_file():\n                  continue" not in required_loop
+    assert "if b'\\0' in data:\n                  continue" not in required_loop
+
+
+def test_autopilot_does_not_claim_unused_bubblewrap_sandbox():
+    task_text = TASK.read_text(encoding="utf-8")
+    doc_text = (ROOT / "automation" / "AUTOPILOT_QUEUE.md").read_text(encoding="utf-8")
+    assert "bubblewrap" not in task_text
+    assert "not an OS/container" in doc_text
+    assert "read-only repository permission" in doc_text
