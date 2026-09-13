@@ -628,6 +628,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           import pathlib
           import shlex
           import subprocess

@@ -405,3 +405,71 @@ def test_merge_gate_requires_confirmed_merge_and_verified_branch_head():
     assert "if (!result.data.merged)" in block
     assert "mergedBranch.data.commit.sha !== result.data.sha" in block
     assert "Task PR merge confirmed at integration SHA" in block
+
+
+def test_trusted_repair_validator_executes_with_valid_allowlist(tmp_path):
+    import os
+    import subprocess
+    import sys
+    import textwrap
+
+    workflow = ROUND.read_text(encoding="utf-8")
+    block = _job_block(workflow, "validate_patch", "apply_patch")
+    marker = "python - <<'PY'\n"
+    start = block.index(marker) + len(marker)
+    end = block.index("\n          PY", start)
+    script = textwrap.dedent(block[start:end])
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Autofix Test"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    target = tmp_path / "example.txt"
+    target.write_text("old\n", encoding="utf-8")
+    subprocess.run(["git", "add", "example.txt"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "fixture"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    (tmp_path / "repair_context").mkdir()
+    (tmp_path / "patch_artifact").mkdir()
+    (tmp_path / "repair_context" / "manifest.json").write_text(
+        json.dumps({"allowed_files": ["example.txt"]}),
+        encoding="utf-8",
+    )
+    patch = (
+        "--- a/example.txt\n"
+        "+++ b/example.txt\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    (tmp_path / "patch_artifact" / "claude_patch.json").write_text(
+        json.dumps({"patch": patch, "summary": "fixture"}),
+        encoding="utf-8",
+    )
+
+    env = os.environ.copy()
+    env["TRUSTED_AUTOMATION"] = "true"
+    env["TASK_ALLOWED_FILES_JSON"] = json.dumps(["example.txt"])
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (tmp_path / "validated.patch").is_file()
+    assert target.read_text(encoding="utf-8") == "new\n"
