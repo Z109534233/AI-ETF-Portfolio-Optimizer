@@ -1,0 +1,307 @@
+"""
+AI Advisor -- deterministic synthesis tests (Issue #18 Stage 6).
+
+Before this stage the AI Advisor page was fully disconnected from the rest
+of the app: it built its own from-scratch portfolio in the sidebar and
+never consumed Portfolio Optimizer's canonical current_portfolio, Investment
+Simulator, Risk Analytics, Machine Learning, or Market Intelligence outputs.
+
+These tests cover src.ai_advisor.build_advisor_context() /
+generate_rule_based_narrative() / _build_prompt() against canned,
+deterministic inputs -- no network access, no OpenAI calls -- verifying:
+  - every section is grounded in real, already-computed values (never
+    invented), and states an explicit reason when unavailable
+  - simulator/ML data is only surfaced when it actually corresponds to the
+    current portfolio (never a stale/contradictory prior run)
+  - missing components (no portfolio, no simulator run, no ML run, no news)
+    are handled cleanly without raising
+"""
+
+import os
+import sys
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from src.ai_advisor import (
+    build_advisor_context, generate_rule_based_narrative, _build_prompt,
+)
+
+
+def _sample_portfolio():
+    return {
+        "portfolio_id": "abc123",
+        "strategy": "Maximum Sharpe",
+        "market": "United States",
+        "tickers": ["QQQ", "BND"],
+        "weights": {"QQQ": 0.7, "BND": 0.3},
+        "investment_amount": 10000.0,
+        "expected_return": 0.12,
+        "volatility": 0.18,
+        "sharpe_ratio": 0.61,
+        "max_drawdown": -0.25,
+        "generated_at": "2026-01-01T00:00:00+00:00",
+    }
+
+
+def _sample_prices(n=60, seed=0):
+    rng = np.random.default_rng(seed)
+    daily_returns = rng.normal(0.0004, 0.01, n)
+    prices = 100 * (1 + pd.Series(daily_returns)).cumprod()
+    prices.index = pd.date_range("2025-01-01", periods=n, freq="B")
+    return prices
+
+
+# ── build_advisor_context: portfolio/risk grounding ─────────────────────────
+
+def test_no_portfolio_all_sections_explicitly_unavailable():
+    context = build_advisor_context(portfolio=None, portfolio_source="current")
+    assert context["portfolio"]["available"] is False
+    assert context["risk"]["available"] is False
+    assert context["simulator"]["future_projection"]["available"] is False
+    assert context["simulator"]["historical_simulation"]["available"] is False
+    assert context["ml"]["available"] is False
+    assert context["news"]["available"] is False
+    # every unavailable section carries a stated reason, never a silent gap
+    for section in ("portfolio", "risk", "ml", "news"):
+        assert context[section]["reason"]
+
+
+def test_portfolio_available_reuses_canonical_numbers_verbatim():
+    portfolio = _sample_portfolio()
+    context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    p = context["portfolio"]
+    assert p["available"] is True
+    assert p["expected_return"] == portfolio["expected_return"]
+    assert p["volatility"] == portfolio["volatility"]
+    assert p["sharpe_ratio"] == portfolio["sharpe_ratio"]
+    assert p["weights"] == portfolio["weights"]
+    assert p["strategy"] == "Maximum Sharpe"
+
+
+def test_risk_concentration_always_available_when_portfolio_available():
+    portfolio = _sample_portfolio()
+    context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    risk = context["risk"]
+    assert risk["available"] is True
+    assert risk["concentration"]["largest_ticker"] == "QQQ"
+    assert risk["concentration"]["largest_weight"] == pytest.approx(0.7)
+    # no price series passed in -> VaR/CVaR explicitly unavailable, not fabricated
+    assert risk["var_cvar"]["available"] is False
+    assert risk["var_cvar"]["reason"]
+
+
+def test_var_cvar_computed_from_real_price_series_when_provided():
+    portfolio = _sample_portfolio()
+    prices = _sample_prices(n=60)
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", portfolio_prices=prices,
+    )
+    vc = context["risk"]["var_cvar"]
+    assert vc["available"] is True
+    assert vc["n_observations"] == 59  # 60 prices -> 59 daily returns
+    assert vc["var"] is not None and vc["cvar"] is not None
+    # CVaR (expected shortfall) must be at least as severe as VaR
+    assert vc["cvar"] <= vc["var"]
+
+
+# ── Simulator integration: only surfaced for a matching current-portfolio run ─
+
+def test_simulator_future_projection_surfaced_when_strategy_matches():
+    portfolio = _sample_portfolio()
+    sim_result = {"summary": {"median_final": 15000.0, "probability_profit": 0.8}}
+    sim_params = {
+        "portfolio_strategy": "Maximum Sharpe", "years": 10,
+        "assumption_source": "Portfolio Optimizer expected return/volatility",
+        "n_simulations": 1000,
+    }
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        sim_result=sim_result, sim_params=sim_params,
+    )
+    fp = context["simulator"]["future_projection"]
+    assert fp["available"] is True
+    assert fp["summary"]["median_final"] == 15000.0
+
+
+def test_simulator_not_surfaced_when_strategy_mismatched_stale_run():
+    portfolio = _sample_portfolio()
+    sim_result = {"summary": {"median_final": 999999.0}}
+    sim_params = {"portfolio_strategy": "Equal Weight"}  # different strategy -> stale
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        sim_result=sim_result, sim_params=sim_params,
+    )
+    fp = context["simulator"]["future_projection"]
+    assert fp["available"] is False
+    assert fp["reason"]
+
+
+def test_simulator_not_surfaced_for_custom_portfolio():
+    portfolio = _sample_portfolio()
+    sim_result = {"summary": {"median_final": 15000.0}}
+    sim_params = {"portfolio_strategy": "Maximum Sharpe"}
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="custom",
+        sim_result=sim_result, sim_params=sim_params,
+    )
+    assert context["simulator"]["future_projection"]["available"] is False
+
+
+def test_historical_simulation_requires_strategy_and_market_match():
+    portfolio = _sample_portfolio()
+    hist_result = {"summary": {"final_value": 12000.0, "gain": 2000.0, "annualized_mwr": 0.08}}
+    hist_params = {"strategy": "Maximum Sharpe", "market": "United States"}
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        hist_result=hist_result, hist_params=hist_params,
+    )
+    assert context["simulator"]["historical_simulation"]["available"] is True
+
+    hist_params_wrong_market = {"strategy": "Maximum Sharpe", "market": "Taiwan"}
+    context2 = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        hist_result=hist_result, hist_params=hist_params_wrong_market,
+    )
+    assert context2["simulator"]["historical_simulation"]["available"] is False
+
+
+# ── ML integration: only surfaced when valid and for an actual holding ──────
+
+def test_ml_surfaced_when_valid_and_ticker_is_current_holding():
+    portfolio = _sample_portfolio()
+    ml_result = {
+        "error": None, "model_name": "Random Forest",
+        "metrics": {"accuracy": 0.58},
+        "baseline_accuracy": 0.52,
+        "test_start": "2025-06-01", "test_end": "2025-12-01",
+        "lookahead_periods": 1,
+    }
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        ml_result=ml_result, ml_ticker="QQQ",
+    )
+    ml = context["ml"]
+    assert ml["available"] is True
+    assert ml["beats_baseline"] is True
+    assert ml["accuracy"] == 0.58
+
+
+def test_ml_hidden_when_ticker_not_a_current_holding():
+    portfolio = _sample_portfolio()
+    ml_result = {"error": None, "metrics": {"accuracy": 0.9}, "baseline_accuracy": 0.5}
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        ml_result=ml_result, ml_ticker="ARKK",  # not in QQQ/BND
+    )
+    assert context["ml"]["available"] is False
+    assert "ARKK" in context["ml"]["reason"]
+
+
+def test_ml_hidden_when_run_errored_reason_is_the_real_error():
+    portfolio = _sample_portfolio()
+    ml_result = {"error": "Insufficient data for ML analysis. Need at least 50 observations."}
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        ml_result=ml_result, ml_ticker="QQQ",
+    )
+    assert context["ml"]["available"] is False
+    assert context["ml"]["reason"] == ml_result["error"]
+
+
+def test_ml_never_surfaced_for_custom_portfolio():
+    portfolio = _sample_portfolio()
+    ml_result = {"error": None, "metrics": {"accuracy": 0.9}, "baseline_accuracy": 0.5}
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="custom",
+        ml_result=ml_result, ml_ticker="QQQ",
+    )
+    assert context["ml"]["available"] is False
+
+
+# ── Market Intelligence integration: pure function of holdings + real news ──
+
+def test_news_relevant_holdings_and_impact_text():
+    portfolio = _sample_portfolio()
+    news_items = [
+        {"title": "Tech stocks rally on strong chip earnings", "impact": "Positive"},
+        {"title": "Bond yields climb as Fed signals rate hike", "impact": "Negative"},
+    ]
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", news_items=news_items,
+    )
+    news = context["news"]
+    assert news["available"] is True
+    assert news["headline_count"] == 2
+    tickers_seen = {e["ticker"] for e in news["affected_holdings"]}
+    assert tickers_seen == {"QQQ", "BND"}
+    assert news["relevant_holdings_count"] == 2  # both QQQ and BND matched non-neutral news
+    assert news["portfolio_impact_text"]
+
+
+def test_news_unavailable_when_no_items():
+    portfolio = _sample_portfolio()
+    context = build_advisor_context(portfolio=portfolio, portfolio_source="current", news_items=[])
+    assert context["news"]["available"] is False
+    assert context["news"]["reason"]
+
+
+# ── Narrative grounding: no invented numbers, missing sections handled ──────
+
+def test_rule_based_narrative_contains_actual_computed_values():
+    portfolio = _sample_portfolio()
+    context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    narrative = generate_rule_based_narrative(context, "Long-term Growth", "Moderate", 10)
+    assert "QQQ" in narrative
+    assert "70.0%" in narrative or "70.00%" in narrative
+    assert "12.00%" in narrative  # expected_return 0.12
+
+
+def test_rule_based_narrative_states_unavailable_reasons_not_fabricated_numbers():
+    portfolio = _sample_portfolio()
+    context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    narrative = generate_rule_based_narrative(context)
+    # simulator/ml/news were never provided -> must be disclosed as unavailable,
+    # never silently omitted or replaced with a plausible-looking number
+    assert context["simulator"]["future_projection"]["available"] is False
+    assert context["ml"]["available"] is False
+    assert context["news"]["available"] is False
+    assert narrative.count("Not available") + narrative.count("not available") >= 1 or "無法使用" in narrative
+
+
+def test_rule_based_narrative_handles_no_portfolio_without_raising():
+    context = build_advisor_context(portfolio=None)
+    narrative = generate_rule_based_narrative(context)
+    assert isinstance(narrative, str) and len(narrative) > 0
+
+
+def test_prompt_uses_actual_computed_values_not_placeholders():
+    portfolio = _sample_portfolio()
+    prices = _sample_prices(n=60)
+    ml_result = {
+        "error": None, "model_name": "Random Forest", "metrics": {"accuracy": 0.58},
+        "baseline_accuracy": 0.52, "test_start": "2025-06-01", "test_end": "2025-12-01",
+        "lookahead_periods": 1,
+    }
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", portfolio_prices=prices,
+        ml_result=ml_result, ml_ticker="QQQ",
+    )
+    prompt = _build_prompt(context, "Long-term Growth", "Moderate", 10)
+    assert "QQQ: 70.0%" in prompt
+    assert "Maximum Sharpe" in prompt
+    assert "58.00%" in prompt  # ML accuracy
+    assert "experimental" in prompt.lower()
+    # sections never provided must say so explicitly in the prompt, not be omitted
+    assert "not available" in prompt.lower()
+
+
+def test_prompt_handles_fully_missing_context_without_raising():
+    context = build_advisor_context(portfolio=None)
+    prompt = _build_prompt(context, "Long-term Growth", "Moderate", 10)
+    assert isinstance(prompt, str)
+    assert "not available" in prompt.lower()

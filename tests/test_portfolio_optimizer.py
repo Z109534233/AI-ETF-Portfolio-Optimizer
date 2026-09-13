@@ -1325,6 +1325,37 @@ def test_ph_c_min_vol_handoff_to_risk_analytics():
           "Minimum Volatility" in corpus, corpus[:0])
 
 
+# ── PH-J: Maximum Sharpe build -> AI Advisor receives exact weights and
+# synthesizes them (Issue #18 Stage 6/7) ─────────────────────────────────
+def test_ph_j_max_sharpe_handoff_to_ai_advisor():
+    at, cp = _build_current_portfolio_via_optimizer("Maximum Sharpe Ratio")
+    check("PH-J.optimizer_no_exception", not at.exception, str(at.exception))
+    check("PH-J.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+
+    ai_at = _run_receiving_page("pages/6_AI_Advisor.py", cp)
+    exc2 = ai_at.exception[0] if ai_at.exception else None
+    check("PH-J.ai_advisor_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    corpus = "\n".join(m.value for m in ai_at.markdown)
+    _check_handoff_holdings_shown("PH-J.ai_advisor", cp["weights"], corpus)
+    check("PH-J.ai_advisor_uses_current_portfolio_source",
+          "current portfolio" in corpus.lower() or "current_portfolio" in ai_at.session_state,
+          corpus[:0])
+    ai_result = ai_at.session_state["ai_result"] if "ai_result" in ai_at.session_state else None
+    check("PH-J.ai_result_built", ai_result is not None)
+    if ai_result is not None:
+        ctx = ai_result["context"]
+        check("PH-J.context_portfolio_source_is_current", ctx["portfolio_source"] == "current", ctx["portfolio_source"])
+        check("PH-J.context_weights_match_handoff", ctx["portfolio"]["weights"] == cp["weights"],
+              f"{ctx['portfolio']['weights']} vs {cp['weights']}")
+        check("PH-J.context_strategy_matches", ctx["portfolio"]["strategy"] == cp["strategy"], ctx["portfolio"]["strategy"])
+        check("PH-J.narrative_mentions_top_holding",
+              max(cp["weights"], key=cp["weights"].get) in ai_result["analysis"], "")
+
+
 # ── PH-D: current_portfolio remains available across a plain rerun
 # (proxy for "navigate away and back" within one session) ───────────────
 def test_ph_d_current_portfolio_persists_across_rerun():
@@ -1440,6 +1471,7 @@ def test_ph_i_handoff_no_raw_keys():
     for page_path, name in (
         ("pages/3_Investment_Simulator.py", "simulator"),
         ("pages/4_Risk_Analytics.py", "risk"),
+        ("pages/6_AI_Advisor.py", "ai_advisor"),
     ):
         for portfolio, state_label in ((cp, "with_portfolio"), (None, "empty_state")):
             for lang in ("zh-TW", "en"):
