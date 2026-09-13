@@ -99,10 +99,25 @@ with st.sidebar:
     render_sidebar_footer()
 
 # ── Run ML Pipeline ───────────────────────────────────────────────────────────
+# Priority-0 stale-result fix (Issue #20 section 6A): a trained result must
+# be bound to EVERY input that changes what training actually produces --
+# ticker, date range, model, test size, and the lookahead horizon (fixed at
+# 1 here since this page has no lookahead control yet, but included so it
+# can never silently drift if one is added later). LOOKAHEAD_PERIODS below
+# is the single source of truth for both the fingerprint and the pipeline
+# call -- they can never disagree.
+LOOKAHEAD_PERIODS = 1
+current_fingerprint = (
+    selected_etf, str(start_date), str(end_date), model_type,
+    round(test_size, 4), LOOKAHEAD_PERIODS,
+)
+
 if "ml_result" not in st.session_state:
     st.session_state.ml_result = None
 if "ml_ticker" not in st.session_state:
     st.session_state.ml_ticker = None
+if "ml_fingerprint" not in st.session_state:
+    st.session_state.ml_fingerprint = None
 
 if run_btn or st.session_state.ml_result is None:
     with st.spinner(f"{t('msg_downloading_market_data')} ({t_model_type(model_type)})"):
@@ -120,10 +135,13 @@ if run_btn or st.session_state.ml_result is None:
 
         prices = prices_df[selected_etf].dropna()
 
-        result = run_ml_pipeline(prices, model_type=model_type, test_size=test_size)
+        result = run_ml_pipeline(
+            prices, model_type=model_type, test_size=test_size, lookahead=LOOKAHEAD_PERIODS,
+        )
         st.session_state.ml_result = result
         st.session_state.ml_ticker = selected_etf
         st.session_state.ml_prices = prices
+        st.session_state.ml_fingerprint = current_fingerprint
 
 result = st.session_state.ml_result
 if result is None:
@@ -132,6 +150,14 @@ if result is None:
 
 if result.get("error"):
     error_state(t("ml_training_failed_title"), str(result["error"]))
+    st.stop()
+
+# Stale-result guard: if any sidebar input changed since the last successful
+# training run WITHOUT clicking "Train Model" again, the OLD result must
+# never keep being shown as if it were current -- see PRODUCT SPEC section
+# 6A ("Inputs have changed. Please retrain the model.").
+if st.session_state.ml_fingerprint is not None and st.session_state.ml_fingerprint != current_fingerprint:
+    st.warning(t("ml_inputs_changed_retrain"))
     st.stop()
 
 ticker_used = st.session_state.ml_ticker
@@ -179,6 +205,19 @@ else:
     st.caption(f"⚠️ {t('ml_does_not_beat_baseline', diff=f'{abs(_baseline_diff_pp):.1f}')}")
 st.caption(t("ml_baseline_help"))
 
+# ── Honest performance interpretation (Issue #20 section 6B): a model can
+# beat the majority-class baseline on accuracy while its ROC-AUC sits at
+# essentially chance level (~0.5), meaning it has little to no genuine
+# ranking/discriminatory power on this test window -- accuracy alone can
+# hide that. Surfaced only when ROC-AUC is actually available (binary
+# classifiers with both classes present in y_test).
+_roc_auc_val = metrics.get("ROC AUC")
+if isinstance(_roc_auc_val, (int, float)) and abs(_roc_auc_val - 0.5) <= 0.05:
+    st.warning(t(
+        "ml_weak_discriminatory_power",
+        diff=f"{abs(_baseline_diff_pp):.1f}", roc_auc=f"{_roc_auc_val:.3f}",
+    ))
+
 # ── Target / data-window disclosure (M5): the target definition and the
 # actual out-of-sample test date range were previously never shown -- only
 # observation COUNTS -- leaving "is this out-of-sample?" and "as of when?"
@@ -198,6 +237,15 @@ with chart_card(t("ml_model_detail_card")):
     ])
 
     with tab1:
+        # Accurate labeling/disclosure (Issue #20 section 6C): Random
+        # Forest's feature_importances_ is impurity-based (mean decrease in
+        # Gini impurity across the fitted trees) and Logistic Regression's
+        # here is absolute coefficient magnitude on standardized features --
+        # neither implies the feature CAUSES price direction, only that the
+        # fitted model relied on it.
+        _fi_title_key = "ml_fi_title_rf" if model_name == "Random Forest" else "ml_fi_title_lr"
+        st.markdown(f"**{t(_fi_title_key)}**")
+        st.caption(t("ml_fi_causality_disclaimer"))
         fig_fi = feature_importance_chart(feature_importance)
         st.plotly_chart(fig_fi, use_container_width=True, key="ml_feature_importance")
 
