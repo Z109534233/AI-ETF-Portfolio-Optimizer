@@ -578,6 +578,25 @@ TRANSLATIONS = {
         "opt_dollar_allocation": "金額配置",
         "opt_optimization_failed": "投資組合最佳化失敗",
 
+        # ── Portfolio Optimizer: Methodology & Assumptions (M1) ──────────
+        "opt_methodology_title": "方法論與假設",
+        "opt_methodology_subtitle": "本投資組合的預期報酬、風險與最佳權重實際上是如何計算的",
+        "opt_methodology_return_label": "預期報酬",
+        "opt_methodology_return_desc": "以每日簡單報酬率（收盤價，已依股息／拆股調整）計算算術平均值，並以 ×252 個交易日年化。任何 ETF 在其實際首個有效交易日之前，絕不會被回填數據。",
+        "opt_methodology_covariance_label": "共變異數／風險",
+        "opt_methodology_covariance_desc": "以每日報酬率的樣本共變異數（pandas .cov()）計算，並以 ×252 年化。對角線加上極小的 1e-8 微調項僅為確保矩陣在最佳化時可解，並非 Ledoit-Wolf 或其他任何收縮估計方法。",
+        "opt_methodology_history_label": "歷史資料區間",
+        "opt_methodology_history_value": "{start} 至 {end}（所有選定 ETF 共同重疊的 {days} 個交易日）",
+        "opt_methodology_optimizer_label": "最佳化引擎",
+        "opt_methodology_optimizer_desc": "{method}，透過 scipy SLSQP 求解。無風險利率：{rf}。限制條件：權重總和為 100%，單一 ETF 權重介於 [{min}, {max}]{short_note}。",
+        "opt_methodology_short_note_on": "，允許放空（對稱區間）",
+        "opt_methodology_short_note_off": "",
+        "opt_methodology_backtest_label": "回測類型",
+        "opt_methodology_backtest_value": "固定配置歷史回測",
+        "opt_methodology_backtest_desc": "系統將「目前這次最佳化」產生的單一權重組合，套用於整段歷史價格區間以計算假設性價值路徑。這並非逐步向前（walk-forward）回測——權重從未依各歷史時點當時可得的資料重新最佳化，因此並不代表這個策略在實際時間中會如何被選擇與再平衡。",
+        "opt_methodology_validation_pass": "最佳化後驗證通過：權重總和為 100%、符合設定的限制條件，且顯示的報酬率／波動率／夏普比率與這些權重在數值上一致。",
+        "opt_methodology_validation_fail": "最佳化後驗證發現不一致之處：{issues}",
+
         # ── Investment Simulator Page ────────────────────────────────────
         "sim_title": "投資模擬",
         "sim_subtitle": "模擬不同策略下的長期財富累積結果。",
@@ -1676,6 +1695,25 @@ TRANSLATIONS = {
         "opt_recommended_allocation": "Recommended Allocation",
         "opt_dollar_allocation": "Dollar Allocation",
         "opt_optimization_failed": "Optimization failed",
+
+        # ── Portfolio Optimizer: Methodology & Assumptions (M1) ──────────
+        "opt_methodology_title": "Methodology & Assumptions",
+        "opt_methodology_subtitle": "How this portfolio's expected return, risk, and optimal weights are actually calculated",
+        "opt_methodology_return_label": "Expected Return",
+        "opt_methodology_return_desc": "Arithmetic mean of daily simple returns (Close price, split/dividend-adjusted), annualized ×252 trading days. No ETF is ever filled before its own first valid trading date.",
+        "opt_methodology_covariance_label": "Covariance / Risk",
+        "opt_methodology_covariance_desc": "Sample covariance of daily returns (pandas .cov()), annualized ×252. A small 1e-8 diagonal ridge is added only to keep the matrix solvable during optimization -- this is not Ledoit-Wolf or any other shrinkage estimator.",
+        "opt_methodology_history_label": "Historical Window",
+        "opt_methodology_history_value": "{start} to {end} ({days} trading days common to every selected ETF)",
+        "opt_methodology_optimizer_label": "Optimizer",
+        "opt_methodology_optimizer_desc": "{method} via scipy SLSQP. Risk-free rate: {rf}. Constraints: weights sum to 100%, per-ETF weight in [{min}, {max}]{short_note}.",
+        "opt_methodology_short_note_on": ", short selling allowed (symmetric bounds)",
+        "opt_methodology_short_note_off": "",
+        "opt_methodology_backtest_label": "Backtest Type",
+        "opt_methodology_backtest_value": "Fixed-Allocation Historical Backtest",
+        "opt_methodology_backtest_desc": "The CURRENT optimized weights are applied unchanged across the entire historical window shown. This is NOT a walk-forward backtest -- weights are never re-optimized using only data available as of each historical date, so it does not reflect how the strategy would actually have been selected and rebalanced in real time.",
+        "opt_methodology_validation_pass": "Post-optimization validation passed: weights sum to 100%, respect the configured bounds, and the displayed return/volatility/Sharpe ratio are numerically consistent with these weights.",
+        "opt_methodology_validation_fail": "Post-optimization validation found an inconsistency: {issues}",
 
         # ── Investment Simulator Page ────────────────────────────────────
         "sim_title": "Investment Simulator",

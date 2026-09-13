@@ -11,6 +11,7 @@ from src.financial_metrics import (
     portfolio_return, portfolio_volatility, portfolio_sharpe,
     covariance_matrix, diversification_ratio
 )
+from src.methodology import validate_optimization_result
 
 
 def equal_weight(tickers: list) -> np.ndarray:
@@ -435,7 +436,15 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             optimizer_failed = not converged
         elif method == "Target Return":
             tr = target_return if target_return is not None else float(np.mean(mean_returns) * 252)
-            weights, _ = optimize_target_return(mean_returns, cov_array, tr, min_weight, max_weight, allow_short)
+            weights, converged = optimize_target_return(mean_returns, cov_array, tr, min_weight, max_weight, allow_short)
+            # Previously discarded (`weights, _ = ...`): a failed SLSQP solve
+            # fell back to equal-weight weights (see optimize_target_return()
+            # above) WITHOUT setting optimizer_failed, so the page silently
+            # presented that fallback as if it had actually hit the
+            # requested target return -- unlike Max Sharpe/Min Volatility,
+            # which have always surfaced this via optimizer_failed. Post-
+            # optimization validation (M1) requires this be surfaced too.
+            optimizer_failed = not converged
         elif method == "Risk Parity":
             weights = optimize_risk_parity(cov_array)
         else:
@@ -446,13 +455,36 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
         sharpe = (ret - risk_free_rate) / vol if vol > 0 else 0.0
         div_ratio = diversification_ratio(weights, cov_array)
 
-        # `optimizer_failed` (Max Sharpe / Min Volatility only): SLSQP did
-        # not converge, so `weights` is the safe equal-weight fallback from
-        # optimize_max_sharpe()/optimize_min_volatility(). Per Round 2A
-        # requirements, this must NEVER be presented silently as if it were
-        # the real optimized result -- error/error_code are always set so
-        # the page can show a clear, translated warning alongside the
-        # (still equal-weight) numbers.
+        # Post-optimization validation (M1): independently re-derive
+        # return/volatility/Sharpe from the returned weights and confirm
+        # they sum to 1, respect the constraints actually enforced for this
+        # method, and match the reported metrics. Only Max Sharpe / Min
+        # Volatility / Target Return actually solve against
+        # min_weight/max_weight/allow_short -- Equal Weight and Risk Parity
+        # use their own fixed bounds (see equal_weight()/optimize_risk_parity()
+        # above), so validating them against the UI's min/max_weight would
+        # produce false positives. [0.0, 1.0] is the widest bound either of
+        # those two methods can ever produce a weight outside of.
+        if method in ("Maximum Sharpe Ratio", "Minimum Volatility", "Target Return"):
+            _val_min, _val_max, _val_short = min_weight, max_weight, allow_short
+        else:
+            _val_min, _val_max, _val_short = 0.0, 1.0, False
+        validation = validate_optimization_result(
+            weights=dict(zip(tickers, weights)),
+            mean_returns=mean_returns, cov_matrix=cov_array,
+            reported_return=ret, reported_volatility=vol, reported_sharpe=sharpe,
+            risk_free_rate=risk_free_rate,
+            min_weight=_val_min, max_weight=_val_max, allow_short=_val_short,
+        )
+
+        # `optimizer_failed` (Max Sharpe / Min Volatility / Target Return):
+        # SLSQP did not converge, so `weights` is the safe equal-weight
+        # fallback from optimize_max_sharpe()/optimize_min_volatility()/
+        # optimize_target_return(). Per Round 2A requirements (extended to
+        # Target Return in M1), this must NEVER be presented silently as if
+        # it were the real optimized result -- error/error_code are always
+        # set so the page can show a clear, translated warning alongside
+        # the (still equal-weight) numbers.
         return {
             "weights": dict(zip(tickers, weights)),
             "expected_return": float(ret),
@@ -460,6 +492,7 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             "sharpe_ratio": float(sharpe),
             "diversification_ratio": float(div_ratio),
             "method": method,
+            "validation": validation,
             "error": (
                 f"{method} optimization did not converge for this data/settings; "
                 "showing Equal Weight as a fallback."
