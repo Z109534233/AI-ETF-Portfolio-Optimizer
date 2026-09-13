@@ -30,6 +30,7 @@ import pytest
 from src.ai_advisor import (
     build_advisor_context, generate_rule_based_narrative, _build_prompt,
 )
+from src.machine_learning import run_ml_pipeline
 
 
 def _sample_portfolio():
@@ -176,7 +177,7 @@ def test_ml_surfaced_when_valid_and_ticker_is_current_holding():
     portfolio = _sample_portfolio()
     ml_result = {
         "error": None, "model_name": "Random Forest",
-        "metrics": {"accuracy": 0.58},
+        "metrics": {"Accuracy": 0.58},
         "baseline_accuracy": 0.52,
         "test_start": "2025-06-01", "test_end": "2025-12-01",
         "lookahead_periods": 1,
@@ -193,7 +194,7 @@ def test_ml_surfaced_when_valid_and_ticker_is_current_holding():
 
 def test_ml_hidden_when_ticker_not_a_current_holding():
     portfolio = _sample_portfolio()
-    ml_result = {"error": None, "metrics": {"accuracy": 0.9}, "baseline_accuracy": 0.5}
+    ml_result = {"error": None, "metrics": {"Accuracy": 0.9}, "baseline_accuracy": 0.5}
     context = build_advisor_context(
         portfolio=portfolio, portfolio_source="current",
         ml_result=ml_result, ml_ticker="ARKK",  # not in QQQ/BND
@@ -213,9 +214,36 @@ def test_ml_hidden_when_run_errored_reason_is_the_real_error():
     assert context["ml"]["reason"] == ml_result["error"]
 
 
+def test_ml_context_wired_to_real_run_ml_pipeline_output():
+    """Regression test for a real bug caught during review: _ml_context()
+    read metrics["accuracy"] (lowercase) but src.machine_learning's
+    run_ml_pipeline()/_compute_metrics() key it "Accuracy" (capitalized,
+    see pages/5_Machine_Learning.py's own display code) -- so accuracy was
+    silently always None and beats_baseline was always False, even for a
+    model that genuinely beat the baseline. Calling the REAL pipeline here
+    (not a hand-built canned dict) means a future key-name drift in either
+    module fails this test instead of silently degrading to a wrong,
+    misleadingly-confident "does not beat baseline" claim.
+    """
+    portfolio = _sample_portfolio()
+    prices = _sample_prices(n=200, seed=7)
+    real_ml_result = run_ml_pipeline(prices, model_type="Random Forest", test_size=0.2)
+    assert real_ml_result.get("error") is None, real_ml_result.get("error")
+
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current",
+        ml_result=real_ml_result, ml_ticker="QQQ",
+    )
+    ml = context["ml"]
+    assert ml["available"] is True
+    assert isinstance(ml["accuracy"], float)
+    assert 0.0 <= ml["accuracy"] <= 1.0
+    assert isinstance(ml["baseline_accuracy"], float)
+
+
 def test_ml_never_surfaced_for_custom_portfolio():
     portfolio = _sample_portfolio()
-    ml_result = {"error": None, "metrics": {"accuracy": 0.9}, "baseline_accuracy": 0.5}
+    ml_result = {"error": None, "metrics": {"Accuracy": 0.9}, "baseline_accuracy": 0.5}
     context = build_advisor_context(
         portfolio=portfolio, portfolio_source="custom",
         ml_result=ml_result, ml_ticker="QQQ",
@@ -283,7 +311,7 @@ def test_prompt_uses_actual_computed_values_not_placeholders():
     portfolio = _sample_portfolio()
     prices = _sample_prices(n=60)
     ml_result = {
-        "error": None, "model_name": "Random Forest", "metrics": {"accuracy": 0.58},
+        "error": None, "model_name": "Random Forest", "metrics": {"Accuracy": 0.58},
         "baseline_accuracy": 0.52, "test_start": "2025-06-01", "test_end": "2025-12-01",
         "lookahead_periods": 1,
     }

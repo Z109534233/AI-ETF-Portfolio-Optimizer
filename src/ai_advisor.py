@@ -126,7 +126,9 @@ def _ml_context(portfolio: dict, portfolio_source: str, tickers: list,
             "reason": f"the last Machine Learning run ({ml_ticker}) is not a current holding",
         }
     metrics = ml_result.get("metrics", {}) or {}
-    accuracy = metrics.get("accuracy")
+    # src.machine_learning._compute_metrics() keys this "Accuracy"
+    # (capitalized) -- see pages/5_Machine_Learning.py's own display code.
+    accuracy = metrics.get("Accuracy")
     baseline = ml_result.get("baseline_accuracy")
     return {
         "available": True,
