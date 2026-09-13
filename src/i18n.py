@@ -1191,6 +1191,23 @@ TRANSLATIONS = {
         "mi_section_affected_markets_subtitle": "此評等代表目前全球事件預期對各市場的影響程度，並非預測市場漲跌方向。",
         "mi_impact_level_caption": "影響程度",
         "mi_affected_by_caption": "受影響原因：",
+
+        # ── Methodology & Validation (M4) ────────────────────────────────
+        "mi_methodology_title": "方法論與驗證狀態",
+        "mi_methodology_subtitle": "本頁的資料流程實際上是如何運作的，以及哪些部分已經／尚未經過驗證",
+        "mi_methodology_pipeline_label": "資料流程",
+        "mi_methodology_pipeline_desc": "資料來源（Yahoo Finance 新聞 feed）→ 關鍵字式標題情緒判斷（正面／負面／中性）→ 規則式事件分類（事件類型／類別）→ 決定性的影響力／情緒／信心指數計算 → 樣板式或 AI 生成的摘要文字。除了標示「AI 產生」的摘要（僅在設定 OpenAI 金鑰且確實由其產生時）之外，其餘每個階段（包括標示為「AI 市場情緒」／「今日 AI 摘要」的區塊）皆為規則式程式邏輯，並非機器學習模型。",
+        "mi_methodology_ai_vs_rule_label": "規則式 vs. AI 產生",
+        "mi_methodology_ai_vs_rule_desc": "每個區塊／卡片旁皆標示「規則式分析」或「AI 產生」標籤（見各區塊標題旁的標籤）。只有在確實設定 OpenAI 金鑰且該摘要確實由其產生時，才會顯示「AI 產生」；否則同一區塊會改用並標示為規則式樣板內容。",
+        "mi_methodology_measures_label": "信心指數、影響力與相關性是三種不同的量測",
+        "mi_methodology_measures_desc": "影響力（星等）衡量某事件／新聞對特定市場或 ETF 預期的重要程度。信心指數（%）衡量目前情緒訊號的一致（偏向）程度，而非事件本身有多重要。相關性則是在計算影響力／信心指數「之前」的篩選步驟（判斷該則新聞分類出的事件類型是否適用於此市場／ETF）——不相關的新聞從一開始就不會產生影響力或信心指數分數。這三者絕不會被合併成單一數字顯示。",
+        "mi_methodology_markets_label": "受影響市場對應方式與限制",
+        "mi_methodology_markets_desc": "哪些市場／ETF 會受某事件影響，是由人工整理的「事件類型 → 市場／ETF 類型權重」對照表決定（例如關稅或半導體新聞會對應到台灣，因其晶片出口曝險），而非取決於新聞標題是否直接提及該市場名稱。此對照表反映的是已知的一般總體經濟關聯性，屬於經驗法則，並非統計模型推導而得。新聞來源僅取自少數美國上市代碼（S&P 500／那斯達克／道瓊代表性標的）的新聞 feed，因此從未登上美國財經頭條的台灣或英國特定新聞，可能被低估甚至完全遺漏；台灣與英國的新聞涵蓋範圍因此在結構上就比美國薄弱。",
+        "mi_methodology_validation_label": "驗證狀態",
+        "mi_methodology_validation_desc": "本頁的分析流程尚未經過任何獨立標註「真實答案」資料集的驗證。頁面上不會出現任何精確率、召回率、F1 分數或準確率數字，因為從未實際測量過——這裡的每一個分數都是套用於今日新聞的透明、可追溯規則／公式計算結果，並非經過統計驗證的預測。",
+        "mi_methodology_source_label": "資料來源與時間戳記",
+        "mi_methodology_source_desc": "當來源有提供實際發布時間時，每則新聞會顯示該時間；沒有提供時則顯示「—」，絕不會捏造時間。顯示的發布者名稱來自新聞來源本身的歸屬資訊。",
+        "mi_impact_caption": "影響力",
     },
     "en": {
         # ── App / Brand ─────────────────────────────────────────────────
@@ -2358,6 +2375,23 @@ TRANSLATIONS = {
         "mi_section_affected_markets_subtitle": "The rating indicates how strongly current global events are expected to influence each market. It does not predict market direction.",
         "mi_impact_level_caption": "Impact Level",
         "mi_affected_by_caption": "Affected by:",
+
+        # ── Methodology & Validation (M4) ────────────────────────────────
+        "mi_methodology_title": "Methodology & Validation",
+        "mi_methodology_subtitle": "How this page's pipeline actually works, and what it does (and doesn't) validate",
+        "mi_methodology_pipeline_label": "Pipeline",
+        "mi_methodology_pipeline_desc": "Source (Yahoo Finance news feed) → keyword-based headline sentiment (Positive/Negative/Neutral) → rule-based event classification (event type/category) → deterministic impact/sentiment/confidence scoring → template or AI-generated summary text. Aside from the summary tagged 'AI-Generated' (only when an OpenAI key is actually configured and used), every stage -- including sections labeled 'AI Market Sentiment' / \"Today's AI Summary\" -- is rule-based code, not a machine-learning model.",
+        "mi_methodology_ai_vs_rule_label": "Deterministic vs. AI-Generated",
+        "mi_methodology_ai_vs_rule_desc": "Every card/section is tagged 'Rule-Based' or 'AI-Generated' (see the tag next to each section title). 'AI-Generated' only appears when an OpenAI key is actually configured and the summary was actually produced by it; otherwise the exact same section falls back to, and is labeled as, a rule-based template.",
+        "mi_methodology_measures_label": "Confidence, Impact, and Relevance are different measurements",
+        "mi_methodology_measures_desc": "Impact (stars) measures how significant an event/headline is estimated to be for a market or ETF. Confidence (%) measures how one-sided the underlying sentiment signal is, not how important the event is. Relevance is a gating step (does this headline's classified event type apply to this market/ETF at all) applied BEFORE impact/confidence are computed -- a headline that isn't relevant never reaches an impact or confidence score in the first place. These three are never combined into, or displayed as, a single number.",
+        "mi_methodology_markets_label": "Affected-Market Mapping & Limitations",
+        "mi_methodology_markets_desc": "Which markets/ETFs an event affects is decided by a hand-curated event-type → market/ETF-type weight table (e.g. a tariff or semiconductor headline maps to Taiwan because of its chip-export exposure), not by whether the headline literally names that market. This mapping reflects known, general economic relationships -- it is a heuristic, not a statistically-derived model. Headlines are sourced from a small set of US-listed tickers' news feeds (S&P 500 / Nasdaq / Dow proxies), so Taiwan- and UK-specific stories that never surface in US financial headlines can be under-represented or missed entirely; Taiwan and UK coverage is therefore structurally thinner than US coverage.",
+        "mi_methodology_validation_label": "Validation Status",
+        "mi_methodology_validation_desc": "This pipeline has NOT been validated against any independently labeled ground-truth dataset. No precision, recall, F1, or accuracy figure is reported anywhere on this page, because none has been measured -- every score here is a transparent, auditable rule/formula applied to today's headlines, not a statistically validated prediction.",
+        "mi_methodology_source_label": "Source & As-Of Data",
+        "mi_methodology_source_desc": "Each headline shows its actual publish time when the source provides one, or '—' when it doesn't (never a fabricated time); the publisher shown is the news feed's own attribution.",
+        "mi_impact_caption": "Impact",
     },
 }
 
