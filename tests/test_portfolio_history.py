@@ -131,6 +131,43 @@ def test_set_as_current_portfolio_populates_canonical_state(isolated_db):
     assert any("Reloadable" in s for s in success_texts), success_texts
 
 
+def test_reloaded_portfolio_handoff_to_ai_advisor_no_exception(isolated_db):
+    """Issue #18 Stage 7: a portfolio reloaded via "Set as Current Portfolio"
+    has historical_start_date/historical_end_date = None (the saved-portfolio
+    DB schema has no date columns -- see _set_as_current_portfolio() in
+    pages/7_Portfolio_History.py). AI Advisor must fall back to a sensible
+    default date range instead of passing the literal string "None" through
+    to the price downloader.
+    """
+    _seed_portfolio(isolated_db, "ReloadToAdvisor", PORTFOLIO_A_HOLDINGS,
+                     investment_amount=5000.0, method="Minimum Volatility",
+                     ret=0.09, vol=0.12, sharpe=0.6)
+    saved = isolated_db.load_all_portfolios()[0]
+
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    btn = next((b for b in at.button if b.key == f"hist_set_current_{saved['id']}"), None)
+    assert btn is not None
+    btn.click()
+    at.run()
+    cp = at.session_state["current_portfolio"]
+    assert cp["historical_start_date"] is None
+    assert cp["historical_end_date"] is None
+
+    import streamlit as st
+    st.page_link = lambda *a, **k: None
+    ai_at = _apptest_from_file("pages/6_AI_Advisor.py", default_timeout=180)
+    ai_at.session_state["language"] = "en"
+    ai_at.session_state["current_portfolio"] = cp
+    ai_at.run()
+    exc = ai_at.exception[0] if ai_at.exception else None
+    assert exc is None, str(exc)
+    ai_result = ai_at.session_state["ai_result"] if "ai_result" in ai_at.session_state else None
+    assert ai_result is not None
+    assert ai_result["context"]["portfolio"]["weights"] == PORTFOLIO_A_HOLDINGS
+
+
 def test_set_as_current_portfolio_shows_active_badge_on_reselect(isolated_db):
     _seed_portfolio(isolated_db, "BadgeCheck", PORTFOLIO_A_HOLDINGS)
     saved = isolated_db.load_all_portfolios()[0]

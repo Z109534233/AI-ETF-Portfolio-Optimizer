@@ -1325,6 +1325,28 @@ def test_ph_c_min_vol_handoff_to_risk_analytics():
           "Minimum Volatility" in corpus, corpus[:0])
 
 
+# ── PH-K: Equal Weight build -> Market Intelligence's Portfolio Impact
+# section prefers the canonical current_portfolio over any saved database
+# record (Issue #18 Stage 7) ─────────────────────────────────────────────
+def test_ph_k_handoff_to_market_intelligence_prefers_current_portfolio():
+    at, cp = _build_current_portfolio_via_optimizer("Equal Weight")
+    check("PH-K.optimizer_no_exception", not at.exception, str(at.exception))
+    check("PH-K.current_portfolio_built", cp is not None)
+    if cp is None:
+        return
+
+    mi_at = _run_receiving_page("pages/8_Market_Intelligence.py", cp)
+    exc2 = mi_at.exception[0] if mi_at.exception else None
+    check("PH-K.market_intelligence_no_exception", exc2 is None, str(exc2))
+    if exc2:
+        return
+    corpus = "\n".join(m.value for m in mi_at.markdown)
+    strategy_label = "Equal Weight"
+    check("PH-K.shows_current_portfolio_strategy_label", strategy_label in corpus, corpus[:0])
+    check("PH-K.uses_current_portfolio_caption",
+          "current portfolio" in corpus.lower(), corpus[:0])
+
+
 # ── PH-J: Maximum Sharpe build -> AI Advisor receives exact weights and
 # synthesizes them (Issue #18 Stage 6/7) ─────────────────────────────────
 def test_ph_j_max_sharpe_handoff_to_ai_advisor():

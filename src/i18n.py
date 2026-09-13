@@ -1211,6 +1211,7 @@ TRANSLATIONS = {
 
         "mi_portfolio_no_data": "尚未建立任何已儲存的投資組合。請先至「投資組合最佳化」頁面建立並儲存投資組合，即可查看今日新聞對你投資組合的可能影響。",
         "mi_portfolio_using": "以下分析基於你最近儲存的投資組合：{name}",
+        "mi_portfolio_using_current": "以下分析基於你目前的投資組合（來自投資組合最佳化）：{name}",
         "mi_portfolio_exposure": "你的投資組合對「{sector}」的曝險比例相對較高，約佔 {weight}。",
         "mi_portfolio_news_line": "今日與 {ticker} 相關的新聞，可能會對你的持股帶來{verb}影響。",
         "mi_impact_positive_verb": "正面",
@@ -2445,6 +2446,7 @@ TRANSLATIONS = {
 
         "mi_portfolio_no_data": "You don't have any saved portfolios yet. Build and save one on the Portfolio Optimizer page to see how today's news may affect your holdings.",
         "mi_portfolio_using": "The analysis below is based on your most recently saved portfolio: {name}",
+        "mi_portfolio_using_current": "The analysis below is based on your current portfolio (from Portfolio Optimizer): {name}",
         "mi_portfolio_exposure": "Your portfolio has a relatively high exposure to {sector} (about {weight}).",
         "mi_portfolio_news_line": "Today's news related to {ticker} may have a {verb} influence on your holdings.",
         "mi_impact_positive_verb": "positive",

@@ -102,8 +102,15 @@ with st.sidebar:
         selected_etfs = current_portfolio["tickers"]
         weights_input = current_portfolio["weights"]
         investment_amount = current_portfolio.get("investment_amount")
-        start_date = current_portfolio.get("historical_start_date")
-        end_date = current_portfolio.get("historical_end_date")
+        # historical_start_date/end_date can be None (e.g. a portfolio
+        # reloaded from Portfolio History -- the saved-portfolio schema has
+        # no date columns, see pages/7_Portfolio_History.py's
+        # _set_as_current_portfolio()); fall back to the same default
+        # window Investment Simulator/Risk Analytics use rather than
+        # passing "None" through to the price downloader.
+        default_start, default_end = get_date_range_defaults()
+        start_date = current_portfolio.get("historical_start_date") or default_start
+        end_date = current_portfolio.get("historical_end_date") or default_end
 
     st.markdown("---")
     st.markdown(f"### {t('ai_investor_profile')}")

@@ -33,7 +33,7 @@ from src.ui import (
     chart_card, render_footer, news_card, status_card, star_rating_html,
     market_impact_card, ai_sentiment_card, empty_state, error_state,
 )
-from src.i18n import t, get_language
+from src.i18n import t, get_language, t_opt_method
 
 st.set_page_config(
     page_title="Market Intelligence | AI ETF Portfolio Optimizer",
@@ -352,23 +352,43 @@ with chart_card(t("mi_section_calendar_title")):
     st.dataframe(calendar_df, use_container_width=True, hide_index=True)
 
 # ── Section 7: Portfolio Impact ──────────────────────────────────────────────
+# Prefers the ONE canonical st.session_state["current_portfolio"] (built in
+# Portfolio Optimizer -- same object AI Advisor/Investment Simulator/Risk
+# Analytics consume) over a saved-database record, so this section reflects
+# what the user is actually looking at right now rather than a possibly
+# stale or never-updated saved portfolio (Issue #18 Stage 7). Falls back to
+# the most recently saved portfolio only when no current portfolio exists
+# yet, preserving the pre-existing standalone behavior.
 section_header(t("mi_section_portfolio_impact_title"))
 
-portfolios = load_all_portfolios()
-if not portfolios:
+current_portfolio_mi = st.session_state.get("current_portfolio")
+if current_portfolio_mi and current_portfolio_mi.get("weights"):
+    mi_portfolio_name = t_opt_method(current_portfolio_mi.get("strategy", ""))
+    mi_portfolio_holdings = current_portfolio_mi["weights"]
+    mi_portfolio_caption = t("mi_portfolio_using_current", name=mi_portfolio_name)
+else:
+    portfolios = load_all_portfolios()
+    if portfolios:
+        mi_portfolio_name = portfolios[0]["name"]
+        mi_portfolio_holdings = portfolios[0]["holdings"]
+        mi_portfolio_caption = t("mi_portfolio_using", name=mi_portfolio_name)
+    else:
+        mi_portfolio_name = None
+        mi_portfolio_holdings = None
+        mi_portfolio_caption = None
+
+if not mi_portfolio_holdings:
     empty_state(t("hist_no_portfolios_title"), t("mi_portfolio_no_data"), icon="layers")
 else:
-    latest = portfolios[0]
-    impact_text = analyze_portfolio_impact(latest["holdings"], affected_etfs)
+    impact_text = analyze_portfolio_impact(mi_portfolio_holdings, affected_etfs)
     col_text, col_chart = st.columns([2, 1])
     with col_text:
-        with chart_card(latest["name"], t("mi_portfolio_using", name=latest["name"])):
+        with chart_card(mi_portfolio_name, mi_portfolio_caption):
             st.markdown(impact_text)
     with col_chart:
-        if latest["holdings"]:
-            with chart_card(t("hist_allocation_breakdown_card")):
-                fig = allocation_donut_chart(latest["holdings"], "")
-                st.plotly_chart(fig, use_container_width=True, key="mi_portfolio_allocation_donut")
+        with chart_card(t("hist_allocation_breakdown_card")):
+            fig = allocation_donut_chart(mi_portfolio_holdings, "")
+            st.plotly_chart(fig, use_container_width=True, key="mi_portfolio_allocation_donut")
 
 # ── Section 7b: Methodology & Validation (M4) ───────────────────────────────
 # Compact disclosure of the ACTUAL pipeline and its validation status -- see
