@@ -94,6 +94,7 @@ _sentiment_caption = "市場情緒" if _mi_lang == "zh-TW" else "Market Sentimen
 _markets_caption = "受影響市場" if _mi_lang == "zh-TW" else "Affected Markets"
 _etfs_caption = "受影響 ETF" if _mi_lang == "zh-TW" else "Affected ETFs"
 _confidence_caption = "信心指數" if _mi_lang == "zh-TW" else "Confidence"
+_impact_caption = t("mi_impact_caption")
 
 section_header(_major_events_title)
 if major_events:
@@ -113,6 +114,7 @@ if major_events:
             st.markdown(
                 '<div class="status-card market-impact-card">'
                 f'<div class="status-card-ticker">🔥 {event["headline"]}</div>'
+                f'<div class="affected-by-caption">{_impact_caption}</div>'
                 f'<div class="status-card-stars">{star_rating_html(event["stars"])}</div>'
                 f'<div class="market-impact-label">{event["category"]}</div>'
                 f'<div class="status-card-sector">{_sentiment_caption}: '
@@ -241,6 +243,7 @@ else:
             f'<div class="news-card-title">{title_html}</div>'
             f'<div class="news-card-meta"><span>{time_str}</span><span>&middot;</span><span>{item["publisher"]}</span></div>'
             f'<div class="status-card-sector">{meta["category"]}</div>'
+            f'<div class="affected-by-caption">{_impact_caption}</div>'
             f'<div class="status-card-stars">{star_rating_html(meta["stars"])}</div>'
             '<div class="news-card-footer">'
             f'<span class="badge badge-{meta["sentiment_variant"]}">{meta["sentiment_label"]}</span>'
@@ -283,6 +286,7 @@ if etf_cards:
             st.markdown(
                 '<div class="status-card market-impact-card">'
                 f'<div class="status-card-ticker">{etf["ticker"]}</div>'
+                f'<div class="affected-by-caption">{_impact_caption}</div>'
                 f'<div class="status-card-stars">{star_rating_html(etf["stars"])}</div>'
                 f'<div class="status-card-sector">{_etf_market_caption}: '
                 f'<span class="badge badge-{etf["sentiment_variant"]}">{etf["sentiment_label"]}</span></div>'
@@ -365,6 +369,21 @@ else:
             with chart_card(t("hist_allocation_breakdown_card")):
                 fig = allocation_donut_chart(latest["holdings"], "")
                 st.plotly_chart(fig, use_container_width=True, key="mi_portfolio_allocation_donut")
+
+# ── Section 7b: Methodology & Validation (M4) ───────────────────────────────
+# Compact disclosure of the ACTUAL pipeline and its validation status -- see
+# src/methodology.py's MARKET_INTELLIGENCE_METHODOLOGY, the single source of
+# truth this panel and tests/test_methodology_m4.py both read from.
+with st.expander(t("mi_methodology_title"), expanded=False):
+    st.caption(t("mi_methodology_subtitle"))
+    st.markdown(
+        f"- **{t('mi_methodology_pipeline_label')}** — {t('mi_methodology_pipeline_desc')}\n"
+        f"- **{t('mi_methodology_ai_vs_rule_label')}** — {t('mi_methodology_ai_vs_rule_desc')}\n"
+        f"- **{t('mi_methodology_measures_label')}** — {t('mi_methodology_measures_desc')}\n"
+        f"- **{t('mi_methodology_markets_label')}** — {t('mi_methodology_markets_desc')}\n"
+        f"- **{t('mi_methodology_source_label')}** — {t('mi_methodology_source_desc')}"
+    )
+    st.warning(f"**{t('mi_methodology_validation_label')}** — {t('mi_methodology_validation_desc')}")
 
 # ── Section 8: Educational Disclaimer ────────────────────────────────────────
 disclaimer_box(t("mi_disclaimer"))
