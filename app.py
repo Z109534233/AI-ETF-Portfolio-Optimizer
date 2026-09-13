@@ -115,6 +115,23 @@ for _col, (_value, _title, _desc) in zip(stat_cols, _platform_stats):
             unsafe_allow_html=True,
         )
 
+# Supported-ETF-count provenance (Issue #20 section 1B): the count above is
+# real (len(get_all_tickers())), but must not be read as a claim that every
+# listed ticker has guaranteed, always-available price data.
+if _platform_lang == "zh-TW":
+    st.caption(
+        "ℹ️ ETF 清單彙整自平台內建的美國（NASDAQ／NYSE 上市清單）、"
+        "台灣（證交所 TWSE／櫃買中心 TPEX）與英國市場 ETF 名單；"
+        "實際可取得的價格資料仍取決於市場資料來源的覆蓋範圍。"
+    )
+else:
+    st.caption(
+        "ℹ️ The ETF list is compiled from the platform's built-in US "
+        "(NASDAQ/NYSE listing files), Taiwan (TWSE/TPEX), and UK ETF "
+        "universes; actual price data availability still depends on "
+        "market-data source coverage."
+        )
+
 # ── Why Choose This Platform (merged with the former Feature Overview
 # section -- one 8-card grid, one card per module, no duplicated content). ──
 _why_lang = get_language()
@@ -208,7 +225,8 @@ if not demo_etfs:
 with st.spinner(t("home_loading_market_data")):
     raw_prices = download_etf_data(demo_etfs, str(start_date), str(end_date))
 
-if raw_prices.empty:
+_using_sample_data = raw_prices.empty
+if _using_sample_data:
     st.warning(t("home_live_data_unavailable"))
     from src.data_loader import _generate_sample_data
     raw_prices = _generate_sample_data(demo_etfs, str(start_date), str(end_date))
@@ -233,10 +251,22 @@ if not etf_prices.empty:
     cov += np.eye(n) * 1e-8
     div_r = diversification_ratio(weights_arr, cov)
 else:
+    # No usable data at all, even after the sample-data fallback above --
+    # these are fixed placeholder figures, not a computation of anything.
+    _using_sample_data = True
     ann_ret, ann_vol, sr, mdd, port_value, div_r = 0.10, 0.15, 0.67, -0.12, 10800, 1.25
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
+# Equal-weight demonstration portfolio (Issue #20 section 1C): this is the
+# home-page preview only -- never the output of Portfolio Optimizer's
+# actual optimization strategies -- so it can never be mistaken for a
+# real optimizer result. When synthetic/sample data had to be used (live
+# market data unavailable, or no data at all), a persistent SAMPLE/DEMO
+# DATA badge is shown here too so it can't be missed if the earlier
+# warning banner has scrolled out of view.
 section_header(t("home_dashboard_title"), t("home_dashboard_subtitle"))
+if _using_sample_data:
+    st.caption(f"🧪 {t('home_dashboard_sample_data_badge')}")
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 with col1:
     st.markdown(metric_card_html(t("metric_portfolio_value"), f"${port_value:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)

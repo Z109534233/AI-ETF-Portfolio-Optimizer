@@ -102,7 +102,8 @@ TRANSLATIONS = {
 
         # ── Home Page Sections ──────────────────────────────────────────
         "home_dashboard_title": "投資組合儀表板",
-        "home_dashboard_subtitle": "依所選 ETF 的等權重預覽",
+        "home_dashboard_subtitle": "等權重示範投資組合——依所選 ETF 平均分配，並非投資組合最佳化的結果",
+        "home_dashboard_sample_data_badge": "範例／示範資料——並非即時市場資料",
         "home_quick_settings": "快速設定",
         "home_dashboard_etfs_label": "儀表板 ETF",
         "home_dashboard_etfs_help": "選擇要顯示於儀表板預覽的 ETF",
@@ -1357,7 +1358,8 @@ TRANSLATIONS = {
 
         # ── Home Page Sections ──────────────────────────────────────────
         "home_dashboard_title": "Portfolio Dashboard",
-        "home_dashboard_subtitle": "Equal-weight preview across your selected ETFs",
+        "home_dashboard_subtitle": "Equal-weight demonstration portfolio -- evenly split across your selected ETFs, not an output of portfolio optimization",
+        "home_dashboard_sample_data_badge": "Sample / Demo Data -- not live market data",
         "home_quick_settings": "Quick Settings",
         "home_dashboard_etfs_label": "Dashboard ETFs",
         "home_dashboard_etfs_help": "Select ETFs for the dashboard preview",

@@ -471,19 +471,26 @@ def hero_section() -> None:
     to keep this change to ui.py + style.css only.
     """
     lang = get_language()
+    # Positioning (Issue #20 section 1A): the visible product positioning
+    # leads with ETF portfolio analytics / quantitative decision support,
+    # not "AI" -- AI is one input (rule-based interpretation, optional
+    # OpenAI-assisted narrative) alongside performance analysis, portfolio
+    # optimization, risk analytics, simulation, and machine learning. The
+    # brand/browser tab title (see st.set_page_config elsewhere) may still
+    # say "AI ETF Portfolio Optimizer".
     if lang == "zh-TW":
-        title = "AI ETF Portfolio Optimizer"
-        subtitle = "利用 AI 協助投資人分析 ETF、建立最佳投資組合，並掌握最新市場動態"
+        title = "ETF 投資組合分析與量化決策平台"
+        subtitle = "整合績效分析、投資組合最佳化、風險分析、模擬、機器學習與 AI 輔助解讀。"
         btn_primary = "開始分析"
         btn_secondary = "探索功能"
-        preview_title = "投資組合預覽"
+        preview_title = "投資組合預覽（示範）"
         preview_metrics = ["預期報酬", "波動", "Sharpe"]
     else:
-        title = "AI ETF Portfolio Optimizer"
-        subtitle = "We use AI to help investors analyze ETFs, build optimal portfolios, and stay on top of the latest market trends"
+        title = "ETF Portfolio Analytics & Quantitative Decision Platform"
+        subtitle = "Performance analysis, portfolio optimization, risk analytics, simulation, machine learning, and AI-assisted interpretation, in one platform."
         btn_primary = "Start Analysis"
         btn_secondary = "Explore Features"
-        preview_title = "Portfolio Preview"
+        preview_title = "Portfolio Preview (Demo)"
         preview_metrics = ["Expected Return", "Volatility", "Sharpe"]
 
     holdings = [("VOO", "40%"), ("QQQ", "35%"), ("0050", "25%")]
