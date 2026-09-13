@@ -21,7 +21,8 @@ from src.data_loader import download_etf_data
 from src.data_cleaner import clean_price_data
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import annualized_return, annualized_volatility, sharpe_ratio, maximum_drawdown
-from src.ai_advisor import build_advisor_context, generate_advisor_narrative, get_openai_client
+from src.ai_advisor import build_advisor_context, generate_advisor_narrative
+from src.openai_service import is_configured as openai_is_configured
 from src.news import fetch_market_news
 from src.charts import allocation_donut_chart
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
@@ -53,8 +54,7 @@ render_current_portfolio_handoff(
 )
 current_portfolio = st.session_state.get("current_portfolio")
 
-client = get_openai_client()
-if client is None:
+if not openai_is_configured():
     st.info(t("ai_mode_info"))
 else:
     st.success(t("ai_mode_success"))
@@ -203,14 +203,17 @@ if analyse_btn or st.session_state.ai_result is None:
         )
 
     with st.spinner(t("msg_generating_report")):
-        analysis_text = generate_advisor_narrative(
+        narrative = generate_advisor_narrative(
             context,
             investment_objective=investment_objective,
             risk_level=risk_level,
             investment_horizon=investment_horizon,
+            session_state=st.session_state,
         )
 
-    st.session_state.ai_result = {"analysis": analysis_text, "context": context}
+    st.session_state.ai_result = {
+        "analysis": narrative["text"], "source": narrative["source"], "context": context,
+    }
 
 result = st.session_state.ai_result
 if result is None or not result["context"]["portfolio"]["available"]:
@@ -225,7 +228,7 @@ section_header(t("ai_analysis_results_title"))
 col_left, col_right = st.columns([2, 1])
 
 with col_left:
-    with chart_card(t("ai_portfolio_analysis_card"), tag=t("ai_tag_generated") if client else t("ai_tag_rule_based")):
+    with chart_card(t("ai_portfolio_analysis_card"), tag=t("ai_tag_generated") if result.get("source") == "ai" else t("ai_tag_rule_based")):
         st.markdown(f"**{t('ai_narrative_title')}**")
         st.markdown(result["analysis"])
 
