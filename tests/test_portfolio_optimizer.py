@@ -1718,7 +1718,9 @@ def test_sim_f_historical_simulation_without_portfolio():
     check("SIM-F.no_historical_kpis_without_portfolio", '<div class="kpi-card">' not in corpus, "")
 
 
-# ── SIM-G: probability metric label matches its actual definition ───────
+# ── SIM-G: probability metric label matches its actual definition, and is
+# framed as an empirical simulation frequency, never a guaranteed
+# real-world probability (Issue #20 section 4A) ──────────────────────────
 def test_sim_g_probability_label_matches_definition():
     at = _setup_sim_page(assumption_source="Market Scenario", scenario="Base Case")
     exc = at.exception[0] if at.exception else None
@@ -1732,9 +1734,18 @@ def test_sim_g_probability_label_matches_definition():
     check("SIM-G.probability_is_final_value_over_contributions",
           abs(summary["probability_profit"] - manual_prob) < 1e-9,
           f"{summary['probability_profit']} vs {manual_prob}")
+    manual_count = int(np.sum(final_values > summary["total_contributed"]))
+    check("SIM-G.positive_outcome_count_matches_manual_count",
+          summary["positive_outcome_count"] == manual_count,
+          f"{summary['positive_outcome_count']} vs {manual_count}")
     corpus = "\n".join(m.value for m in at.markdown)
-    check("SIM-G.label_states_exact_definition", "Probability of Ending Above Contributions" in corpus, "")
+    check("SIM-G.label_states_honest_empirical_framing", "Positive Outcome in Simulation" in corpus, "")
     check("SIM-G.old_ambiguous_label_absent", "Probability of Profit" not in corpus, "")
+    check("SIM-G.old_probability_label_absent", "Probability of Ending Above Contributions" not in corpus, "")
+    captions = "\n".join(c.value for c in at.caption)
+    check("SIM-G.detail_states_path_count",
+          f"{summary['positive_outcome_count']:,} / {summary['n_simulations']:,}" in captions, captions)
+    check("SIM-G.disclaimer_states_not_guaranteed", "not a guaranteed real-world probability" in captions, captions)
 
 
 # ── SIM-H: Advanced Settings still affect the model correctly ───────────
@@ -1805,7 +1816,7 @@ def test_sim_i_i18n():
         hits = [frag for frag in forbidden if frag in corpus]
         check(f"SIM-I.{lang}.no_forbidden_fragments", len(hits) == 0, str(hits))
         expect_mode_label = "模擬模式" if lang == "zh-TW" else "Simulation Mode"
-        expect_prob_label = "期末價值高於投入本金機率" if lang == "zh-TW" else "Probability of Ending Above Contributions"
+        expect_prob_label = "模擬中的正報酬結果比例" if lang == "zh-TW" else "Positive Outcome in Simulation"
         expect_setup_title = "推估設定" if lang == "zh-TW" else "Projection Setup"
         check(f"SIM-I.{lang}.mode_label_translated", expect_mode_label in corpus, "")
         check(f"SIM-I.{lang}.probability_label_translated", expect_prob_label in corpus, "")

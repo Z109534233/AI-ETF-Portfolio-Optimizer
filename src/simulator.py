@@ -408,6 +408,6 @@ def scenario_comparison(
             "Median Final Value": f"${summary['median_final']:,.0f}",
             "Optimistic (90th)": f"${summary['optimistic_final']:,.0f}",
             "Pessimistic (10th)": f"${summary['pessimistic_final']:,.0f}",
-            "Prob. of Profit": f"{summary['probability_profit']:.1%}",
+            "Positive Outcome %": f"{summary['probability_profit']:.1%}",
         })
     return pd.DataFrame(rows)

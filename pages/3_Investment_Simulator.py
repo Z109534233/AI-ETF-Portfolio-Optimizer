@@ -591,10 +591,18 @@ with col1:
 with col2:
     st.markdown(metric_card_html(t("metric_pessimistic_10"), f"${summary['pessimistic_final']:,.0f}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col3:
-    # Exact definition (see src/simulator.py): mean(final nominal value >
-    # total nominal contributions) -- renamed from the ambiguous "Probability
-    # of Profit" to state that definition directly (Round 1 spec section 10).
-    st.markdown(metric_card_html(t("sim_prob_ending_above_contributions"), f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
+    # Honest empirical-frequency framing (Issue #20 section 4A): this is the
+    # observed share of SIMULATED paths that ended above contributions
+    # under the chosen assumptions -- never rendered as if it were a
+    # real-world guaranteed probability. The underlying frequency
+    # (summary["probability_profit"]) is never altered/rounded away from
+    # its true value (e.g. a genuine 100.0% must keep showing as 100.0%).
+    st.markdown(metric_card_html(t("sim_positive_outcome_label"), f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
+st.caption(t(
+    "sim_positive_outcome_detail",
+    count=f"{summary['positive_outcome_count']:,}", total=f"{summary['n_simulations']:,}",
+))
+st.caption(t("sim_positive_outcome_disclaimer", total=f"{summary['n_simulations']:,}"))
 
 # ── Charts ────────────────────────────────────────────────────────────────────
 section_header(t("sim_projection_charts_title"))
