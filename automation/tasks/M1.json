@@ -1,0 +1,34 @@
+{
+  "task_id": "M1",
+  "title": "Portfolio Optimization Methodology",
+  "depends_on": null,
+  "context_files": [
+    "src/portfolio_optimizer.py",
+    "src/financial_metrics.py",
+    "src/data_loader.py",
+    "pages/2_Portfolio_Optimizer.py",
+    "src/i18n.py"
+  ],
+  "allowed_files": [
+    "src/portfolio_optimizer.py",
+    "src/financial_metrics.py",
+    "src/data_loader.py",
+    "pages/2_Portfolio_Optimizer.py",
+    "src/i18n.py",
+    "src/methodology.py",
+    "tests/test_methodology_m1.py"
+  ],
+  "acceptance_criteria": [
+    "Audit the actual expected-return calculation: confirm which price field is used, whether returns are simple or log, the sampling frequency, the estimator, the annualization method, how missing data is handled, and how the common-history window across ETFs is determined.",
+    "Audit the covariance estimator: confirm estimator choice, frequency, annualization, alignment across assets, NaN handling, and any positive-semidefinite stabilization applied.",
+    "Expose the actual Maximum Sharpe optimization formula, the risk-free rate used, and every constraint applied to the optimizer.",
+    "Add post-optimization validation of constraints and reported metrics (weights sum to 1, bounds respected, reported risk/return/Sharpe consistent with the optimized weights).",
+    "Do not backward-fill data prior to an ETF's inception and do not silently drop ETFs with insufficient history; insufficient-history behavior must be explicit and surfaced to the user.",
+    "If present-day optimized weights are ever applied backward over historical dates, that output must be labeled 'Fixed-Allocation Historical Backtest', never 'walk-forward'.",
+    "Add compact methodology and runtime-settings UI/metadata describing the above, backed by deterministic automated tests."
+  ],
+  "prohibited": [
+    "Do not silently replace the existing sample covariance estimator with Ledoit-Wolf shrinkage or any other estimator without explicit disclosure.",
+    "Do not add Black-Litterman, CAPM, true walk-forward optimization, Monte Carlo simulation, VaR, or sentiment-driven features as part of this task."
+  ]
+}

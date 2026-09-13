@@ -31,6 +31,14 @@ on:
       autofix_allowed:
         required: true
         type: boolean
+      trusted_automation:
+        required: false
+        type: boolean
+        default: false
+      task_allowed_files_json:
+        required: false
+        type: string
+        default: "[]"
     secrets:
       OPENAI_API_KEY:
         required: true
@@ -45,6 +53,8 @@ on:
         value: ${{ jobs.finalize.outputs.attempt_count }}
       status:
         value: ${{ jobs.finalize.outputs.status }}
+      tested_head_sha:
+        value: ${{ jobs.finalize.outputs.tested_head_sha }}
 
 jobs:
   review:
@@ -180,6 +190,8 @@ jobs:
           COMMENT_ID: ${{ inputs.controller_comment_id }}
           EXPECTED_COUNT: ${{ inputs.attempt_count }}
           EXPECTED_HEAD: ${{ inputs.head_sha }}
+          TRUSTED_AUTOMATION: ${{ inputs.trusted_automation }}
+          TASK_ALLOWED_FILES_JSON: ${{ inputs.task_allowed_files_json }}
         with:
           script: |
             const crypto = require('crypto');
@@ -187,6 +199,31 @@ jobs:
             const statePattern = /<!-- openai-autofix-state:(\{.*\}) -->/;
             const commentId = Number(process.env.COMMENT_ID);
             const expectedCount = Number(process.env.EXPECTED_COUNT);
+            const trustedAutomation = process.env.TRUSTED_AUTOMATION === 'true';
+
+            let taskAllowedFiles = [];
+            try {
+              taskAllowedFiles = JSON.parse(process.env.TASK_ALLOWED_FILES_JSON || '[]');
+            } catch {
+              core.setFailed('task_allowed_files_json is not valid JSON.');
+              return;
+            }
+            if (trustedAutomation) {
+              if (!Array.isArray(taskAllowedFiles) || taskAllowedFiles.length === 0) {
+                core.setFailed('trusted_automation repair requires a non-empty task allowlist.');
+                return;
+              }
+              for (const path of taskAllowedFiles) {
+                if (typeof path !== 'string' ||
+                    path.startsWith('.github/') ||
+                    path.startsWith('automation/') ||
+                    path.startsWith('/') ||
+                    path.split('/').includes('..')) {
+                  core.setFailed('trusted task allowlist contains an unsafe path: ' + String(path));
+                  return;
+                }
+              }
+            }
 
             const prResponse = await github.rest.pulls.get({
               owner: context.repo.owner,
@@ -203,9 +240,25 @@ jobs:
               core.setFailed('Auto-fix is restricted to same-repository PRs.');
               return;
             }
-            if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association || '')) {
-              core.setFailed('PR author is not authorized for automatic repair.');
-              return;
+            // trusted_automation only relaxes *who* may author the PR (the
+            // autopilot queue's own github-actions[bot] commits), never the
+            // same-repository check above or the controller-state check below.
+            // Normal human PRs always go through the OWNER/MEMBER/COLLABORATOR
+            // branch and can never set autopilot_managed:true on their state.
+            if (trustedAutomation) {
+              if (!pr.user || pr.user.login !== 'github-actions[bot]') {
+                core.setFailed('trusted_automation repair requires a github-actions[bot]-authored PR.');
+                return;
+              }
+              if (!pr.head.ref.startsWith('autopilot/')) {
+                core.setFailed('trusted_automation repair requires an autopilot/ head ref.');
+                return;
+              }
+            } else {
+              if (!['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association || '')) {
+                core.setFailed('PR author is not authorized for automatic repair.');
+                return;
+              }
             }
 
             const commentResponse = await github.rest.issues.getComment({
@@ -227,6 +280,12 @@ jobs:
               return;
             }
             const state = JSON.parse(match[1]);
+            if (trustedAutomation !== (state.autopilot_managed === true)) {
+              core.setFailed(
+                'trusted_automation flag does not match controller autopilot_managed state.'
+              );
+              return;
+            }
             if (!Number.isInteger(state.attempts) ||
                 state.attempts !== expectedCount ||
                 state.attempts >= 3) {
@@ -302,6 +361,8 @@ jobs:
         env:
           BASE_SHA: ${{ inputs.base_sha }}
           HEAD_SHA: ${{ inputs.head_sha }}
+          TRUSTED_AUTOMATION: ${{ inputs.trusted_automation }}
+          TASK_ALLOWED_FILES_JSON: ${{ inputs.task_allowed_files_json }}
         run: |
           python - <<'PY'
           import hashlib
@@ -314,22 +375,41 @@ jobs:
           base = os.environ['BASE_SHA']
           head = os.environ['HEAD_SHA']
           review = json.load(open('review_artifact/review_result.json', encoding='utf-8'))
+          trusted_automation = os.environ.get('TRUSTED_AUTOMATION', '').lower() == 'true'
+          task_allowed_raw = json.loads(os.environ.get('TASK_ALLOWED_FILES_JSON', '[]'))
+          if not isinstance(task_allowed_raw, list):
+              raise SystemExit('task_allowed_files_json must be a JSON array.')
+          task_allowed = set(task_allowed_raw)
+
+          if trusted_automation and not task_allowed:
+              raise SystemExit('trusted_automation repair requires a non-empty task allowlist.')
 
           changed = subprocess.check_output(
               ['git', 'diff', '--name-only', base, head],
               text=True,
           ).splitlines()
           changed = [p for p in changed if p and not p.startswith(protected)]
+          if trusted_automation:
+              escaped = [p for p in changed if p not in task_allowed]
+              if escaped:
+                  raise SystemExit(
+                      'Trusted task PR already contains files outside its allowlist: ' +
+                      ', '.join(escaped)
+                  )
 
           issue_files = []
           for issue in review.get('issues', []):
               path = (issue.get('file') or '').strip()
               if path and path != 'unknown' and not path.startswith(protected):
+                  if trusted_automation and path not in task_allowed:
+                      raise SystemExit(
+                          'Reviewer requested a trusted task repair outside the task allowlist: ' + path
+                      )
                   issue_files.append(path)
 
           allowed = []
           for path in changed + issue_files:
-              if path not in allowed:
+              if path not in allowed and (not trusted_automation or path in task_allowed):
                   allowed.append(path)
 
           if len(allowed) > 25:
@@ -544,9 +624,13 @@ jobs:
           path: patch_artifact
 
       - name: Validate scope and patch applicability
+        env:
+          TRUSTED_AUTOMATION: ${{ inputs.trusted_automation }}
+          TASK_ALLOWED_FILES_JSON: ${{ inputs.task_allowed_files_json }}
         run: |
           python - <<'PY'
           import json
+          import os
           import pathlib
           import shlex
           import subprocess
@@ -554,6 +638,14 @@ jobs:
           protected = ('.github/workflows/', '.github/actions/', 'automation/')
           manifest = json.load(open('repair_context/manifest.json', encoding='utf-8'))
           allowed = set(manifest.get('allowed_files', []))
+          trusted_automation = os.environ.get('TRUSTED_AUTOMATION', '').lower() == 'true'
+          task_allowed_raw = json.loads(os.environ.get('TASK_ALLOWED_FILES_JSON', '[]'))
+          if not isinstance(task_allowed_raw, list):
+              raise SystemExit('task_allowed_files_json must be a JSON array.')
+          task_allowed = set(task_allowed_raw)
+          if trusted_automation and not task_allowed:
+              raise SystemExit('trusted_automation repair requires a non-empty task allowlist.')
+
           proposal = json.load(open('patch_artifact/claude_patch.json', encoding='utf-8'))
           patch = proposal.get('patch', '')
 
@@ -596,6 +688,8 @@ jobs:
                   raise SystemExit('Protected path in patch: ' + path)
               if path not in allowed:
                   raise SystemExit('Patch escaped the reviewer-derived allowlist: ' + path)
+              if trusted_automation and path not in task_allowed:
+                  raise SystemExit('Patch escaped the trusted task allowlist: ' + path)
 
           pathlib.Path('repair.patch').write_text(patch, encoding='utf-8')
           subprocess.run(
@@ -845,6 +939,7 @@ jobs:
       head_sha: ${{ steps.final.outputs.head_sha }}
       attempt_count: ${{ steps.final.outputs.attempt_count }}
       status: ${{ steps.final.outputs.status }}
+      tested_head_sha: ${{ steps.final.outputs.tested_head_sha }}
     steps:
       - name: Finalize round and persistent controller state
         id: final
@@ -873,6 +968,7 @@ jobs:
             let headSha = process.env.INPUT_HEAD;
             let attempts = Number(process.env.INPUT_COUNT);
             let status = 'no-repair';
+            let testedHeadSha = '';
             let shouldUpdateState = false;
 
             if (initialVerdict === 'FIX' && autofixAllowed) {
@@ -897,6 +993,7 @@ jobs:
                   }
                 } else {
                   headSha = process.env.APPLIED_HEAD;
+                  testedHeadSha = process.env.APPLIED_HEAD;
                   verdict = process.env.POST_VERDICT || 'STOP';
                   if (verdict === 'PASS') {
                     status = 'completed';
@@ -971,3 +1068,4 @@ jobs:
             core.setOutput('head_sha', headSha);
             core.setOutput('attempt_count', String(attempts));
             core.setOutput('status', status);
+            core.setOutput('tested_head_sha', testedHeadSha);

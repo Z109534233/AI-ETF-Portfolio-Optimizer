@@ -1,0 +1,33 @@
+{
+  "task_id": "M4",
+  "title": "Market Intelligence & Sentiment Validation",
+  "depends_on": "M3",
+  "context_files": [
+    "src/market_intelligence.py",
+    "src/news.py",
+    "pages/8_Market_Intelligence.py",
+    "src/i18n.py",
+    "src/methodology.py"
+  ],
+  "allowed_files": [
+    "src/market_intelligence.py",
+    "src/news.py",
+    "pages/8_Market_Intelligence.py",
+    "src/i18n.py",
+    "src/methodology.py",
+    "tests/test_methodology_m4.py"
+  ],
+  "acceptance_criteria": [
+    "Trace the real pipeline from source, through market/ETF relevance, sentiment, impact, to summary, and clearly distinguish deterministic computation from AI-generated content.",
+    "Keep bullish/bearish signals actionable; handle neutral separately and never force a direction when none is warranted.",
+    "Do not conflate confidence, impact, and relevance as if they were the same measurement.",
+    "Affected-market/ETF mapping must be evidence-based, not generic US-keyword certainty; explicitly show limitations for Taiwan, UK, and other non-US/global coverage.",
+    "If no independent labeled ground truth exists, explicitly state that the pipeline is not externally validated and do not fabricate precision/recall/F1 metrics.",
+    "Only show source and as-of metadata when it is actually available.",
+    "Add methodology/validation UI and deterministic automated tests covering the above."
+  ],
+  "prohibited": [
+    "No ETF application/business-logic changes outside of this task's methodology and disclosure scope.",
+    "Do not fabricate validation metrics that are not backed by real labeled data."
+  ]
+}

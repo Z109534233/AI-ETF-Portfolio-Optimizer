@@ -1,0 +1,34 @@
+{
+  "task_id": "M3",
+  "title": "Risk Methodology",
+  "depends_on": "M2",
+  "context_files": [
+    "src/financial_metrics.py",
+    "src/holdings.py",
+    "pages/4_Risk_Analytics.py",
+    "src/i18n.py",
+    "src/methodology.py"
+  ],
+  "allowed_files": [
+    "src/financial_metrics.py",
+    "src/holdings.py",
+    "pages/4_Risk_Analytics.py",
+    "src/i18n.py",
+    "src/methodology.py",
+    "src/risk_analytics.py",
+    "tests/test_methodology_m3.py"
+  ],
+  "acceptance_criteria": [
+    "Trace each displayed risk metric back to real data and formulas; no hard-coded analytical results.",
+    "For VaR/CVaR, expose the actual method, confidence level, holding period, and lookback window used. If VaR/CVaR is a placeholder or absent, implement only a transparent historical-return VaR/CVaR with explicit sufficient-data checks, or mark it unavailable with a stated reason.",
+    "Verify the maximum drawdown calculation against the underlying price/return series.",
+    "Verify largest-position, top-N concentration, effective-holdings, and active-position-concentration metrics against the canonical final portfolio weights.",
+    "Distinguish ETF-level return correlation from underlying-holdings overlap; do not conflate the two.",
+    "Label stress scenarios explicitly as hypothetical or as historically sourced.",
+    "Add methodology metadata/UI and deterministic automated tests covering the above."
+  ],
+  "prohibited": [
+    "No ETF application/business-logic changes outside of this task's methodology and disclosure scope.",
+    "Do not fabricate risk figures that are not derivable from real portfolio data."
+  ]
+}

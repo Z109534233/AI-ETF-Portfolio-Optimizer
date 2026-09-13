@@ -1,0 +1,32 @@
+{
+  "task_id": "M2",
+  "title": "Simulation & Backtest Methodology",
+  "depends_on": "M1",
+  "context_files": [
+    "src/simulator.py",
+    "src/data_loader.py",
+    "pages/3_Investment_Simulator.py",
+    "src/i18n.py",
+    "src/methodology.py"
+  ],
+  "allowed_files": [
+    "src/simulator.py",
+    "pages/3_Investment_Simulator.py",
+    "src/i18n.py",
+    "src/methodology.py",
+    "tests/test_methodology_m2.py"
+  ],
+  "acceptance_criteria": [
+    "Document the actual Monte Carlo assumptions: return/volatility distribution, timestep, number of simulations, contribution timing, fees, inflation treatment, and reported percentiles, and explain why Monte Carlo is used (it is a projection, not a prediction).",
+    "Distinguish clearly between Portfolio Historical Statistics, Market Scenario, and Custom assumption modes, and show the actual runtime values used in each.",
+    "For historical simulation, use real prices, a common valid start date across holdings, and never fill data before an ETF's inception.",
+    "State the actual rebalance convention implemented; only describe it as monthly if the code actually rebalances monthly.",
+    "Correctly account for contributions, total invested, portfolio value/gain, fractional-share assumptions, and dated cash flows for any XIRR calculation.",
+    "Disclose whether each simulation path is fixed-allocation or walk-forward, and audit for look-ahead bias.",
+    "Add methodology metadata/UI and deterministic automated tests covering the above."
+  ],
+  "prohibited": [
+    "No ETF application/business-logic changes outside of this task's methodology and disclosure scope.",
+    "Do not introduce new external data sources or paid APIs."
+  ]
+}

@@ -88,6 +88,36 @@ jobs:
               )
               .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
+            const queueBodyMarker = (pr.body || '').match(
+              /^<!-- methodology-autopilot-managed:v1 run_id=(\d+) task_id=([A-Za-z0-9_-]+) -->/
+            );
+            const markerRunId = queueBodyMarker ? queueBodyMarker[1] : '';
+            const branchMatchesRun =
+              Boolean(markerRunId) &&
+              pr.head.ref.startsWith(`autopilot/${markerRunId}/`);
+
+            const trustedAutopilotPr =
+              sameRepo &&
+              pr.user &&
+              pr.user.login === 'github-actions[bot]' &&
+              Boolean(queueBodyMarker) &&
+              branchMatchesRun;
+
+            if (trustedAutopilotPr) {
+              core.notice(
+                'Skipping standard reviewer: verified queue-managed autopilot PR is reviewed by the trusted autopilot queue directly.'
+              );
+              core.setOutput('review_allowed', 'false');
+              core.setOutput('autofix_allowed', 'false');
+              core.setOutput('attempt_count', '0');
+              core.setOutput('comment_id', '0');
+              core.setOutput('head_sha', currentHead);
+              core.setOutput('head_ref', pr.head.ref);
+              core.setOutput('base_sha', pr.base.sha);
+              core.setOutput('trusted_actor', trustedActor ? 'true' : 'false');
+              return;
+            }
+
             let state = {
               attempts: 0,
               status: 'idle',
