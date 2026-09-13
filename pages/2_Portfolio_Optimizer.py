@@ -44,6 +44,7 @@ from src.financial_metrics import (
     sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis
 )
 from src.database import save_portfolio, init_database
+from src.risk_analytics import holdings_overlap_matrix
 from src.report_generator import generate_portfolio_report
 from src.charts import (
     efficient_frontier_chart, allocation_donut_chart,
@@ -190,6 +191,15 @@ with st.sidebar:
         format_func=lambda x: _horizon_labels.get(x, x), key="investment_horizon",
     )
     st.session_state[_hk] = investment_horizon
+
+    # Honest scope disclosure (Issue #20 section 3A): Investment Goal, Risk
+    # Tolerance, and Investment Horizon above are genuinely metadata/
+    # interpretation inputs only -- see the code comments on each widget --
+    # they do NOT change the optimizer's math (constraints, expected
+    # return/covariance estimation, or the chosen method's objective
+    # function below). Stated visibly here so the UI never implies
+    # personalization that isn't actually happening.
+    st.caption(f"ℹ️ {t('opt_investor_profile_scope_note')}")
 
     st.markdown("---")
 
@@ -627,6 +637,35 @@ def _render_diagnosis_cards():
         ), unsafe_allow_html=True)
 
 
+# Real underlying-holdings overlap explanation (Issue #20 section 3B): the
+# weight-based diagnosis above ("balanced"/"moderate"/"concentrated") can
+# call an equal-weight allocation across e.g. VOO/VTI/QQQ "balanced" by
+# TICKER weight alone, while those ETFs' underlying holdings actually
+# overlap heavily. This must never be asserted from vague wording -- only
+# from the SAME real holdings-overlap data src.risk_analytics.
+# holdings_overlap_matrix() already computes for Risk Analytics -- shown as
+# an opt-in check (fetches each ETF's underlying holdings on demand) so it
+# never runs automatically on every rerun, matching that page's pattern.
+def _render_holdings_overlap_check(active_tickers: list) -> None:
+    if len(active_tickers) < 2:
+        return
+    if st.checkbox(t("opt_diag_check_overlap_label"), value=False, key="opt_diag_check_overlap_cb"):
+        with st.spinner(t("risk_loading_holdings_overlap")):
+            overlap = holdings_overlap_matrix(active_tickers)
+        available_scores = [r["overlap_score"] for r in overlap.values() if r["available"]]
+        unavailable_pairs = [pair for pair, r in overlap.items() if not r["available"]]
+        if not available_scores:
+            st.caption(t("opt_diag_overlap_unavailable"))
+            return
+        avg_overlap = sum(available_scores) / len(available_scores)
+        if avg_overlap >= 0.30:
+            st.warning(t("opt_diag_overlap_high", overlap=f"{avg_overlap:.0%}"))
+        else:
+            st.caption(t("opt_diag_overlap_low", overlap=f"{avg_overlap:.0%}"))
+        if unavailable_pairs:
+            st.caption(t("opt_diag_overlap_partial", n=len(unavailable_pairs)))
+
+
 # ── Top-Level Workspace Navigation ───────────────────────────────────────────
 # st.segmented_control (NOT st.tabs -- see module docstring). Canonical
 # English values live in session_state; `_ws_labels` is precomputed ONCE
@@ -986,6 +1025,7 @@ elif opt_workspace == "Backtest & Risk":
         _render_diagnosis_cards()
         st.markdown(f"**{t('opt_diag_insight_title')}**  \n{_diag_summary_text()}")
         st.caption(t("opt_diag_weight_disclaimer"))
+        _render_holdings_overlap_check([tk for tk, w in weights.items() if w > 0])
 
 # ══════════════════════════════════════════════════════════════════════════
 # SAVE & ACTIONS -- Next Steps + Save / Export
