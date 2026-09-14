@@ -1,5 +1,7 @@
 """
-Page 8: AI Market Intelligence Center
+Page 8: Market Intelligence Center (Issue #20 section 10 -- renamed from "AI
+Market Intelligence Center"; classification/impact/sentiment scoring here is
+rule-based, only the "Today's Market Summary" card is genuinely OpenAI-backed)
 A market intelligence dashboard (not a news site): today's index snapshot,
 breaking headlines, an AI/rule-based market summary, ETFs today's news may
 affect, aggregate headline sentiment, a placeholder economic calendar, and

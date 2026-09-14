@@ -138,25 +138,25 @@ _why_lang = get_language()
 if _why_lang == "zh-TW":
     _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程"
     why_choose = [
-        {"icon": "newspaper", "title": "AI 市場情報", "desc": "即時新聞、事件分類與 AI 市場摘要"},
+        {"icon": "newspaper", "title": "市場情報", "desc": "即時新聞、事件分類與市場摘要（部分摘要由 AI 輔助生成）"},
         {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析"},
         {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置"},
         {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境"},
         {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析"},
         {"icon": "cpu", "title": "機器學習預測", "desc": "數據驅動的 ETF 漲跌方向預測模型"},
-        {"icon": "layers", "title": "AI 投資分析", "desc": "AI 生成投資組合說明與建議"},
+        {"icon": "layers", "title": "投資組合分析助手", "desc": "以自然語言說明既有量化分析結果，AI 不產生任何數字"},
         {"icon": "pie-chart", "title": "投資組合紀錄", "desc": "儲存、比較與管理你的投資組合紀錄"},
     ]
 else:
     _why_title, _why_subtitle = "Why Choose This Platform", "Eight core modules spanning the full journey from analysis to decision."
     why_choose = [
-        {"icon": "newspaper", "title": "AI Market Intelligence", "desc": "Real-time news, event tagging, AI summaries."},
+        {"icon": "newspaper", "title": "Market Intelligence", "desc": "Real-time news, event tagging, and market summaries (some summaries are AI-assisted)."},
         {"icon": "bar-chart", "title": "ETF Analysis", "desc": "Cross-market ETF price, return, and risk analysis."},
         {"icon": "target", "title": "Portfolio Optimization", "desc": "Five methods to find the optimal risk-adjusted mix."},
         {"icon": "trending-up", "title": "Investment Simulator", "desc": "Monte Carlo projections for long-term growth."},
         {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, CVaR, Beta, and stress-test scenarios."},
         {"icon": "cpu", "title": "Machine Learning Forecast", "desc": "Data-driven ETF direction prediction models."},
-        {"icon": "layers", "title": "AI Advisor", "desc": "AI-generated portfolio explanations and insights."},
+        {"icon": "layers", "title": "AI Portfolio Analyst", "desc": "Explains existing quantitative results in plain language -- the AI never generates the numbers."},
         {"icon": "pie-chart", "title": "Portfolio History", "desc": "Save, compare, and manage your portfolio records."},
     ]
 section_header(_why_title, _why_subtitle)

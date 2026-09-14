@@ -1021,7 +1021,14 @@ def generate_today_ai_summary(news_items: list) -> dict:
     message and disclaimer is "".
     """
     lang = get_language()
-    title = "今日 AI 摘要" if lang == "zh-TW" else "Today's AI Summary"
+    # "Today's Market Overview" -- NOT "AI Summary": this function is
+    # template-based only (see docstring), never calls OpenAI, and the page
+    # already tags its card "Rule-Based" (pages/8_Market_Intelligence.py) --
+    # calling it an "AI Summary" in the title itself would contradict that
+    # badge and collide with generate_market_summary()'s genuinely
+    # OpenAI-backed "Today's Market Summary" card elsewhere on this page
+    # (Issue #20 section 10: never label deterministic content as AI).
+    title = "今日市場總覽" if lang == "zh-TW" else "Today's Market Overview"
 
     if not news_items:
         no_data = ("目前沒有足夠的新聞資料可產生今日摘要。" if lang == "zh-TW"

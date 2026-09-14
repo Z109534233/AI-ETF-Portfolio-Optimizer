@@ -1,5 +1,6 @@
 """
-Page 6: AI Advisor
+Page 6: AI Portfolio Analyst (Issue #20 section 7 -- renamed from "AI Advisor" /
+generic "AI Investment Analysis" naming)
 Synthesis layer (M6 -- issue #18 Stage 6): combines the canonical current
 portfolio, risk, Investment Simulator, Machine Learning, and Market
 Intelligence outputs already computed elsewhere in the app into one
@@ -37,7 +38,7 @@ from src.i18n import (
 )
 
 st.set_page_config(
-    page_title="AI Advisor | AI ETF Portfolio Optimizer",
+    page_title="AI Portfolio Analyst | AI ETF Portfolio Optimizer",
     page_icon="🧠",
     layout="wide"
 )

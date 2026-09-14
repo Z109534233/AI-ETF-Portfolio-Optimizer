@@ -31,7 +31,7 @@ TRANSLATIONS = {
     "zh-TW": {
         # ── App / Brand ─────────────────────────────────────────────────
         "app_title": "AI ETF 投資組合最佳化平台",
-        "app_subtitle": "AI 驅動的 ETF 投資組合分析與最佳化平台",
+        "app_subtitle": "ETF 投資組合分析與量化決策平台",
         "language_label": "語言 / Language",
         "sidebar_brand_name": "AI ETF 最佳化平台",
         "sidebar_brand_sub": "投資組合分析平台",
@@ -46,7 +46,7 @@ TRANSLATIONS = {
         "nav_investment_simulator": "投資模擬",
         "nav_risk_analytics": "風險分析",
         "nav_machine_learning": "機器學習",
-        "nav_ai_advisor": "AI 投資分析",
+        "nav_ai_advisor": "投資組合分析助手",
         "nav_portfolio_history": "投資組合紀錄",
 
         # ── Hero (Home) ─────────────────────────────────────────────────
@@ -54,7 +54,7 @@ TRANSLATIONS = {
         "hero_badge_portfolio_analytics": "投資組合分析",
         "hero_badge_educational": "教學用途",
         "hero_title": "AI ETF 投資組合最佳化平台",
-        "hero_subtitle": "透過數據分析、投資組合最佳化、風險評估與 AI 分析，協助使用者建立更合理的 ETF 長期投資策略。",
+        "hero_subtitle": "整合績效分析、投資組合最佳化、風險分析、模擬、機器學習與 AI 輔助解讀。",
         "btn_launch_optimizer": "最佳化投資組合",
         "btn_analyze_etfs": "開始 ETF 分析",
         "btn_investment_simulator_cta": "投資模擬",
@@ -68,17 +68,17 @@ TRANSLATIONS = {
         "why_portfolio_optimization_desc": "運用現代投資組合理論，產生最佳化的 ETF 資產配置。",
         "why_investment_simulation_title": "投資模擬",
         "why_investment_simulation_desc": "模擬不同策略下的長期財富累積結果。",
-        "why_ai_insights_title": "AI 投資洞察",
+        "why_ai_insights_title": "投資組合分析助手",
         "why_ai_insights_desc": "以自然語言說明投資組合的優勢、風險與分散程度。",
 
         # ── How It Works ──────────────────────────────────────────────────
         "home_how_it_works_title": "如何運作",
-        "home_how_it_works_subtitle": "從選擇 ETF 到 AI 分析洞察，只需五個步驟",
+        "home_how_it_works_subtitle": "從選擇 ETF 到做出決策，只需五個步驟",
         "step_choose_etfs": "選擇 ETF",
         "step_analyze_performance": "分析績效",
         "step_optimize_portfolio": "最佳化投資組合",
         "step_simulate_investment": "模擬投資",
-        "step_ai_insights": "AI 分析洞察",
+        "step_ai_insights": "量化洞察",
 
         # ── Who Is This Platform For ─────────────────────────────────────
         "home_target_users_title": "這個平台適合誰？",
@@ -136,7 +136,7 @@ TRANSLATIONS = {
         "feature_risk_analytics_desc": "完整風險指標，包括風險值（VaR）、條件風險值（CVaR）、貝塔值、阿爾法值、追蹤誤差與壓力測試情境。",
         "feature_machine_learning_title": "機器學習",
         "feature_machine_learning_desc": "使用邏輯斯迴歸與隨機森林進行 ETF 漲跌方向預測的教學展示。",
-        "feature_ai_advisor_title": "AI 投資分析",
+        "feature_ai_advisor_title": "投資組合分析助手",
         "feature_ai_advisor_desc": "透過 OpenAI GPT 產生 AI 投資組合說明，若未設定 API 金鑰則自動改用規則式分析。",
         "feature_portfolio_history_title": "投資組合紀錄",
         "feature_portfolio_history_desc": "在本機 SQLite 資料庫中儲存、檢視、比較與管理投資組合，並支援 CSV 匯出。",
@@ -930,7 +930,7 @@ TRANSLATIONS = {
         "ml_incorrect": "錯誤",
 
         # ── AI Advisor Page ───────────────────────────────────────────────
-        "ai_title": "AI 投資分析",
+        "ai_title": "投資組合分析助手",
         "ai_subtitle": "以自然語言說明投資組合的優勢、風險與分散程度。",
         "ai_mode_info": (
             "**AI 分析模式**：尚未設定 OpenAI API 金鑰，將以規則式分析產生內容。"
@@ -1107,7 +1107,7 @@ TRANSLATIONS = {
         "hist_meta_app_version": "應用程式版本",
         "hist_set_as_current_btn": "設為目前投資組合",
         "hist_set_as_current_success": "已將「{name}」設為目前投資組合。前往投資模擬器或風險分析即可直接使用。",
-        "hist_set_as_current_help": "將此已儲存的投資組合載入為目前投資組合，供投資模擬器、風險分析與 AI 顧問直接使用，無需重新建立。",
+        "hist_set_as_current_help": "將此已儲存的投資組合載入為目前投資組合，供投資模擬器、風險分析與投資組合分析助手直接使用，無需重新建立。",
         "hist_current_portfolio_badge": "目前使用中",
         "hist_col_effective_holdings": "有效持股數",
         "hist_corrupt_record_notice": "部分已儲存紀錄的數值資料缺失或無法讀取，下方以「—」標示。",
@@ -1220,7 +1220,7 @@ TRANSLATIONS = {
 
         # ── Market Intelligence Page ─────────────────────────────────────
         "nav_market_intelligence": "市場情報中心",
-        "mi_title": "AI 市場情報中心",
+        "mi_title": "市場情報中心",
         "mi_subtitle": "掌握今日市場動態、相關新聞，以及你的投資組合可能受到的影響。",
 
         "mi_section_overview_title": "今日市場總覽",
@@ -1314,7 +1314,7 @@ TRANSLATIONS = {
         "mi_ai_sentiment_confidence_label": "情緒傾向強度",
         "mi_ai_sentiment_drivers_label": "主要驅動因素",
         "mi_ai_sentiment_updated_label": "最後更新",
-        "mi_ai_sentiment_no_data": "目前沒有足夠的事件資料可進行 AI 市場情緒判斷。",
+        "mi_ai_sentiment_no_data": "目前沒有足夠的事件資料可進行規則式市場情緒判斷。",
 
         # ── Affected Markets (Market Impact Level card redesign) ────────────
         "mi_impact_stars_0": "無資料",
@@ -1335,7 +1335,7 @@ TRANSLATIONS = {
         "mi_methodology_pipeline_desc": "資料來源（Yahoo Finance 新聞 feed）→ 關鍵字式標題情緒判斷（正面／負面／中性）→ 規則式事件分類（事件類型／類別）→ 決定性的影響力／情緒／情緒傾向強度計算 → 樣板式或 OpenAI 生成的摘要文字。除了標示「AI 產生」的摘要（僅在設定 OpenAI 金鑰且確實由其產生時）之外，其餘每個階段（包括標示為「規則式市場情緒」／「今日市場摘要」的區塊）皆為規則式程式邏輯，並非機器學習模型，也未呼叫 OpenAI。",
         "mi_methodology_ai_vs_rule_label": "規則式 vs. AI 產生",
         "mi_methodology_ai_vs_rule_desc": "每個區塊／卡片旁皆標示「規則式分析」或「AI 產生」標籤（見各區塊標題旁的標籤）。只有在確實設定 OpenAI 金鑰且該摘要確實由其產生時，才會顯示「AI 產生」；否則同一區塊會改用並標示為規則式樣板內容。",
-        "mi_methodology_measures_label": "信心指數、影響力與相關性是三種不同的量測",
+        "mi_methodology_measures_label": "情緒傾向強度、影響力與相關性是三種不同的量測",
         "mi_methodology_measures_desc": "影響力（星等）衡量某事件／新聞對特定市場或 ETF 預期的重要程度。情緒傾向強度（%）衡量目前情緒訊號的一致（偏向）程度，而非事件本身有多重要，並非統計上的信賴水準。相關性則是在計算影響力／情緒傾向強度「之前」的篩選步驟（判斷該則新聞分類出的事件類型是否適用於此市場／ETF）——不相關的新聞從一開始就不會產生影響力或情緒傾向強度分數。這三者絕不會被合併成單一數字顯示。",
         "mi_methodology_markets_label": "受影響市場對應方式與限制",
         "mi_methodology_markets_desc": "哪些市場／ETF 會受某事件影響，是由人工整理的「事件類型 → 市場／ETF 類型權重」對照表決定（例如關稅或半導體新聞會對應到台灣，因其晶片出口曝險），而非取決於新聞標題是否直接提及該市場名稱。此對照表反映的是已知的一般總體經濟關聯性，屬於經驗法則，並非統計模型推導而得。新聞來源僅取自少數美國上市代碼（S&P 500／那斯達克／道瓊代表性標的）的新聞 feed，因此從未登上美國財經頭條的台灣或英國特定新聞，可能被低估甚至完全遺漏；台灣與英國的新聞涵蓋範圍因此在結構上就比美國薄弱。",
@@ -1348,7 +1348,7 @@ TRANSLATIONS = {
     "en": {
         # ── App / Brand ─────────────────────────────────────────────────
         "app_title": "AI ETF Portfolio Optimizer",
-        "app_subtitle": "AI-Powered ETF Portfolio Analytics and Optimization Platform",
+        "app_subtitle": "ETF Portfolio Analytics & Quantitative Decision Platform",
         "language_label": "Language / 語言",
         "sidebar_brand_name": "AI ETF Optimizer",
         "sidebar_brand_sub": "Portfolio Analytics Platform",
@@ -1363,7 +1363,7 @@ TRANSLATIONS = {
         "nav_investment_simulator": "Investment Simulator",
         "nav_risk_analytics": "Risk Analytics",
         "nav_machine_learning": "Machine Learning",
-        "nav_ai_advisor": "AI Advisor",
+        "nav_ai_advisor": "AI Portfolio Analyst",
         "nav_portfolio_history": "Portfolio History",
 
         # ── Hero (Home) ─────────────────────────────────────────────────
@@ -1371,7 +1371,7 @@ TRANSLATIONS = {
         "hero_badge_portfolio_analytics": "Portfolio Analytics",
         "hero_badge_educational": "Educational Use",
         "hero_title": "AI ETF Portfolio Optimizer",
-        "hero_subtitle": "Build smarter ETF portfolios with data-driven analytics, portfolio optimization, risk assessment and AI-powered insights.",
+        "hero_subtitle": "Performance analysis, portfolio optimization, risk analytics, simulation, machine learning, and AI-assisted interpretation, in one platform.",
         "btn_launch_optimizer": "Optimize Portfolio",
         "btn_analyze_etfs": "Start ETF Analysis",
         "btn_investment_simulator_cta": "Investment Simulator",
@@ -1385,17 +1385,17 @@ TRANSLATIONS = {
         "why_portfolio_optimization_desc": "Generate optimized ETF allocations using Modern Portfolio Theory.",
         "why_investment_simulation_title": "Investment Simulation",
         "why_investment_simulation_desc": "Simulate long-term wealth accumulation under different strategies.",
-        "why_ai_insights_title": "AI Investment Insights",
+        "why_ai_insights_title": "AI Portfolio Analyst",
         "why_ai_insights_desc": "Explain portfolio strengths, risks, and diversification in plain language.",
 
         # ── How It Works ──────────────────────────────────────────────────
         "home_how_it_works_title": "How It Works",
-        "home_how_it_works_subtitle": "From choosing ETFs to AI-powered insights, in five simple steps.",
+        "home_how_it_works_subtitle": "From choosing ETFs to making a decision, in five simple steps.",
         "step_choose_etfs": "Choose ETFs",
         "step_analyze_performance": "Analyze Performance",
         "step_optimize_portfolio": "Optimize Portfolio",
         "step_simulate_investment": "Simulate Investment",
-        "step_ai_insights": "AI Insights",
+        "step_ai_insights": "Quant Insights",
 
         # ── Who Is This Platform For ─────────────────────────────────────
         "home_target_users_title": "Who Is This Platform For?",
@@ -1453,7 +1453,7 @@ TRANSLATIONS = {
         "feature_risk_analytics_desc": "Comprehensive risk metrics including VaR, CVaR, Beta, Alpha, Tracking Error, and stress test scenarios.",
         "feature_machine_learning_title": "Machine Learning",
         "feature_machine_learning_desc": "Educational ML demonstration using Logistic Regression and Random Forest for ETF direction prediction.",
-        "feature_ai_advisor_title": "AI Advisor",
+        "feature_ai_advisor_title": "AI Portfolio Analyst",
         "feature_ai_advisor_desc": "AI-powered portfolio explanation using OpenAI GPT with rule-based fallback when API key is not configured.",
         "feature_portfolio_history_title": "Portfolio History",
         "feature_portfolio_history_desc": "Save, view, compare, and manage portfolios stored in a local SQLite database with CSV export.",
@@ -2249,7 +2249,7 @@ TRANSLATIONS = {
         "ml_incorrect": "Incorrect",
 
         # ── AI Advisor Page ───────────────────────────────────────────────
-        "ai_title": "AI Advisor",
+        "ai_title": "AI Portfolio Analyst",
         "ai_subtitle": "Explain portfolio strengths, risks, and diversification in plain language.",
         "ai_mode_info": (
             "**AI Analysis Mode**: OpenAI API key not configured. "
@@ -2427,7 +2427,7 @@ TRANSLATIONS = {
         "hist_meta_app_version": "App Version",
         "hist_set_as_current_btn": "Set as Current Portfolio",
         "hist_set_as_current_success": "\"{name}\" is now the current portfolio. Go to Investment Simulator or Risk Analytics to use it directly.",
-        "hist_set_as_current_help": "Load this saved portfolio as the current portfolio so Investment Simulator, Risk Analytics, and AI Advisor can use it directly without rebuilding it.",
+        "hist_set_as_current_help": "Load this saved portfolio as the current portfolio so Investment Simulator, Risk Analytics, and AI Portfolio Analyst can use it directly without rebuilding it.",
         "hist_current_portfolio_badge": "Currently Active",
         "hist_col_effective_holdings": "Effective Holdings",
         "hist_corrupt_record_notice": "Some saved records are missing or have unreadable numeric data, shown below as \"—\".",
@@ -2540,7 +2540,7 @@ TRANSLATIONS = {
 
         # ── Market Intelligence Page ─────────────────────────────────────
         "nav_market_intelligence": "Market Intelligence",
-        "mi_title": "AI Market Intelligence Center",
+        "mi_title": "Market Intelligence Center",
         "mi_subtitle": "Stay on top of today's market moves, the news driving them, and how your portfolio may be affected.",
 
         "mi_section_overview_title": "Today's Market Overview",
@@ -2634,7 +2634,7 @@ TRANSLATIONS = {
         "mi_ai_sentiment_confidence_label": "Sentiment Skew",
         "mi_ai_sentiment_drivers_label": "Top Drivers",
         "mi_ai_sentiment_updated_label": "Last Updated",
-        "mi_ai_sentiment_no_data": "Not enough event data is currently available for AI market sentiment analysis.",
+        "mi_ai_sentiment_no_data": "Not enough event data is currently available for rule-based market sentiment analysis.",
 
         # ── Affected Markets (Market Impact Level card redesign) ────────────
         "mi_impact_stars_0": "No Data",
@@ -2655,7 +2655,7 @@ TRANSLATIONS = {
         "mi_methodology_pipeline_desc": "Source (Yahoo Finance news feed) → keyword-based headline sentiment (Positive/Negative/Neutral) → rule-based event classification (event type/category) → deterministic impact/sentiment/sentiment-skew scoring → template or OpenAI-generated summary text. Aside from the summary tagged 'AI-Generated' (only when an OpenAI key is actually configured and used), every stage -- including sections labeled 'Rule-Based Market Sentiment' / \"Today's Market Summary\" -- is rule-based code, not a machine-learning model, and never calls OpenAI.",
         "mi_methodology_ai_vs_rule_label": "Deterministic vs. AI-Generated",
         "mi_methodology_ai_vs_rule_desc": "Every card/section is tagged 'Rule-Based' or 'AI-Generated' (see the tag next to each section title). 'AI-Generated' only appears when an OpenAI key is actually configured and the summary was actually produced by it; otherwise the exact same section falls back to, and is labeled as, a rule-based template.",
-        "mi_methodology_measures_label": "Confidence, Impact, and Relevance are different measurements",
+        "mi_methodology_measures_label": "Sentiment Skew, Impact, and Relevance are different measurements",
         "mi_methodology_measures_desc": "Impact (stars) measures how significant an event/headline is estimated to be for a market or ETF. Sentiment Skew (%) measures how one-sided the underlying sentiment signal is, not how important the event is, and is not a statistical confidence level. Relevance is a gating step (does this headline's classified event type apply to this market/ETF at all) applied BEFORE impact/sentiment-skew are computed -- a headline that isn't relevant never reaches an impact or sentiment-skew score in the first place. These three are never combined into, or displayed as, a single number.",
         "mi_methodology_markets_label": "Affected-Market Mapping & Limitations",
         "mi_methodology_markets_desc": "Which markets/ETFs an event affects is decided by a hand-curated event-type → market/ETF-type weight table (e.g. a tariff or semiconductor headline maps to Taiwan because of its chip-export exposure), not by whether the headline literally names that market. This mapping reflects known, general economic relationships -- it is a heuristic, not a statistically-derived model. Headlines are sourced from a small set of US-listed tickers' news feeds (S&P 500 / Nasdaq / Dow proxies), so Taiwan- and UK-specific stories that never surface in US financial headlines can be under-represented or missed entirely; Taiwan and UK coverage is therefore structurally thinner than US coverage.",

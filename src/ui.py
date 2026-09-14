@@ -775,17 +775,22 @@ def market_impact_card(market: str, impact_level_caption: str, stars_html: str, 
     )
 
 
-# ── AI Market Sentiment Card (Market Intelligence) ───────────────────────────────
+# ── Rule-Based Market Sentiment Card (Market Intelligence) ───────────────────────
+# Function name kept as ai_sentiment_card() for backward compatibility with
+# existing call sites; the rendered title/labels are caller-supplied
+# (see pages/8_Market_Intelligence.py, which passes "Rule-Based Market
+# Sentiment" / "Sentiment Skew" -- Issue #20 section 8/10: this engine is
+# 100% rule-based, no ML model or OpenAI call).
 def ai_sentiment_card(mood_emoji: str, mood_label: str, mood_variant: str,
                        confidence_label: str, confidence: int,
                        drivers_label: str, drivers: list,
                        updated_label: str, updated_at: str) -> str:
     """
-    Render the "AI Market Sentiment" card: a mood badge (emoji + Bullish/
-    Neutral/Bearish), a confidence percentage, a "Top Drivers" list
-    explaining what drove the assessment, and a last-updated timestamp.
-    Built as a single-line HTML string for the same blank-line-safety
-    reason as chart_card()/news_card().
+    Render the Rule-Based Market Sentiment card: a mood badge (emoji +
+    Bullish/Neutral/Bearish), a sentiment-skew percentage, a "Top Drivers"
+    list explaining what drove the assessment, and a last-updated
+    timestamp. Built as a single-line HTML string for the same
+    blank-line-safety reason as chart_card()/news_card().
     """
     drivers_html = ""
     if drivers:
