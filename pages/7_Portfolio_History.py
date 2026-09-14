@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import load_all_portfolios, delete_portfolio, init_database
 from src.etf_database import get_country
-from src.financial_metrics import portfolio_diagnosis
+from src.financial_metrics import portfolio_diagnosis, ACTIVE_POSITION_TOLERANCE
 from src.charts import allocation_donut_chart, apply_dark_theme, CHART_COLORS
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
@@ -54,6 +54,21 @@ def _safe_num(value, fmt: str = ",.0f") -> str:
         return f"{float(value):{fmt}}"
     except (TypeError, ValueError):
         return "—"
+
+
+def _active_holdings(holdings: dict) -> dict:
+    """Holdings above ACTIVE_POSITION_TOLERANCE (src.financial_metrics --
+    the same constant/threshold portfolio_diagnosis()'s active_holdings
+    count already uses elsewhere in the app, so "active" means the same
+    thing on every page), sorted by weight desc. Never mutates or discards
+    the underlying raw weights -- callers that need the full saved dict
+    (e.g. "Set as Current Portfolio", the CSV export, or
+    portfolio_diagnosis()) must keep reading `holdings` itself, not this
+    filtered view."""
+    return dict(sorted(
+        ((tk, w) for tk, w in holdings.items() if w > ACTIVE_POSITION_TOLERANCE),
+        key=lambda kv: kv[1], reverse=True,
+    ))
 
 
 def _infer_market_from_holdings(holdings: dict):
@@ -144,9 +159,11 @@ for p in portfolios:
     except (TypeError, ValueError):
         holdings_str = "—"
         _has_corrupt_record = True
+    _is_synthetic_demo = bool((p.get("metadata") or {}).get("synthetic_demo"))
+    _display_name = (p["name"] or "—") + (t("hist_demo_portfolio_name_suffix") if _is_synthetic_demo else "")
     summary_rows.append({
         "ID": p["id"],
-        t("hist_col_name"): p["name"] or "—",
+        t("hist_col_name"): _display_name,
         t("hist_col_created"): p["created_at"],
         t("hist_col_method"): t_opt_method(p["optimization_method"]) if p["optimization_method"] else "—",
         t("hist_col_investment"): f"${_safe_num(p['investment_amount'])}",
@@ -183,9 +200,17 @@ if selected_portfolio:
 
     _current = st.session_state.get("current_portfolio")
     _is_current = bool(_current and _current.get("portfolio_id") == f"history-{selected_portfolio['id']}")
+    # An unmissable badge for the committed demo DB's curated example rows
+    # (scripts/reset_demo_portfolio_history.py) -- their expected_return/
+    # volatility/Sharpe are hand-authored illustrative figures, never a
+    # live optimizer result, so they must never be displayable as if they
+    # were (Issue #20 release-gate review, automated PR reviewer finding).
+    _is_synthetic_demo = bool((selected_portfolio.get("metadata") or {}).get("synthetic_demo"))
 
     with col_left:
         with chart_card(selected_portfolio["name"], selected_portfolio["created_at"]):
+            if _is_synthetic_demo:
+                st.warning(t("hist_demo_portfolio_badge"))
             if _is_current:
                 st.caption(f"✓ {t('hist_current_portfolio_badge')}")
             detail_data = {
@@ -211,17 +236,66 @@ if selected_portfolio:
             if selected_portfolio["notes"]:
                 st.markdown(f"**{t('hist_notes_label')}**: {selected_portfolio['notes']}")
 
-            # Holdings table
+            # Holdings table -- Active Holdings Only (Issue #20 section 9B):
+            # near-zero weights are hidden from this display table, but the
+            # raw dict (used by "Set as Current Portfolio", CSV export, and
+            # the donut chart's underlying diagnosis) is untouched.
             if selected_portfolio["holdings"]:
+                _all_holdings = selected_portfolio["holdings"]
+                _display_holdings = _active_holdings(_all_holdings)
                 holdings_df = pd.DataFrame([
                     {t("hist_col_ticker"): tk,
                      t("hist_col_region"): t_country(get_country(tk)) if get_country(tk) else t("hist_region_unknown"),
                      t("hist_col_weight"): f"{w:.2%}",
                      t("hist_col_amount"): f"${w * (selected_portfolio['investment_amount'] or 0):,.2f}"}
-                    for tk, w in sorted(selected_portfolio["holdings"].items(), key=lambda x: x[1], reverse=True)
+                    for tk, w in _display_holdings.items()
                 ])
-                st.markdown(f"**{t('hist_holdings_label')}**")
+                _hidden_count = len(_all_holdings) - len(_display_holdings)
+                _holdings_label = t("hist_holdings_label")
+                if _hidden_count:
+                    _holdings_label = f"{_holdings_label} ({t('hist_active_holdings_only', count=_hidden_count)})"
+                st.markdown(f"**{_holdings_label}**")
                 st.dataframe(holdings_df.set_index(t("hist_col_ticker")), use_container_width=True)
+                if _hidden_count:
+                    with st.expander(t("hist_show_all_holdings")):
+                        _raw_df = pd.DataFrame([
+                            {t("hist_col_ticker"): tk, t("hist_col_weight"): f"{w:.4%}"}
+                            for tk, w in sorted(_all_holdings.items(), key=lambda x: x[1], reverse=True)
+                        ])
+                        st.dataframe(_raw_df.set_index(t("hist_col_ticker")), use_container_width=True)
+
+            # Experiment metadata (Issue #20 section 9C) -- shown for every
+            # portfolio; legacy saves (before this feature existed) simply
+            # have an empty dict rather than fabricated values.
+            with st.expander(t("hist_experiment_details_title")):
+                _meta = selected_portfolio.get("metadata") or {}
+                if not _meta:
+                    st.caption(t("hist_no_experiment_metadata"))
+                else:
+                    _meta_rows = {
+                        t("hist_meta_schema_version"): _meta.get("schema_version", "—"),
+                        t("hist_meta_market"): t_country(_meta["market"]) if _meta.get("market") else "—",
+                        t("hist_meta_historical_window"): (
+                            f"{_meta.get('historical_start_date', '—')} → {_meta.get('historical_end_date', '—')}"
+                        ),
+                        t("hist_meta_risk_free_rate"): (
+                            f"{_meta['risk_free_rate']:.2%}" if _meta.get("risk_free_rate") is not None else "—"
+                        ),
+                        t("hist_meta_weight_bounds"): (
+                            f"{_meta['min_weight']:.0%} – {_meta['max_weight']:.0%}"
+                            if _meta.get("min_weight") is not None and _meta.get("max_weight") is not None else "—"
+                        ),
+                        t("hist_meta_allow_short"): (
+                            t("hist_meta_yes") if _meta.get("allow_short") else t("hist_meta_no")
+                        ),
+                        t("hist_meta_return_estimator"): _meta.get("expected_return_estimator", "—"),
+                        t("hist_meta_covariance_estimator"): _meta.get("covariance_estimator", "—"),
+                        t("hist_meta_asset_universe"): ", ".join(_meta.get("asset_universe", [])) or "—",
+                        t("hist_meta_data_as_of"): _meta.get("data_as_of", "—"),
+                        t("hist_meta_app_version"): _meta.get("app_version", "—"),
+                    }
+                    for k, v in _meta_rows.items():
+                        st.markdown(f"**{k}**: {v}")
 
     with col_right:
         if selected_portfolio["holdings"]:

@@ -24,7 +24,7 @@ from src.financial_metrics import (
 )
 from src.risk_analytics import (
     historical_var_cvar, concentration_from_weights, holdings_overlap_matrix,
-    STRESS_SCENARIOS,
+    STRESS_SCENARIOS, var_exception_backtest,
 )
 from src.charts import (
     correlation_heatmap, return_distribution_chart, drawdown_chart,
@@ -186,6 +186,11 @@ with col4:
         st.markdown(metric_card_html(t("metric_cvar_95"), t("risk_var_unavailable"), color=COLORS["text_muted"]), unsafe_allow_html=True)
 if not var_cvar_result["available"]:
     st.caption(t("risk_var_unavailable_reason", reason=var_cvar_result["reason"]))
+else:
+    # VaR interpretation tooltip/caption (Issue #20 section 5A): a VaR
+    # figure is a loss-THRESHOLD estimate at the stated confidence level,
+    # never a maximum-loss guarantee -- losses can and do exceed it.
+    st.caption(f"ℹ️ {t('risk_var_interpretation_caption')}")
 
 # ── Methodology & Assumptions (M3) ──────────────────────────────────────
 # Compact disclosure of the ACTUAL risk methodology -- see
@@ -210,6 +215,55 @@ with st.expander(t("risk_methodology_title"), expanded=False):
         f"- **{t('risk_methodology_correlation_label')}** — {t('risk_methodology_correlation_desc')}\n"
         f"- **{t('risk_methodology_stress_label')}** — {t('risk_methodology_stress_desc')}"
     )
+
+# ── VaR Backtesting (Issue #20 section 5B) ───────────────────────────────
+# An out-of-sample exception backtest: at every historical forecast date,
+# the VaR threshold is estimated using ONLY the trailing window of returns
+# strictly before that date (see src.risk_analytics.var_exception_backtest
+# for the no-look-ahead guarantee), then checked against what actually
+# happened. The Kupiec Proportion-of-Failures test's p-value only measures
+# compatibility with the null hypothesis that the model is correctly
+# calibrated at this confidence level -- it is not a "the model passed"
+# certificate, and this page never states one.
+section_header(t("risk_var_backtest_title"), t("risk_var_backtest_subtitle"))
+_var_backtest = var_exception_backtest(port_prices, confidence=0.95, window=250)
+if not _var_backtest["available"]:
+    st.info(t("risk_var_backtest_unavailable", reason=_var_backtest["reason"]))
+else:
+    bcol1, bcol2, bcol3, bcol4 = st.columns(4)
+    with bcol1:
+        st.markdown(metric_card_html(
+            t("risk_var_backtest_n_forecasts"), f"{_var_backtest['n_forecasts']:,}", color=COLORS["primary"],
+        ), unsafe_allow_html=True)
+    with bcol2:
+        _expected_str = f"{_var_backtest['expected_exceptions']:.1f}"
+        _n_exceptions_value = f"{_var_backtest['n_exceptions']} ({t('risk_var_backtest_expected', n=_expected_str)})"
+        st.markdown(metric_card_html(
+            t("risk_var_backtest_n_exceptions"), _n_exceptions_value, color=COLORS["danger"],
+        ), unsafe_allow_html=True)
+    with bcol3:
+        st.markdown(metric_card_html(
+            t("risk_var_backtest_exception_rate"), f"{_var_backtest['exception_rate']:.2%}", color=COLORS["warning"],
+        ), unsafe_allow_html=True)
+    with bcol4:
+        st.markdown(metric_card_html(
+            t("risk_var_backtest_kupiec_pvalue"), f"{_var_backtest['kupiec_p_value']:.4f}", color=COLORS["cyan"],
+        ), unsafe_allow_html=True)
+
+    st.caption(t(
+        "risk_var_backtest_window_disclosure",
+        window=_var_backtest["window"], start=_var_backtest["backtest_start"], end=_var_backtest["backtest_end"],
+    ))
+    with st.expander(t("risk_var_backtest_interpretation_title"), expanded=False):
+        st.markdown(t(
+            "risk_var_backtest_null_hypothesis",
+            confidence=f"{_var_backtest['confidence']:.0%}",
+        ))
+        st.markdown(t(
+            "risk_var_backtest_pvalue_meaning",
+            p_value=f"{_var_backtest['kupiec_p_value']:.4f}",
+        ))
+        st.markdown(t("risk_var_backtest_no_pass_claim"))
 
 # Benchmark metrics
 if bench_prices is not None and len(bench_prices) > 10:
@@ -344,7 +398,7 @@ with chart_card(t("risk_detail_card")):
     with tab5:
         # Risk contribution
         if len(etf_prices.columns) >= 2:
-            cov = covariance_matrix(etf_prices).values
+            cov = covariance_matrix(etf_prices).values.copy()
             cov += np.eye(len(etf_prices.columns)) * 1e-8
             port_vol_val = np.sqrt(weights_arr @ cov @ weights_arr)
             if port_vol_val > 0:

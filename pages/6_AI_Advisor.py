@@ -1,5 +1,6 @@
 """
-Page 6: AI Advisor
+Page 6: AI Portfolio Analyst (Issue #20 section 7 -- renamed from "AI Advisor" /
+generic "AI Investment Analysis" naming)
 Synthesis layer (M6 -- issue #18 Stage 6): combines the canonical current
 portfolio, risk, Investment Simulator, Machine Learning, and Market
 Intelligence outputs already computed elsewhere in the app into one
@@ -21,7 +22,8 @@ from src.data_loader import download_etf_data
 from src.data_cleaner import clean_price_data
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import annualized_return, annualized_volatility, sharpe_ratio, maximum_drawdown
-from src.ai_advisor import build_advisor_context, generate_advisor_narrative, get_openai_client
+from src.ai_advisor import build_advisor_context, generate_advisor_narrative
+from src.openai_service import is_configured as openai_is_configured
 from src.news import fetch_market_news
 from src.charts import allocation_donut_chart
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
@@ -31,12 +33,12 @@ from src.ui import (
     render_current_portfolio_handoff,
 )
 from src.i18n import (
-    t, t_investment_objective, t_risk_level, t_country,
+    t, t_investment_objective, t_risk_level, t_country, get_language,
     INVESTMENT_OBJECTIVE_KEYS, RISK_LEVEL_KEYS
 )
 
 st.set_page_config(
-    page_title="AI Advisor | AI ETF Portfolio Optimizer",
+    page_title="AI Portfolio Analyst | AI ETF Portfolio Optimizer",
     page_icon="🧠",
     layout="wide"
 )
@@ -53,8 +55,7 @@ render_current_portfolio_handoff(
 )
 current_portfolio = st.session_state.get("current_portfolio")
 
-client = get_openai_client()
-if client is None:
+if not openai_is_configured():
     st.info(t("ai_mode_info"))
 else:
     st.success(t("ai_mode_success"))
@@ -142,8 +143,28 @@ if not selected_etfs:
 st.caption(t("ai_source_mode_custom") if use_custom else t("ai_source_mode_current"))
 
 # ── Data Loading & Context Assembly ────────────────────────────────────────────
+# Stale-result guard (same fix as Issue #20 section 6A applied to Machine
+# Learning): the generated narrative must be bound to every input that
+# changes what it actually explains, so changing the ETF/weight selection,
+# investment amount, custom-vs-current toggle, investor-profile inputs, or
+# the active UI language without clicking "Generate Analysis" again shows a
+# warning instead of silently keeping the old narrative on screen next to
+# new sidebar values -- language matters because the cached narrative text
+# itself is only ever generated in ONE language (whichever was active at
+# generation time), so a language switch alone must also trigger this guard
+# (Issue #20 release-gate review: previously omitted, so switching zh-TW/EN
+# after generating a narrative left it on screen in the old language).
+_ai_fingerprint = (
+    tuple(sorted(selected_etfs)), tuple(sorted(weights_input.items())),
+    round(investment_amount, 2) if investment_amount is not None else None,
+    use_custom, str(start_date), str(end_date),
+    investment_objective, risk_level, investment_horizon, get_language(),
+)
+
 if "ai_result" not in st.session_state:
     st.session_state.ai_result = None
+if "ai_fingerprint" not in st.session_state:
+    st.session_state.ai_fingerprint = None
 
 if analyse_btn or st.session_state.ai_result is None:
     with st.spinner(t("msg_downloading_market_data")):
@@ -203,18 +224,26 @@ if analyse_btn or st.session_state.ai_result is None:
         )
 
     with st.spinner(t("msg_generating_report")):
-        analysis_text = generate_advisor_narrative(
+        narrative = generate_advisor_narrative(
             context,
             investment_objective=investment_objective,
             risk_level=risk_level,
             investment_horizon=investment_horizon,
+            session_state=st.session_state,
         )
 
-    st.session_state.ai_result = {"analysis": analysis_text, "context": context}
+    st.session_state.ai_result = {
+        "analysis": narrative["text"], "source": narrative["source"], "context": context,
+    }
+    st.session_state.ai_fingerprint = _ai_fingerprint
 
 result = st.session_state.ai_result
 if result is None or not result["context"]["portfolio"]["available"]:
     st.info(t("ai_configure_and_generate"))
+    st.stop()
+
+if st.session_state.ai_fingerprint is not None and st.session_state.ai_fingerprint != _ai_fingerprint:
+    st.warning(t("ai_inputs_changed_regenerate"))
     st.stop()
 
 context = result["context"]
@@ -225,7 +254,7 @@ section_header(t("ai_analysis_results_title"))
 col_left, col_right = st.columns([2, 1])
 
 with col_left:
-    with chart_card(t("ai_portfolio_analysis_card"), tag=t("ai_tag_generated") if client else t("ai_tag_rule_based")):
+    with chart_card(t("ai_portfolio_analysis_card"), tag=t("ai_tag_generated") if result.get("source") == "ai" else t("ai_tag_rule_based")):
         st.markdown(f"**{t('ai_narrative_title')}**")
         st.markdown(result["analysis"])
 

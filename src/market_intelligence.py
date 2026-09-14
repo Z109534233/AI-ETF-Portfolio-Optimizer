@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-from src.ai_advisor import get_openai_client
+from src.openai_service import cached_generate, fingerprint, generate_text
 from src.etf_database import get_etf, get_countries, get_tickers_by_country
 from src.i18n import t, get_language, t_country, t_sector
 
@@ -800,51 +800,67 @@ def get_economic_calendar() -> list:
     ]
 
 
-def generate_market_summary(news_items: list, sentiment: dict, affected_etfs: list) -> str:
+_MARKET_SUMMARY_SYSTEM_INSTRUCTIONS = (
+    "You are a professional, educational market analyst. Summarize ONLY the "
+    "headlines and classifications given to you -- never invent a fact, "
+    "statistic, or number not present in the input. Never give personalised "
+    "investment advice or price predictions."
+)
+
+
+def generate_market_summary(news_items: list, sentiment: dict, affected_etfs: list,
+                             session_state=None) -> dict:
     """
-    Generate a ~100-200 word "Today's Market Summary" from current headlines.
-    Uses OpenAI when an API key is configured, otherwise falls back to a
-    rule-based summary built from the same data. Never raises -- always
-    returns display-safe text, including when there is no news at all.
+    Generate a ~100-200 word "Today's Market Summary" from current headlines
+    and the app's OWN deterministic classifications (sentiment split,
+    affected ETFs -- both computed elsewhere and passed in, never
+    recomputed or invented by the model). Uses the central OpenAI Responses
+    API service (src.openai_service) when a key is configured, otherwise a
+    rule-based summary built from the exact same data. Never raises --
+    always returns a display-safe dict, including when there is no news.
+
+    Returns {"text": str, "source": "ai" | "rule_based"}. When
+    `session_state` is given, the OpenAI call is cached by a fingerprint of
+    the headlines/classifications so an unrelated rerun never re-spends a
+    call for the same day's data.
     """
     if not news_items:
-        return t("mi_summary_no_news")
+        return {"text": t("mi_summary_no_news"), "source": "rule_based"}
 
-    client = get_openai_client()
-    if client is not None:
-        try:
-            return _generate_ai_summary(client, news_items, sentiment, affected_etfs)
-        except Exception:
-            pass  # fall through to the rule-based summary below
+    prompt = _market_summary_prompt(news_items, sentiment, affected_etfs)
 
-    return _generate_rule_based_summary(news_items, sentiment, affected_etfs)
+    if session_state is not None:
+        fp = fingerprint(
+            get_language(),
+            tuple(n["title"] for n in news_items[:8]),
+            sentiment.get("bullish_pct"), sentiment.get("neutral_pct"), sentiment.get("bearish_pct"),
+            tuple(e["ticker"] for e in affected_etfs),
+        )
+        result = cached_generate(session_state, "_mi_openai_summary_cache", fp,
+                                  _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS, prompt, max_output_tokens=350)
+    else:
+        result = generate_text(_MARKET_SUMMARY_SYSTEM_INSTRUCTIONS, prompt, max_output_tokens=350)
+
+    if result["available"]:
+        return {"text": result["text"], "source": "ai"}
+    return {"text": _generate_rule_based_summary(news_items, sentiment, affected_etfs), "source": "rule_based"}
 
 
-def _generate_ai_summary(client, news_items: list, sentiment: dict, affected_etfs: list) -> str:
+def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: list) -> str:
     headlines = "\n".join(f"- {n['title']}" for n in news_items[:8])
     affected_str = ", ".join(f"{e['ticker']} ({e['sector']}: {e['impact_label']})" for e in affected_etfs) or "N/A"
     language_instruction = (
         "Respond entirely in Traditional Chinese (zh-TW/繁體中文)."
         if get_language() == "zh-TW" else "Respond entirely in English."
     )
-    prompt = f"""You are an educational market analyst assistant. Based on today's headlines below, write a "Today's Market Summary" of about 100-200 words covering: the main market events today, overall market sentiment, which sectors are affected, and which ETFs may be affected. Do not predict future prices or give personalised investment advice. {language_instruction}
+    return f"""Based on today's headlines and classifications below (already computed by the app -- do not recompute or contradict them), write a "Today's Market Summary" of about 100-200 words covering: the main market events today, overall market sentiment, which sectors are affected, and which ETFs may be affected. Do not predict future prices or give personalised investment advice. {language_instruction}
 
 Headlines:
 {headlines}
 
-Headline sentiment split: {sentiment['bullish_pct']}% bullish, {sentiment['neutral_pct']}% neutral, {sentiment['bearish_pct']}% bearish.
-Potentially affected ETFs: {affected_str}
+Headline sentiment split (already computed): {sentiment['bullish_pct']}% bullish, {sentiment['neutral_pct']}% neutral, {sentiment['bearish_pct']}% bearish.
+Potentially affected ETFs (already computed): {affected_str}
 """
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a professional, educational market analyst. Never give personalised investment advice or price predictions."},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=350,
-        temperature=0.6,
-    )
-    return response.choices[0].message.content
 
 
 def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etfs: list) -> str:
@@ -1005,7 +1021,14 @@ def generate_today_ai_summary(news_items: list) -> dict:
     message and disclaimer is "".
     """
     lang = get_language()
-    title = "今日 AI 摘要" if lang == "zh-TW" else "Today's AI Summary"
+    # "Today's Market Overview" -- NOT "AI Summary": this function is
+    # template-based only (see docstring), never calls OpenAI, and the page
+    # already tags its card "Rule-Based" (pages/8_Market_Intelligence.py) --
+    # calling it an "AI Summary" in the title itself would contradict that
+    # badge and collide with generate_market_summary()'s genuinely
+    # OpenAI-backed "Today's Market Summary" card elsewhere on this page
+    # (Issue #20 section 10: never label deterministic content as AI).
+    title = "今日市場總覽" if lang == "zh-TW" else "Today's Market Overview"
 
     if not news_items:
         no_data = ("目前沒有足夠的新聞資料可產生今日摘要。" if lang == "zh-TW"
@@ -1550,7 +1573,7 @@ def generate_todays_market_action(news_items: list) -> dict:
     items is a single neutral "not enough data" bullet.
     """
     lang = get_language()
-    title = "📌 今日市場行動建議" if lang == "zh-TW" else "📌 Today's Market Action"
+    title = "📌 今日觀察重點" if lang == "zh-TW" else "📌 Today's Watchlist"
 
     if not news_items:
         no_data = ("目前沒有足夠的新聞資料可產生今日行動建議。" if lang == "zh-TW"

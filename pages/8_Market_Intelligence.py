@@ -1,5 +1,7 @@
 """
-Page 8: AI Market Intelligence Center
+Page 8: Market Intelligence Center (Issue #20 section 10 -- renamed from "AI
+Market Intelligence Center"; classification/impact/sentiment scoring here is
+rule-based, only the "Today's Market Summary" card is genuinely OpenAI-backed)
 A market intelligence dashboard (not a news site): today's index snapshot,
 breaking headlines, an AI/rule-based market summary, ETFs today's news may
 affect, aggregate headline sentiment, a placeholder economic calendar, and
@@ -24,7 +26,6 @@ from src.market_intelligence import (
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
     generate_todays_market_action,
 )
-from src.ai_advisor import get_openai_client
 from src.charts import sentiment_donut_chart, allocation_donut_chart
 from src.theme import COLORS
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html
@@ -93,7 +94,7 @@ _major_events_title = "今日重大事件" if _mi_lang == "zh-TW" else "Today's 
 _sentiment_caption = "市場情緒" if _mi_lang == "zh-TW" else "Market Sentiment"
 _markets_caption = "受影響市場" if _mi_lang == "zh-TW" else "Affected Markets"
 _etfs_caption = "受影響 ETF" if _mi_lang == "zh-TW" else "Affected ETFs"
-_confidence_caption = "信心指數" if _mi_lang == "zh-TW" else "Confidence"
+_confidence_caption = "情緒傾向強度" if _mi_lang == "zh-TW" else "Sentiment Skew"
 _impact_caption = t("mi_impact_caption")
 
 section_header(_major_events_title)
@@ -257,10 +258,9 @@ else:
 # ── Section 3: AI Market Summary ─────────────────────────────────────────────
 section_header(t("mi_section_summary_title"))
 
-summary_text = generate_market_summary(news_items, sentiment, affected_etfs)
-ai_client = get_openai_client()
-with chart_card(t("mi_section_summary_title"), tag=t("ai_tag_generated") if ai_client else t("ai_tag_rule_based")):
-    st.markdown(summary_text)
+summary_result = generate_market_summary(news_items, sentiment, affected_etfs, session_state=st.session_state)
+with chart_card(t("mi_section_summary_title"), tag=t("ai_tag_generated") if summary_result["source"] == "ai" else t("ai_tag_rule_based")):
+    st.markdown(summary_result["text"])
 
 # ── Section 4: Global ETFs (Affected ETFs across US / Taiwan / UK) ───────────
 section_header(t("mi_section_global_etfs_title"), t("mi_section_global_etfs_subtitle"))

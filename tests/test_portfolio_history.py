@@ -270,3 +270,184 @@ def test_corrupt_record_renders_null_safe_instead_of_crashing(isolated_db):
     assert at.exception == []
     corpus = "\n".join(c.value for c in at.caption)
     assert "missing or have unreadable numeric data" in corpus
+
+
+# ── experiment metadata (Issue #20 section 9C) ───────────────────────────
+SAMPLE_METADATA = {
+    "schema_version": 1,
+    "historical_start_date": "2023-01-01",
+    "historical_end_date": "2024-01-01",
+    "market": "United States",
+    "risk_free_rate": 0.05,
+    "min_weight": 0.0,
+    "max_weight": 1.0,
+    "allow_short": False,
+    "expected_return_estimator": "Historical CAGR (annualized_return)",
+    "covariance_estimator": "Sample covariance (historical, annualized)",
+    "strategy": "Maximum Sharpe Ratio",
+    "asset_universe": ["VOO", "VTI"],
+    "generated_at": "2024-01-01T00:00:00+00:00",
+    "data_as_of": "2024-01-01",
+    "app_version": "test",
+}
+
+
+def test_metadata_roundtrip(isolated_db):
+    ok = isolated_db.save_portfolio(
+        name="WithMetadata", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Maximum Sharpe Ratio", expected_return=0.12,
+        expected_volatility=0.15, sharpe_ratio=0.8, metadata=SAMPLE_METADATA,
+    )
+    assert ok
+    loaded = isolated_db.load_all_portfolios()[0]
+    assert loaded["metadata"] == SAMPLE_METADATA
+
+
+def test_metadata_defaults_to_empty_dict_when_not_provided(isolated_db):
+    _seed_portfolio(isolated_db, "NoMetadata", PORTFOLIO_A_HOLDINGS)
+    loaded = isolated_db.load_all_portfolios()[0]
+    assert loaded["metadata"] == {}
+
+
+def test_metadata_column_migration_on_legacy_database(tmp_path, monkeypatch):
+    """A database file created before metadata_json existed (e.g. an old
+    local copy of database/portfolio.db) must gain the column in place, and
+    every pre-existing row must keep loading with metadata == {} rather
+    than crash init_database() or load_all_portfolios()."""
+    import sqlite3
+
+    legacy_path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(legacy_path)
+    conn.execute(
+        "CREATE TABLE portfolios (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(200) NOT NULL, "
+        "created_at DATETIME, investment_amount FLOAT, optimization_method VARCHAR(100), "
+        "expected_return FLOAT, expected_volatility FLOAT, sharpe_ratio FLOAT, notes TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE portfolio_holdings (id INTEGER PRIMARY KEY AUTOINCREMENT, portfolio_id INTEGER NOT NULL, "
+        "ticker VARCHAR(20), weight FLOAT, amount FLOAT)"
+    )
+    conn.execute(
+        "INSERT INTO portfolios (name, investment_amount, optimization_method, expected_return, "
+        "expected_volatility, sharpe_ratio, notes) VALUES ('LegacyRow', 10000.0, 'Equal Weight', 0.1, 0.15, 0.6, '')"
+    )
+    conn.execute("INSERT INTO portfolio_holdings (portfolio_id, ticker, weight, amount) VALUES (1, 'VOO', 1.0, 10000.0)")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(dbmod, "DB_DIR", str(tmp_path))
+    monkeypatch.setattr(dbmod, "DB_PATH", legacy_path)
+    engine = dbmod.init_database()
+    assert engine is not None
+
+    from sqlalchemy import inspect as sa_inspect
+    columns = {col["name"] for col in sa_inspect(engine).get_columns("portfolios")}
+    assert "metadata_json" in columns
+
+    loaded = dbmod.load_all_portfolios()
+    assert len(loaded) == 1
+    assert loaded[0]["name"] == "LegacyRow"
+    assert loaded[0]["metadata"] == {}
+    assert loaded[0]["holdings"] == {"VOO": 1.0}
+
+
+# ── duplicate-save detection (Issue #20 section 9D) ──────────────────────
+def test_find_duplicate_portfolio_detects_identical_save(isolated_db):
+    _seed_portfolio(isolated_db, "Original", PORTFOLIO_A_HOLDINGS,
+                     investment_amount=10000.0, method="Equal Weight")
+    dup = isolated_db.find_duplicate_portfolio(PORTFOLIO_A_HOLDINGS, "Equal Weight", 10000.0)
+    assert dup is not None
+    assert dup["name"] == "Original"
+
+
+def test_find_duplicate_portfolio_ignores_different_weights(isolated_db):
+    _seed_portfolio(isolated_db, "Original", PORTFOLIO_A_HOLDINGS,
+                     investment_amount=10000.0, method="Equal Weight")
+    dup = isolated_db.find_duplicate_portfolio(PORTFOLIO_B_HOLDINGS, "Equal Weight", 10000.0)
+    assert dup is None
+
+
+def test_find_duplicate_portfolio_ignores_different_method_or_amount(isolated_db):
+    _seed_portfolio(isolated_db, "Original", PORTFOLIO_A_HOLDINGS,
+                     investment_amount=10000.0, method="Equal Weight")
+    assert isolated_db.find_duplicate_portfolio(PORTFOLIO_A_HOLDINGS, "Minimum Volatility", 10000.0) is None
+    assert isolated_db.find_duplicate_portfolio(PORTFOLIO_A_HOLDINGS, "Equal Weight", 5000.0) is None
+
+
+# ── Active Holdings Only + Experiment Details (Issue #20 section 9B/9C) ──
+def test_active_holdings_only_hides_near_zero_weights(isolated_db):
+    holdings = {"VOO": 0.995, "BND": 0.0005}
+    _seed_portfolio(isolated_db, "NearZero", holdings)
+    saved = isolated_db.load_all_portfolios()[0]
+
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+
+    dataframes = list(at.dataframe)
+    holdings_tables = [df.value for df in dataframes if "VOO" in getattr(df.value, "index", [])]
+    assert holdings_tables, "holdings detail table not found"
+    assert "BND" not in holdings_tables[0].index
+
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "Active Holdings Only" in corpus
+
+
+def test_experiment_details_shows_metadata_when_present(isolated_db):
+    isolated_db.save_portfolio(
+        name="MetaPortfolio", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Maximum Sharpe Ratio", expected_return=0.12,
+        expected_volatility=0.15, sharpe_ratio=0.8, metadata=SAMPLE_METADATA,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "Historical CAGR" in corpus
+    assert "Sample covariance" in corpus
+
+
+def test_experiment_details_empty_state_for_legacy_portfolio(isolated_db):
+    _seed_portfolio(isolated_db, "Legacy", PORTFOLIO_A_HOLDINGS)
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(c.value for c in at.caption)
+    assert "no metadata was recorded" in corpus
+
+
+# ── Demo/synthetic badge (Issue #20 release-gate review, automated PR
+# reviewer finding): scripts/reset_demo_portfolio_history.py's curated rows
+# carry hand-authored, not live-optimizer-computed, performance figures --
+# metadata["synthetic_demo"] must render an unmissable badge so they can
+# never be mistaken for a real optimization result. ───────────────────────
+
+def test_synthetic_demo_portfolio_shows_demo_badge(isolated_db):
+    isolated_db.save_portfolio(
+        name="US_Balanced", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Custom Allocation", expected_return=0.075,
+        expected_volatility=0.11, sharpe_ratio=0.50,
+        metadata={"schema_version": 1, "synthetic_demo": True},
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    warnings = "\n".join(w.value for w in at.warning)
+    assert "Curated Demo Example" in warnings
+    summary_corpus = str(at.dataframe[0].value)
+    assert "(Demo)" in summary_corpus
+
+
+def test_real_saved_portfolio_shows_no_demo_badge(isolated_db):
+    _seed_portfolio(isolated_db, "RealUserPortfolio", PORTFOLIO_A_HOLDINGS)
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    warnings = "\n".join(w.value for w in at.warning)
+    assert "Curated Demo Example" not in warnings
+    summary_corpus = str(at.dataframe[0].value)
+    assert "(Demo)" not in summary_corpus

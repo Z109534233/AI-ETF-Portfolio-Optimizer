@@ -36,6 +36,7 @@ import streamlit as st
 from src.financial_metrics import portfolio_diagnosis
 from src.risk_analytics import historical_var_cvar
 from src.i18n import t, get_language
+from src.openai_service import cached_generate, fingerprint, is_configured
 
 
 DISCLAIMER = (
@@ -43,18 +44,14 @@ DISCLAIMER = (
     "Always consult a qualified financial adviser before making investment decisions."
 )
 
-
-def get_openai_client():
-    """Return an OpenAI client if API key is available, else None."""
-    try:
-        import openai
-        api_key = st.secrets.get("OPENAI_API_KEY", None)
-        if not api_key:
-            return None
-        client = openai.OpenAI(api_key=api_key)
-        return client
-    except Exception:
-        return None
+_ADVISOR_SYSTEM_INSTRUCTIONS = (
+    "You are a professional educational financial analyst. Only discuss numbers "
+    "explicitly present in the structured context provided by the user; when a "
+    "section is marked unavailable, say so plainly instead of guessing. Provide "
+    "clear, structured portfolio analysis for educational purposes only, not "
+    "personalized financial advice. Never invent a number, and never state a "
+    "number that differs from what was given to you."
+)
 
 
 # ============================================================================
@@ -360,36 +357,72 @@ For every section marked "not available" above, say so explicitly rather than fa
 End with a clear disclaimer that this is for educational purposes only."""
 
 
-def generate_advisor_narrative(context: dict, investment_objective: str = "Long-term Growth",
-                                risk_level: str = "Moderate", investment_horizon: int = 10) -> str:
-    """Generate the synthesis narrative -- AI (OpenAI) when configured, else
-    a rule-based narrative. Both are grounded exclusively in `context`.
-    """
-    client = get_openai_client()
-    if client is None:
-        return generate_rule_based_narrative(context, investment_objective, risk_level, investment_horizon)
+def advisor_fingerprint(context: dict, investment_objective: str, risk_level: str,
+                         investment_horizon: int) -> str:
+    """Deterministic fingerprint of every input that can change the
+    narrative's content, for src.openai_service.cached_generate() -- so a
+    Streamlit rerun triggered by an unrelated widget never re-spends an
+    OpenAI call, but any change to the portfolio, its computed metrics, the
+    investor-profile inputs, or any of the other module outputs actually
+    quoted in _build_prompt() invalidates the cached result.
 
+    Fingerprints the fully-rendered prompt text itself rather than a
+    hand-maintained list of context fields: _build_prompt() is the single
+    source of truth for what the LLM sees, so hashing its exact output can
+    never drift out of sync with it the way a manually-curated field list
+    previously did (a field quoted in the prompt but missing from the list
+    could leave a stale cached narrative on screen, e.g. still saying
+    "Investment Simulator: not available" next to a freshly-rendered
+    "Deterministic Data" section that already shows real numbers).
+    """
     prompt = _build_prompt(context, investment_objective, risk_level, investment_horizon)
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": (
-                    "You are a professional educational financial analyst. Only discuss numbers "
-                    "explicitly present in the structured context provided by the user; when a "
-                    "section is marked unavailable, say so plainly instead of guessing. Provide "
-                    "clear, structured portfolio analysis for educational purposes only, not "
-                    "personalized financial advice."
-                )},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=1400,
-            temperature=0.7,
+    return fingerprint(prompt)
+
+
+def generate_advisor_narrative(context: dict, investment_objective: str = "Long-term Growth",
+                                risk_level: str = "Moderate", investment_horizon: int = 10,
+                                session_state=None) -> dict:
+    """Generate the synthesis narrative via the central OpenAI Responses API
+    service (src.openai_service) when configured, else a rule-based
+    narrative -- both grounded exclusively in `context` (see _build_prompt:
+    the LLM is only ever asked to explain numbers already computed here, it
+    never recomputes or invents one).
+
+    Returns {"text": str, "source": "ai" | "rule_based"} -- callers must use
+    "source" (not "was a client configured") to decide the AI-Generated vs.
+    Rule-Based badge, since a configured client whose call still fails must
+    fall back to "rule_based" too.
+
+    When `session_state` (any dict-like, e.g. st.session_state) is given,
+    the OpenAI call is cached by advisor_fingerprint() so an unrelated
+    Streamlit rerun reuses the prior result instead of re-spending a call.
+    """
+    prompt = _build_prompt(context, investment_objective, risk_level, investment_horizon)
+
+    if session_state is not None:
+        fp = advisor_fingerprint(context, investment_objective, risk_level, investment_horizon)
+        result = cached_generate(
+            session_state, "_ai_advisor_openai_cache", fp,
+            _ADVISOR_SYSTEM_INSTRUCTIONS, prompt,
         )
-        return response.choices[0].message.content
-    except Exception as e:
-        st.warning(f"AI analysis unavailable: {e}. Using rule-based analysis.")
-        return generate_rule_based_narrative(context, investment_objective, risk_level, investment_horizon)
+    else:
+        from src.openai_service import generate_text
+        result = generate_text(_ADVISOR_SYSTEM_INSTRUCTIONS, prompt)
+
+    if result["available"]:
+        return {"text": result["text"], "source": "ai"}
+
+    # Only warn on a genuine API failure -- not configured at all is the
+    # expected default state and should silently use the rule-based path.
+    # The error detail itself is an SDK exception message (type(e).__name__:
+    # e, see src/openai_service.py) and is deliberately left untranslated
+    # inside the localized sentence -- it is a diagnostic string, not UI
+    # copy, and is never a secret (fingerprint()/generate_text() never
+    # surface the API key).
+    if is_configured() and result.get("error"):
+        st.warning(t("ai_generation_failed_fallback", error=result["error"]))
+    return {"text": generate_rule_based_narrative(
+        context, investment_objective, risk_level, investment_horizon), "source": "rule_based"}
 
 
 def generate_rule_based_narrative(context: dict, investment_objective: str = "Long-term Growth",

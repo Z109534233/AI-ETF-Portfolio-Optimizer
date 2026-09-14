@@ -115,31 +115,48 @@ for _col, (_value, _title, _desc) in zip(stat_cols, _platform_stats):
             unsafe_allow_html=True,
         )
 
+# Supported-ETF-count provenance (Issue #20 section 1B): the count above is
+# real (len(get_all_tickers())), but must not be read as a claim that every
+# listed ticker has guaranteed, always-available price data.
+if _platform_lang == "zh-TW":
+    st.caption(
+        "ℹ️ ETF 清單彙整自平台內建的美國（NASDAQ／NYSE 上市清單）、"
+        "台灣（證交所 TWSE／櫃買中心 TPEX）與英國市場 ETF 名單；"
+        "實際可取得的價格資料仍取決於市場資料來源的覆蓋範圍。"
+    )
+else:
+    st.caption(
+        "ℹ️ The ETF list is compiled from the platform's built-in US "
+        "(NASDAQ/NYSE listing files), Taiwan (TWSE/TPEX), and UK ETF "
+        "universes; actual price data availability still depends on "
+        "market-data source coverage."
+        )
+
 # ── Why Choose This Platform (merged with the former Feature Overview
 # section -- one 8-card grid, one card per module, no duplicated content). ──
 _why_lang = get_language()
 if _why_lang == "zh-TW":
     _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程"
     why_choose = [
-        {"icon": "newspaper", "title": "AI 市場情報", "desc": "即時新聞、事件分類與 AI 市場摘要"},
+        {"icon": "newspaper", "title": "市場情報", "desc": "即時新聞、事件分類與市場摘要（部分摘要由 AI 輔助生成）"},
         {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析"},
         {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置"},
         {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境"},
         {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析"},
         {"icon": "cpu", "title": "機器學習預測", "desc": "數據驅動的 ETF 漲跌方向預測模型"},
-        {"icon": "layers", "title": "AI 投資分析", "desc": "AI 生成投資組合說明與建議"},
+        {"icon": "layers", "title": "投資組合分析助手", "desc": "以自然語言說明既有量化分析結果，AI 不產生任何數字"},
         {"icon": "pie-chart", "title": "投資組合紀錄", "desc": "儲存、比較與管理你的投資組合紀錄"},
     ]
 else:
     _why_title, _why_subtitle = "Why Choose This Platform", "Eight core modules spanning the full journey from analysis to decision."
     why_choose = [
-        {"icon": "newspaper", "title": "AI Market Intelligence", "desc": "Real-time news, event tagging, AI summaries."},
+        {"icon": "newspaper", "title": "Market Intelligence", "desc": "Real-time news, event tagging, and market summaries (some summaries are AI-assisted)."},
         {"icon": "bar-chart", "title": "ETF Analysis", "desc": "Cross-market ETF price, return, and risk analysis."},
         {"icon": "target", "title": "Portfolio Optimization", "desc": "Five methods to find the optimal risk-adjusted mix."},
         {"icon": "trending-up", "title": "Investment Simulator", "desc": "Monte Carlo projections for long-term growth."},
         {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, CVaR, Beta, and stress-test scenarios."},
         {"icon": "cpu", "title": "Machine Learning Forecast", "desc": "Data-driven ETF direction prediction models."},
-        {"icon": "layers", "title": "AI Advisor", "desc": "AI-generated portfolio explanations and insights."},
+        {"icon": "layers", "title": "AI Portfolio Analyst", "desc": "Explains existing quantitative results in plain language -- the AI never generates the numbers."},
         {"icon": "pie-chart", "title": "Portfolio History", "desc": "Save, compare, and manage your portfolio records."},
     ]
 section_header(_why_title, _why_subtitle)
@@ -208,7 +225,8 @@ if not demo_etfs:
 with st.spinner(t("home_loading_market_data")):
     raw_prices = download_etf_data(demo_etfs, str(start_date), str(end_date))
 
-if raw_prices.empty:
+_using_sample_data = raw_prices.empty
+if _using_sample_data:
     st.warning(t("home_live_data_unavailable"))
     from src.data_loader import _generate_sample_data
     raw_prices = _generate_sample_data(demo_etfs, str(start_date), str(end_date))
@@ -233,10 +251,22 @@ if not etf_prices.empty:
     cov += np.eye(n) * 1e-8
     div_r = diversification_ratio(weights_arr, cov)
 else:
+    # No usable data at all, even after the sample-data fallback above --
+    # these are fixed placeholder figures, not a computation of anything.
+    _using_sample_data = True
     ann_ret, ann_vol, sr, mdd, port_value, div_r = 0.10, 0.15, 0.67, -0.12, 10800, 1.25
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
+# Equal-weight demonstration portfolio (Issue #20 section 1C): this is the
+# home-page preview only -- never the output of Portfolio Optimizer's
+# actual optimization strategies -- so it can never be mistaken for a
+# real optimizer result. When synthetic/sample data had to be used (live
+# market data unavailable, or no data at all), a persistent SAMPLE/DEMO
+# DATA badge is shown here too so it can't be missed if the earlier
+# warning banner has scrolled out of view.
 section_header(t("home_dashboard_title"), t("home_dashboard_subtitle"))
+if _using_sample_data:
+    st.caption(f"🧪 {t('home_dashboard_sample_data_badge')}")
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 with col1:
     st.markdown(metric_card_html(t("metric_portfolio_value"), f"${port_value:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)

@@ -49,7 +49,11 @@ from src.ui import (
     chart_card, render_footer, error_state, kpi_card,
     region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
 )
-from src.i18n import t, t_country, get_language
+from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
+from src.etf_signals import (
+    compute_quant_signals, trend_signal_from_return, recent_trend_return,
+    generate_etf_interpretation, has_sufficient_history,
+)
 
 st.set_page_config(
     page_title="ETF Analysis | AI ETF Portfolio Optimizer",
@@ -223,7 +227,7 @@ _k_ret = annualized_return(_focus_p)
 _k_vol = annualized_volatility(_focus_p)
 _k_sharpe = sharpe_ratio(_focus_p, risk_free_rate)
 _k_mdd = maximum_drawdown(_focus_p)
-_k_trend = "Bullish" if _k_ret > 0.05 else ("Bearish" if _k_ret < -0.05 else "Neutral")
+_k_trend = trend_signal_from_return(recent_trend_return(_focus_p))
 _K_TREND_META = {"Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)")}
 _k_emoji, _k_color = _K_TREND_META[_k_trend]
 kcol1, kcol2, kcol3, kcol4, kcol5 = st.columns(5)
@@ -236,7 +240,7 @@ with kcol3:
 with kcol4:
     st.markdown(kpi_card(t("etf_kpi_mdd"), f"{_k_mdd:.2%}", color="var(--danger)", icon="trending-down"), unsafe_allow_html=True)
 with kcol5:
-    st.markdown(kpi_card(t("etf_kpi_trend"), f'<span style="color:{_k_color};">{_k_emoji} {_k_trend}</span>', color=_k_color), unsafe_allow_html=True)
+    st.markdown(kpi_card(t("etf_kpi_trend"), f'<span style="color:{_k_color};">{_k_emoji} {t_trend_signal(_k_trend)}</span>', color=_k_color), unsafe_allow_html=True)
 
 
 # ── Shared rule-based analysis helpers (no external LLM) -- EXACT same
@@ -244,8 +248,7 @@ with kcol5:
 # workspace can call them for exactly the ticker(s) it needs instead of
 # every ticker on every rerun. ─────────────────────────────────────────────
 _SUM_TREND_META = {
-    "Strong Bullish": ("🟢", "var(--success)"), "Bullish": ("🟢", "var(--success)"),
-    "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)"), "Strong Bearish": ("🔴", "var(--danger)"),
+    "Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)"),
 }
 
 
@@ -306,70 +309,22 @@ def _ai_summary_insights(lang, s_ret_period, s_ret_ann, s_vol, s_sharpe, s_mdd, 
 
 
 def _ai_summary_entry(ticker, lang):
-    """Everything the AI ETF Summary card / ETF Ranking / Investment
-    Verdict need for one ticker -- exact same scoring formula as before
-    this round, just callable per-ticker so Overview (focus ticker only)
+    """Everything the ETF Analytical Summary card / ETF Ranking / ETF
+    Compare Score / Investment Verdict need for one ticker -- delegates the
+    actual score/trend/portfolio-view computation to
+    src.etf_signals.compute_quant_signals(), the ONE canonical formula used
+    everywhere on this page (Issue #20 section 2A: before this, three
+    independently-tuned formulas could show a different Trend/Score for the
+    exact same ticker). Callable per-ticker so Overview (focus ticker only)
     and Compare (all selected tickers) can each compute only what they use."""
     p = etf_prices[ticker].dropna()
     s_ret_period = p.iloc[-1] / p.iloc[0] - 1 if len(p) > 1 else 0.0
-    s_ret_ann = annualized_return(p)
-    s_vol = annualized_volatility(p)
-    s_sharpe = sharpe_ratio(p, risk_free_rate)
-    s_mdd = maximum_drawdown(p)
-    s_ma_short = sma(p, 20).iloc[-1]
-    s_ma_long = sma(p, 50).iloc[-1]
-    s_mom_last = momentum(p, 10).iloc[-1]
-    s_mom = s_mom_last if pd.notna(s_mom_last) else 0.0
-    s_price = p.iloc[-1]
-
-    s_score = 50.0
-    s_score += max(-22, min(22, s_ret_ann * 140))
-    s_score += max(-18, min(18, s_sharpe * 11))
-    s_score += max(-12, min(12, s_mom * 200))
-    s_score -= max(-8, min(22, (s_vol - 0.15) * 90))
-    s_score -= max(0, min(22, abs(s_mdd) * 55))
-    s_score = int(round(max(0, min(100, s_score))))
-
-    if s_score >= 85:
-        s_trend = "Strong Bullish"
-    elif s_score >= 65:
-        s_trend = "Bullish"
-    elif s_score >= 40:
-        s_trend = "Neutral"
-    elif s_score >= 20:
-        s_trend = "Bearish"
-    else:
-        s_trend = "Strong Bearish"
-
-    if s_score >= 90:
-        s_rec = "Buy"
-    elif s_score >= 75:
-        s_rec = "Hold"
-    elif s_score >= 60:
-        s_rec = "Watch"
-    else:
-        s_rec = "Reduce"
-
-    s_signs = [
-        1 if s_ret_ann > 0 else (-1 if s_ret_ann < 0 else 0),
-        1 if s_sharpe > 0 else (-1 if s_sharpe < 0 else 0),
-        1 if s_mom > 0 else (-1 if s_mom < 0 else 0),
-        1 if s_price > s_ma_long else (-1 if s_price < s_ma_long else 0),
-    ]
-    s_overall_sign = 1 if s_score >= 50 else -1
-    s_agreement = sum(1 for sgn in s_signs if sgn == s_overall_sign) / len(s_signs)
-    s_confidence = round(55 + s_agreement * 40)
-    if s_vol > 0.30:
-        s_confidence = max(50, s_confidence - 5)
-
-    s_insights = _ai_summary_insights(
-        lang, s_ret_period, s_ret_ann, s_vol, s_sharpe, s_mdd,
-        s_price, s_ma_short, s_ma_long, s_mom, s_score,
+    signals = compute_quant_signals(p, risk_free_rate)
+    insights = _ai_summary_insights(
+        lang, s_ret_period, signals["ret_ann"], signals["vol"], signals["sharpe"], signals["mdd"],
+        signals["price"], signals["ma_short"], signals["ma_long"], signals["mom"], signals["score"],
     )
-    return {
-        "score": s_score, "trend": s_trend, "rec": s_rec, "confidence": s_confidence,
-        "ret_ann": s_ret_ann, "vol": s_vol, "sharpe": s_sharpe, "mom": s_mom, "insights": s_insights,
-    }
+    return {**signals, "insights": insights}
 
 
 def _render_ai_summary_card(ticker, entry):
@@ -382,64 +337,30 @@ def _render_ai_summary_card(ticker, entry):
         '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
         'padding:16px 18px;margin:6px 0;box-shadow:var(--shadow-sm);">'
         f'<div style="color:var(--text);font-weight:800;font-size:16px;margin-bottom:4px;">{ticker}</div>'
-        f'<div style="color:{color};font-weight:700;font-size:13px;margin-bottom:10px;">{emoji} {entry["trend"]}</div>'
-        '<div style="color:var(--text-secondary);font-size:11px;margin-bottom:2px;">AI Score</div>'
+        f'<div style="color:{color};font-weight:700;font-size:13px;margin-bottom:10px;">{emoji} {t_trend_signal(entry["trend"])}</div>'
+        f'<div style="color:var(--text-secondary);font-size:11px;margin-bottom:2px;">{t("etf_quant_score_label")}</div>'
         f'<div style="color:var(--text);font-weight:800;font-size:20px;margin-bottom:8px;">{entry["score"]}</div>'
         '<div style="display:flex;justify-content:space-between;color:var(--text-secondary);font-size:11.5px;margin-bottom:10px;">'
-        f'<span>Confidence: {entry["confidence"]}%</span><span>Recommendation: {entry["rec"]}</span></div>'
-        '<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">AI Insights</div>'
+        f'<span>{t("etf_signal_agreement_label")}: {entry["signal_agreement"]}%</span>'
+        f'<span>{t("etf_portfolio_view_label")}: {t_portfolio_view(entry["portfolio_view"])}</span></div>'
+        f'<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">{t("etf_quant_insights_label")}</div>'
         f'{insights_html}'
         '</div>',
         unsafe_allow_html=True,
     )
 
 
-_AI_TREND_META = {"Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)")}
-
-
-def _ai_insights(lang, ann_ret, ann_vol, sr, mom, price_now, ma_short, ma_long, score):
-    cands = []
-    if mom > 0.05:
-        cands.append((mom, "Momentum 持續增強" if lang == "zh-TW" else "Momentum continues to strengthen"))
-    elif mom < -0.05:
-        cands.append((-mom, "Momentum 明顯轉弱" if lang == "zh-TW" else "Momentum is weakening"))
-    else:
-        cands.append((0.01, "短期動能持平" if lang == "zh-TW" else "Short-term momentum is flat"))
-
-    if ann_ret > 0.15:
-        cands.append((ann_ret, "報酬率高於市場平均" if lang == "zh-TW" else "Return is above the market average"))
-    elif ann_ret < 0:
-        cands.append((-ann_ret, "報酬率低於預期" if lang == "zh-TW" else "Return is below expectations"))
-
-    if sr > 1.2:
-        cands.append((sr / 3, "風險調整後報酬表現優異" if lang == "zh-TW" else "Risk-adjusted return is excellent"))
-    elif sr < 0.3:
-        cands.append((0.3 - sr, "風險調整後報酬偏弱" if lang == "zh-TW" else "Risk-adjusted return is weak"))
-
-    if ann_vol > 0.25:
-        if score >= 50:
-            cands.append((ann_vol, "波動增加但仍維持健康趨勢" if lang == "zh-TW" else "Volatility has increased but the trend remains healthy"))
-        else:
-            cands.append((ann_vol, "波動偏高，風險上升" if lang == "zh-TW" else "Volatility is elevated, raising risk"))
-    elif ann_vol < 0.12:
-        cands.append((0.12 - ann_vol, "波動度偏低，走勢穩定" if lang == "zh-TW" else "Volatility is low, price action is stable"))
-
-    if price_now > ma_short > ma_long:
-        cands.append((price_now / ma_long - 1, "站上短期與長期均線，趨勢偏多" if lang == "zh-TW" else "Price is above both short- and long-term moving averages"))
-    elif price_now < ma_short < ma_long:
-        cands.append((ma_long / price_now - 1, "跌破短期與長期均線，趨勢偏空" if lang == "zh-TW" else "Price is below both short- and long-term moving averages"))
-    else:
-        cands.append((0.01, "均線呈現盤整格局" if lang == "zh-TW" else "Moving averages show a consolidating pattern"))
-
-    cands.sort(key=lambda c: c[0], reverse=True)
-    return [c[1] for c in cands[:3]]
-
-
 def _ai_interpretation(key_findings, investment_insight: str, risk_reminder: str) -> None:
-    """Render a 3-part 'AI Interpretation' block below a chart: Key
+    """Render a 3-part rule-based 'Analysis Notes' block below a chart: Key
     Findings, Investment Insight, Risk Reminder. Reused across workspaces
     -- each call site computes its own content from that chart's actual
-    data. `key_findings` is a string or a list of 1-2 strings."""
+    data. `key_findings` is a string or a list of 1-2 strings.
+
+    Deliberately NOT labeled "AI Interpretation" -- this content is 100%
+    deterministic/threshold-based, not an LLM call. The genuine OpenAI-
+    backed "AI Interpretation" feature lives in _render_ai_interpretation_
+    section() below (Issue #20 section 10: never label deterministic
+    content as AI-generated)."""
     if isinstance(key_findings, str):
         key_findings = [key_findings]
     _kf_html = "".join(
@@ -449,88 +370,56 @@ def _ai_interpretation(key_findings, investment_insight: str, risk_reminder: str
     st.markdown(
         '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);'
         'padding:12px 16px;margin:6px 0 14px 0;">'
-        '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">AI Interpretation</div>'
-        '<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">Key Findings</div>'
+        f'<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">{t("etf_analysis_notes_title")}</div>'
+        f'<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">{t("etf_key_findings_label")}</div>'
         f'{_kf_html}'
-        '<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 3px 0;">Investment Insight</div>'
+        f'<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 3px 0;">{t("etf_investment_insight_label")}</div>'
         f'<div style="color:var(--success);font-size:12.5px;line-height:1.6;">{investment_insight}</div>'
-        '<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 3px 0;">Risk Reminder</div>'
+        f'<div style="color:var(--text-muted);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 3px 0;">{t("etf_risk_reminder_label")}</div>'
         f'<div style="color:var(--warning);font-size:12.5px;line-height:1.6;">{risk_reminder}</div>'
         '</div>',
         unsafe_allow_html=True,
     )
 
 
-def _render_ai_insights_for_focus():
-    """The old 'AI Insights' section's per-ticker body, called for the
-    focus ticker only -- this workspace redesign's Overview 'Key
-    Observations' block (PRODUCT SPEC section 4)."""
-    p = _focus_p
-    ann_ret = annualized_return(p)
-    ann_vol = annualized_volatility(p)
-    sr = sharpe_ratio(p, risk_free_rate)
-    ma_short = sma(p, 20).iloc[-1]
-    ma_long = sma(p, 50).iloc[-1]
-    mom_last = momentum(p, 10).iloc[-1]
-    mom = mom_last if pd.notna(mom_last) else 0.0
-    price_now = p.iloc[-1]
+def _render_ai_interpretation_section(ticker: str, entry: dict) -> None:
+    """Overview workspace's 'Key Observations' block (Issue #20 section 2):
+    explains that Trend Signal / Quant Score / Portfolio View are distinct
+    constructs that can disagree, then offers a genuine OpenAI-backed "AI
+    Interpretation" of THIS ticker's already-computed numbers (`entry`,
+    from _ai_summary_entry() / src.etf_signals.compute_quant_signals()).
 
-    score = 50.0
-    score += max(-20, min(20, ann_ret * 100))
-    score += max(-15, min(15, sr * 10))
-    score += max(-15, min(15, mom * 100))
-    if price_now > ma_short > ma_long:
-        score += 10
-    elif price_now < ma_short < ma_long:
-        score -= 10
-    score = int(round(max(0, min(100, score))))
+    User-triggered by a button (never fired automatically on rerun). The
+    OpenAI call is only ever asked to explain the numbers in `entry` -- it
+    cannot recompute or invent a Trend/Score/Portfolio View -- and results
+    are cached by src.openai_service fingerprint in session_state so an
+    unrelated widget rerun never re-spends the call. Falls back to a
+    one-line rule-based observation, clearly labeled Rule-Based, if OpenAI
+    is not configured or the call fails.
+    """
+    st.caption(t("etf_signal_semantics_note"))
+    st.markdown(f"**{t('etf_ai_interpretation_title')}**")
+    st.caption(t("etf_ai_interpretation_desc"))
 
-    if score >= 65:
-        trend = "Bullish"
-    elif score <= 35:
-        trend = "Bearish"
-    else:
-        trend = "Neutral"
+    _req_key = f"_etf_ai_interp_requested_{ticker}"
+    if st.button(t("etf_ai_interpretation_btn"), key=f"etf_ai_interp_btn_{ticker}"):
+        st.session_state[_req_key] = True
 
-    if score >= 75:
-        recommendation = "Buy"
-    elif score >= 45:
-        recommendation = "Hold"
-    else:
-        recommendation = "Reduce"
+    if not st.session_state.get(_req_key):
+        return
 
-    signs = [
-        1 if ann_ret > 0 else (-1 if ann_ret < 0 else 0),
-        1 if sr > 0 else (-1 if sr < 0 else 0),
-        1 if mom > 0 else (-1 if mom < 0 else 0),
-        1 if price_now > ma_long else (-1 if price_now < ma_long else 0),
-    ]
-    overall_sign = 1 if score >= 50 else -1
-    agreement = sum(1 for s in signs if s == overall_sign) / len(signs)
-    confidence = round(55 + agreement * 40)
-    if ann_vol > 0.30:
-        confidence = max(50, confidence - 5)
-
-    insights = _ai_insights(_lang, ann_ret, ann_vol, sr, mom, price_now, ma_short, ma_long, score)
-    emoji, color = _AI_TREND_META[trend]
-    insights_html = "".join(
-        f'<div style="color:var(--text-secondary);font-size:12px;line-height:1.6;">• {ins}</div>'
-        for ins in insights
+    _window_start = _focus_p.index[0].strftime("%Y-%m-%d") if not _focus_p.empty else None
+    _window_end = _focus_p.index[-1].strftime("%Y-%m-%d") if not _focus_p.empty else None
+    result = generate_etf_interpretation(
+        ticker, _lang, _window_start, _window_end, entry, session_state=st.session_state,
     )
-    st.markdown(
-        '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-        'padding:16px 18px;margin:6px 0;box-shadow:var(--shadow-sm);">'
-        f'<div style="color:var(--text);font-weight:800;font-size:16px;margin-bottom:4px;">{_focus_ticker}</div>'
-        f'<div style="color:{color};font-weight:700;font-size:13px;margin-bottom:10px;">{emoji} {trend}</div>'
-        '<div style="color:var(--text-secondary);font-size:11px;margin-bottom:2px;">AI Score</div>'
-        f'<div style="color:var(--text);font-weight:800;font-size:20px;margin-bottom:8px;">{score}</div>'
-        '<div style="display:flex;justify-content:space-between;color:var(--text-secondary);font-size:11.5px;margin-bottom:10px;">'
-        f'<span>Confidence: {confidence}%</span><span>Recommendation: {recommendation}</span></div>'
-        '<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">AI Insights</div>'
-        f'{insights_html}'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    badge = t("ai_tag_generated") if result["source"] == "ai" else t("ai_tag_rule_based")
+    with chart_card(t("etf_ai_interpretation_title"), tag=badge):
+        if result["source"] == "ai":
+            st.markdown(result["text"])
+        else:
+            st.caption(t("etf_ai_interpretation_unavailable"))
+            st.markdown(f"• {entry['insights'][0]}" if entry["insights"] else "—")
 
 
 # ── Top-Level Workspace Navigation ───────────────────────────────────────────
@@ -576,14 +465,23 @@ st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════
 if workspace == "Overview":
     section_header(t("etf_overview_snapshot_title"))
-    _render_ai_summary_card(_focus_ticker, _ai_summary_entry(_focus_ticker, _lang))
+    # Same thin-history disclosure as the Compare workspace (Issue #20
+    # release-gate review, automated PR reviewer finding): a focus ticker
+    # under MIN_RELIABLE_HISTORY_POINTS still gets a Quant Score/Trend/
+    # Portfolio View from compute_quant_signals() -- it must not be
+    # presented at the same confidence as a fully-populated series without
+    # this warning, here in Overview exactly as in Compare.
+    if not has_sufficient_history(_focus_p):
+        st.warning(t("etf_thin_history_warning", tickers=_focus_ticker))
+    _focus_entry = _ai_summary_entry(_focus_ticker, _lang)
+    _render_ai_summary_card(_focus_ticker, _focus_entry)
 
     with chart_card(t("etf_overview_chart_title")):
         fig = price_chart(etf_prices[[_focus_ticker]])
         st.plotly_chart(fig, use_container_width=True, key="overview_price_chart")
 
     section_header(t("etf_overview_interpretation_title"))
-    _render_ai_insights_for_focus()
+    _render_ai_interpretation_section(_focus_ticker, _focus_entry)
 
 # ══════════════════════════════════════════════════════════════════════════
 # PERFORMANCE -- "How has it performed?"
@@ -1145,17 +1043,33 @@ elif workspace == "Compare":
 
         st.caption(t("etf_compare_normalized_xref"))
         _ai_summary_data = {tk: _ai_summary_entry(tk, _lang) for tk in etf_prices.columns}
+        # Issue #20 release-gate review: the pre-redesign "ETF Compare
+        # Score" table used to silently EXCLUDE any ticker with fewer than
+        # 10 valid price points (too little history for a numerically
+        # stable Quant Score/Sharpe/moving-average signal). Consolidating
+        # onto one shared _ai_summary_data dict (section 2A) means every
+        # selected ticker now gets a score no matter how little history it
+        # has -- which is more consistent across Summary/Ranking/Compare
+        # Score, but must disclose the limitation rather than silently
+        # present a thin-history score at the same confidence as a
+        # fully-populated one.
+        _thin_history_tickers = [
+            tk for tk in etf_prices.columns if not has_sufficient_history(etf_prices[tk].dropna())
+        ]
+        if _thin_history_tickers:
+            st.warning(t("etf_thin_history_warning", tickers=", ".join(_thin_history_tickers)))
 
         if cmp_view == "Rankings":
-            # ── AI ETF Summary (all selected tickers) ──────────────────────
-            section_header("AI ETF Summary")
+            # ── ETF Analytical Summary (all selected tickers) ───────────────
+            section_header(t("etf_analytical_summary_title"))
+            st.caption(t("etf_signal_semantics_note"))
             _sum_cols = st.columns(len(etf_prices.columns))
             for i, ticker in enumerate(etf_prices.columns):
                 with _sum_cols[i]:
                     _render_ai_summary_card(ticker, _ai_summary_data[ticker])
 
             # ── ETF Ranking ──────────────────────────────────────────────
-            section_header("ETF Ranking")
+            section_header(t("etf_ranking_title"))
             _RANK_MEDALS = ["🥇", "🥈", "🥉"]
             _ranked = sorted(_ai_summary_data.items(), key=lambda kv: kv[1]["score"], reverse=True)
             _rank_row_html = []
@@ -1173,15 +1087,15 @@ elif workspace == "Compare":
                     f'<td style="padding:9px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{_r_rank}</td>'
                     f'<td style="padding:9px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{_r_ticker}</td>'
                     f'<td style="padding:9px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{_r_data["score"]}</td>'
-                    f'<td style="padding:9px 12px;color:{_r_trend_color};font-weight:700;border-bottom:1px solid var(--border);">{_r_trend_emoji} {_r_data["trend"]}</td>'
-                    f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_data["rec"]}</td>'
+                    f'<td style="padding:9px 12px;color:{_r_trend_color};font-weight:700;border-bottom:1px solid var(--border);">{_r_trend_emoji} {t_trend_signal(_r_data["trend"])}</td>'
+                    f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{t_portfolio_view(_r_data["portfolio_view"])}</td>'
                     f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_risk}</td>'
                     '</tr>'
                 )
-            _rank_headers = (
-                ["排名", "ETF", "AI Score", "Trend", "Recommendation", "Risk Level"] if _lang == "zh-TW" else
-                ["Rank", "ETF", "AI Score", "Trend", "Recommendation", "Risk Level"]
-            )
+            _rank_headers = [
+                t("etf_rank_col_rank"), t("etf_rank_col_etf"), t("etf_rank_col_score"),
+                t("etf_rank_col_trend"), t("etf_rank_col_view"), t("etf_rank_col_risk"),
+            ]
             _rank_header_html = "".join(
                 f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;'
                 f'letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{h}</th>'
@@ -1242,32 +1156,18 @@ elif workspace == "Compare":
                     unsafe_allow_html=True,
                 )
 
-            # ── ETF Compare Score ───────────────────────────────────────────
-            section_header("ETF Compare Score")
+            # ── ETF Compare Score -- reuses _ai_summary_data (the SAME
+            # canonical compute_quant_signals() result already shown above
+            # in ETF Analytical Summary / ETF Ranking) instead of an
+            # independent scoring formula, so this table can never disagree
+            # with those two on the same ticker's score/trend/view. ────────
+            section_header(t("etf_compare_score_title"))
             _CMP_TREND_META = {"Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)")}
             _cmp_rows = []
             for ticker in etf_prices.columns:
-                p = etf_prices[ticker].dropna()
-                if len(p) < 10:
-                    continue
-                c_ret = annualized_return(p)
-                c_vol = annualized_volatility(p)
-                c_sr = sharpe_ratio(p, risk_free_rate)
-                c_mdd = maximum_drawdown(p)
-                c_mom_last = momentum(p, 10).iloc[-1]
-                c_mom = c_mom_last if pd.notna(c_mom_last) else 0.0
-
-                c_score = 50.0
-                c_score += max(-20, min(20, c_ret * 100))
-                c_score += max(-15, min(15, c_sr * 10))
-                c_score += max(-10, min(10, c_mom * 100))
-                c_score -= max(-10, min(25, (c_vol - 0.15) * 100))
-                c_score -= max(0, min(25, abs(c_mdd) * 60))
-                c_score = int(round(max(0, min(100, c_score))))
-
-                c_trend = "Bullish" if c_score >= 65 else ("Bearish" if c_score <= 35 else "Neutral")
-                c_rec = "Buy" if c_score >= 75 else ("Hold" if c_score >= 45 else "Reduce")
-                c_risk = "Low" if c_vol < 0.12 else ("Medium" if c_vol < 0.25 else "High")
+                _c_data = _ai_summary_data[ticker]
+                c_risk = "Low" if _c_data["vol"] < 0.12 else ("Medium" if _c_data["vol"] < 0.25 else "High")
+                c_ret = _c_data["ret_ann"]
                 if c_ret < 0:
                     c_return_label = "Poor"
                 elif c_ret < 0.08:
@@ -1278,11 +1178,16 @@ elif workspace == "Compare":
                     c_return_label = "Very Good"
                 else:
                     c_return_label = "Excellent"
-                _cmp_rows.append({"ticker": ticker, "score": c_score, "trend": c_trend, "risk": c_risk,
-                                   "return_label": c_return_label, "rec": c_rec})
+                _cmp_rows.append({
+                    "ticker": ticker, "score": _c_data["score"], "trend": _c_data["trend"], "risk": c_risk,
+                    "return_label": c_return_label, "portfolio_view": _c_data["portfolio_view"],
+                })
             _cmp_rows.sort(key=lambda r: r["score"], reverse=True)
             if _cmp_rows:
-                _cmp_headers = ["ETF", "Overall Score", "Trend", "Risk", "Return", "Recommendation"]
+                _cmp_headers = [
+                    t("etf_rank_col_etf"), t("etf_rank_col_score"), t("etf_rank_col_trend"),
+                    t("etf_rank_col_risk"), t("metric_expected_return"), t("etf_rank_col_view"),
+                ]
                 _cmp_header_html = "".join(
                     f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;'
                     f'letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{h}</th>'
@@ -1295,10 +1200,10 @@ elif workspace == "Compare":
                         '<tr>'
                         f'<td style="padding:10px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{r["ticker"]}</td>'
                         f'<td style="padding:10px 12px;color:var(--text);font-weight:800;font-size:15px;border-bottom:1px solid var(--border);">{r["score"]}</td>'
-                        f'<td style="padding:10px 12px;color:{color};font-weight:700;border-bottom:1px solid var(--border);">{emoji} {r["trend"]}</td>'
+                        f'<td style="padding:10px 12px;color:{color};font-weight:700;border-bottom:1px solid var(--border);">{emoji} {t_trend_signal(r["trend"])}</td>'
                         f'<td style="padding:10px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{r["risk"]}</td>'
                         f'<td style="padding:10px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{r["return_label"]}</td>'
-                        f'<td style="padding:10px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{r["rec"]}</td>'
+                        f'<td style="padding:10px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{t_portfolio_view(r["portfolio_view"])}</td>'
                         '</tr>'
                     )
                 st.markdown(
@@ -1312,7 +1217,7 @@ elif workspace == "Compare":
                 )
 
             # ── Compare Mode (head-to-head, 2 ETFs) ────────────────────────
-            section_header("Compare Mode")
+            section_header(t("etf_compare_mode_title"))
             _vs_options = etf_prices.columns.tolist()
             _vs_c1, _vs_c2 = st.columns(2)
             with _vs_c1:
@@ -1431,14 +1336,14 @@ elif workspace == "Compare":
                 st.markdown(
                     '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 16px;">'
                     '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">'
-                    + ("AI 解釋" if _lang == "zh-TW" else "AI Explanation") + '</div>'
+                    + t("etf_comparison_notes_title") + '</div>'
                     f'<div style="color:var(--text-secondary);font-size:12.5px;line-height:1.7;">{explanation}</div></div>',
                     unsafe_allow_html=True,
                 )
 
             # ── Investment Verdict (page-level synthesis over ALL selected
             # tickers) -- closing section of Compare. ───────────────────────
-            section_header("Investment Verdict")
+            section_header(t("etf_investment_verdict_title"))
             _verdict_tickers = list(etf_prices.columns)
             _v_scores = [_ai_summary_data[t]["score"] for t in _verdict_tickers]
             _v_vols = [_ai_summary_data[t]["vol"] for t in _verdict_tickers]
@@ -1567,14 +1472,14 @@ elif workspace == "Compare":
                     '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
                     'padding:18px 20px;box-shadow:var(--shadow-sm);height:100%;">'
                     '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">'
-                    + ("AI 最終建議" if _lang == "zh-TW" else "AI Final Recommendation") + '</div>'
+                    + t("etf_verdict_notes_title") + '</div>'
                     f'<div style="color:var(--text-secondary);font-size:13px;line-height:1.8;">{v_recommendation}</div></div>',
                     unsafe_allow_html=True,
                 )
 
         else:  # Correlation
             # ── ETF DNA ──────────────────────────────────────────────────
-            section_header("ETF DNA")
+            section_header(t("etf_dna_title"))
             _DNA_DIMENSIONS = [
                 ("Growth", "var(--success)"), ("Risk", "var(--danger)"), ("Momentum", "var(--primary)"),
                 ("Diversification", "var(--purple)"), ("Liquidity", "var(--cyan)"),

@@ -1,6 +1,7 @@
 # AI ETF Portfolio Optimizer
 
-**AI-Powered ETF Portfolio Analytics and Optimization Platform**
+**ETF Portfolio Analytics & Quantitative Decision Platform** -- performance analysis, portfolio
+optimization, risk analytics, simulation, and machine learning, with AI-assisted interpretation.
 
 A professional FinTech web application built with Python and Streamlit, designed as a portfolio project for UK Master's programme applications in Business Analytics, Finance Analytics, Financial Technology, and Data Analytics.
 
@@ -29,7 +30,7 @@ The AI ETF Portfolio Optimizer is a comprehensive investment analytics platform 
 | **Investment Simulator** | Monte Carlo projection, compound growth, scenario comparison |
 | **Risk Analytics** | VaR, CVaR, Beta, Alpha, Tracking Error, stress testing |
 | **Machine Learning** | Logistic Regression & Random Forest for direction prediction |
-| **AI Advisor** | GPT-powered portfolio explanation with rule-based fallback |
+| **AI Portfolio Analyst** | OpenAI-powered synthesis of already-computed portfolio metrics, with rule-based fallback |
 | **Portfolio History** | SQLite storage, portfolio comparison, CSV export |
 
 ---
@@ -115,17 +116,28 @@ The main entry file is `app.py` in the project root. All pages are in the `pages
 
 ---
 
-## Secret Key Configuration
+## OpenAI Setup (Secret Key Configuration)
+
+All OpenAI calls in this app go through a single module, `src/openai_service.py`
+(the current **Responses API** -- `client.responses.create`, not the legacy
+Chat Completions API). It reads `OPENAI_API_KEY` (required) and an optional
+`OPENAI_MODEL` override from Streamlit secrets or the environment -- **never**
+hard-code a key in source. The app works fully without a key configured:
+every AI-backed feature (ETF Analysis "AI Interpretation", AI Portfolio
+Analyst synthesis, Market Intelligence "Today's Market Summary") falls back
+to a clearly-labeled Rule-Based result instead of failing.
 
 ### Local Development
 
-Create `.streamlit/secrets.toml` (this file is in `.gitignore`):
+Create `.streamlit/secrets.toml` (already excluded via `.gitignore` -- never
+commit this file):
 
 ```toml
 OPENAI_API_KEY = "sk-your-openai-api-key-here"
+OPENAI_MODEL = "gpt-5.6-luna"  # optional -- defaults to a cost-conscious current model
 ```
 
-### Streamlit Cloud
+### Streamlit Community Cloud
 
 1. Go to your app settings on Streamlit Cloud.
 2. Click **Secrets**.
@@ -133,9 +145,14 @@ OPENAI_API_KEY = "sk-your-openai-api-key-here"
 
 ```toml
 OPENAI_API_KEY = "sk-your-openai-api-key-here"
+OPENAI_MODEL = "gpt-5.6-luna"  # optional
 ```
 
-The application functions fully without an OpenAI key — the AI Advisor uses rule-based analysis as a fallback.
+Never commit the real key to the repository. The application functions
+fully without an OpenAI key -- AI Portfolio Analyst, ETF Analysis's "AI
+Interpretation", and Market Intelligence's market summary all use
+rule-based analysis as a fallback, and the UI labels which one produced
+the result you're looking at ("AI-Generated" vs "Rule-Based").
 
 ---
 

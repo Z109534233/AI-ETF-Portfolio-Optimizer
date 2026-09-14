@@ -170,3 +170,82 @@ def test_page_renders_target_window_and_baseline_disclosure():
 
     captions = "\n".join(c.value for c in at.caption)
     assert "baseline" in captions.lower()
+
+
+# ── Priority-0 regression: stale result must never be shown as current ────
+# (Issue #20 section 6A). Each test trains once, then changes exactly ONE
+# input via its widget WITHOUT clicking "Train Model" again, and asserts
+# the page shows the "inputs changed, please retrain" warning instead of
+# silently continuing to display the old (now-stale) result as current.
+
+def _train_once(lang="en"):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    st.page_link = lambda *a, **k: None
+    at = AppTest.from_file(os.path.join(REPO_ROOT, "pages/5_Machine_Learning.py"), default_timeout=180)
+    at.session_state["language"] = lang
+    at.run()
+    assert at.exception == []
+    run_btn = next((b for b in at.button if "Train" in (b.label or "") or "訓練" in (b.label or "")), None)
+    assert run_btn is not None
+    run_btn.click()
+    at.run()
+    assert at.exception == []
+    return at
+
+
+def _no_retrain_warning_shown(at) -> bool:
+    warnings = "\n".join(w.value for w in at.warning)
+    return "changed" in warnings.lower() or "變更" in warnings
+
+
+def test_stale_result_warning_on_ticker_change_without_retrain():
+    at = _train_once()
+    assert not _no_retrain_warning_shown(at)  # fresh training run: no stale warning yet
+
+    text_inputs = [w for w in at.text_input if "custom" in (w.label or "").lower() or "ARKK" in (w.placeholder or "")]
+    assert text_inputs, "expected the custom-ticker text_input on the sidebar"
+    text_inputs[0].set_value("SPY")
+    at.run()
+    assert at.exception == []
+    assert _no_retrain_warning_shown(at), "changing the ticker without retraining must show the stale-result warning"
+
+
+def test_stale_result_warning_on_test_size_change_without_retrain():
+    at = _train_once()
+    sliders = [s for s in at.slider if "test" in (s.label or "").lower() or "測試" in (s.label or "")]
+    assert sliders, "expected the test-set-size slider on the sidebar"
+    original = sliders[0].value
+    sliders[0].set_value(original + 5 if original + 5 <= 40 else original - 5)
+    at.run()
+    assert at.exception == []
+    assert _no_retrain_warning_shown(at)
+
+
+def test_stale_result_warning_on_model_change_without_retrain():
+    at = _train_once()
+    selects = [s for s in at.selectbox if s.label and ("model" in s.label.lower() or "模型" in s.label)]
+    assert selects, "expected the model-type selectbox on the sidebar"
+    other_options = [o for o in selects[0].options if o != selects[0].value]
+    assert other_options
+    selects[0].set_value(other_options[0])
+    at.run()
+    assert at.exception == []
+    assert _no_retrain_warning_shown(at)
+
+
+def test_retraining_after_input_change_clears_stale_warning():
+    at = _train_once()
+    text_inputs = [w for w in at.text_input if "custom" in (w.label or "").lower() or "ARKK" in (w.placeholder or "")]
+    text_inputs[0].set_value("SPY")
+    at.run()
+    assert _no_retrain_warning_shown(at)
+
+    run_btn = next((b for b in at.button if "Train" in (b.label or "") or "訓練" in (b.label or "")), None)
+    run_btn.click()
+    at.run()
+    assert at.exception == []
+    assert not _no_retrain_warning_shown(at), "after retraining, the stale-result warning must clear"
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "SPY" in corpus

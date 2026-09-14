@@ -43,7 +43,8 @@ from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
     sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis
 )
-from src.database import save_portfolio, init_database
+from src.database import save_portfolio, init_database, find_duplicate_portfolio, APP_VERSION
+from src.risk_analytics import holdings_overlap_matrix
 from src.report_generator import generate_portfolio_report
 from src.charts import (
     efficient_frontier_chart, allocation_donut_chart,
@@ -190,6 +191,15 @@ with st.sidebar:
         format_func=lambda x: _horizon_labels.get(x, x), key="investment_horizon",
     )
     st.session_state[_hk] = investment_horizon
+
+    # Honest scope disclosure (Issue #20 section 3A): Investment Goal, Risk
+    # Tolerance, and Investment Horizon above are genuinely metadata/
+    # interpretation inputs only -- see the code comments on each widget --
+    # they do NOT change the optimizer's math (constraints, expected
+    # return/covariance estimation, or the chosen method's objective
+    # function below). Stated visibly here so the UI never implies
+    # personalization that isn't actually happening.
+    st.caption(f"ℹ️ {t('opt_investor_profile_scope_note')}")
 
     st.markdown("---")
 
@@ -495,6 +505,31 @@ st.session_state.current_portfolio = {
 }
 current_portfolio = st.session_state.current_portfolio
 
+# ── Experiment metadata (Issue #20 section 9C) ──────────────────────────────
+# Everything needed to understand/reproduce this specific run, saved as a
+# single versioned JSON blob alongside the portfolio (src.database.
+# save_portfolio(metadata=...)). Deliberately built from the SAME
+# already-computed variables as current_portfolio above -- not
+# independently re-derived -- so it can never drift from what the page
+# actually used for this optimization.
+_experiment_metadata = {
+    "schema_version": 1,
+    "historical_start_date": str(start_date),
+    "historical_end_date": str(end_date),
+    "market": selected_region,
+    "risk_free_rate": risk_free_rate,
+    "min_weight": min_weight,
+    "max_weight": max_weight,
+    "allow_short": allow_short,
+    "expected_return_estimator": "Historical CAGR (annualized_return)",
+    "covariance_estimator": "Sample covariance (historical, annualized)",
+    "strategy": optimization_method,
+    "asset_universe": list(weights.keys()),
+    "generated_at": st.session_state.get("opt_generated_at"),
+    "data_as_of": str(end_date),
+    "app_version": APP_VERSION,
+}
+
 # ── Core Result KPI Row (always visible, near the top -- PRODUCT SPEC
 # section 3) ─────────────────────────────────────────────────────────────────
 kcol1, kcol2, kcol3, kcol4, kcol5 = st.columns(5)
@@ -625,6 +660,35 @@ def _render_diagnosis_cards():
             f"{_diag['active_holdings']} / {_diag['selected_holdings']}",
             color=COLORS["warning"], icon="bar-chart",
         ), unsafe_allow_html=True)
+
+
+# Real underlying-holdings overlap explanation (Issue #20 section 3B): the
+# weight-based diagnosis above ("balanced"/"moderate"/"concentrated") can
+# call an equal-weight allocation across e.g. VOO/VTI/QQQ "balanced" by
+# TICKER weight alone, while those ETFs' underlying holdings actually
+# overlap heavily. This must never be asserted from vague wording -- only
+# from the SAME real holdings-overlap data src.risk_analytics.
+# holdings_overlap_matrix() already computes for Risk Analytics -- shown as
+# an opt-in check (fetches each ETF's underlying holdings on demand) so it
+# never runs automatically on every rerun, matching that page's pattern.
+def _render_holdings_overlap_check(active_tickers: list) -> None:
+    if len(active_tickers) < 2:
+        return
+    if st.checkbox(t("opt_diag_check_overlap_label"), value=False, key="opt_diag_check_overlap_cb"):
+        with st.spinner(t("risk_loading_holdings_overlap")):
+            overlap = holdings_overlap_matrix(active_tickers)
+        available_scores = [r["overlap_score"] for r in overlap.values() if r["available"]]
+        unavailable_pairs = [pair for pair, r in overlap.items() if not r["available"]]
+        if not available_scores:
+            st.caption(t("opt_diag_overlap_unavailable"))
+            return
+        avg_overlap = sum(available_scores) / len(available_scores)
+        if avg_overlap >= 0.30:
+            st.warning(t("opt_diag_overlap_high", overlap=f"{avg_overlap:.0%}"))
+        else:
+            st.caption(t("opt_diag_overlap_low", overlap=f"{avg_overlap:.0%}"))
+        if unavailable_pairs:
+            st.caption(t("opt_diag_overlap_partial", n=len(unavailable_pairs)))
 
 
 # ── Top-Level Workspace Navigation ───────────────────────────────────────────
@@ -829,7 +893,7 @@ elif opt_workspace == "Strategy Lab":
             returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
             mean_returns = returns_df.mean().values
             cov_df = covariance_matrix(prices_df)
-            cov = cov_df.values
+            cov = cov_df.values.copy()
 
             if cov.shape != (n_tickers, n_tickers):
                 error_state(
@@ -986,11 +1050,23 @@ elif opt_workspace == "Backtest & Risk":
         _render_diagnosis_cards()
         st.markdown(f"**{t('opt_diag_insight_title')}**  \n{_diag_summary_text()}")
         st.caption(t("opt_diag_weight_disclaimer"))
+        _render_holdings_overlap_check([tk for tk, w in weights.items() if w > 0])
 
 # ══════════════════════════════════════════════════════════════════════════
 # SAVE & ACTIONS -- Next Steps + Save / Export
 # ══════════════════════════════════════════════════════════════════════════
 else:  # opt_workspace == "Save & Actions"
+    # Computed once per rerun and reused by both the Quick Save button and
+    # the named Save & Export form below (previously each ran its own
+    # identical find_duplicate_portfolio() DB read against the same
+    # current_portfolio weights/strategy/amount every rerun of this
+    # workspace, including reruns triggered by unrelated widgets like
+    # typing in the notes field).
+    _current_dup_check = find_duplicate_portfolio(
+        current_portfolio["weights"], current_portfolio["strategy"],
+        current_portfolio["investment_amount"],
+    )
+
     # ── Next Steps (Portfolio Handoff) ──────────────────────────────────────
     # Navigation uses st.switch_page() (the same programmatic-navigation
     # mechanism already used in app.py / src/ui.py), which preserves the
@@ -1010,22 +1086,35 @@ else:  # opt_workspace == "Save & Actions"
             # One-click save with an auto-generated name (canonical English
             # strategy value). The named/annotated Save & Export form below
             # remains for users who want to customize the name or add notes.
-            _quick_name = (
-                f"{current_portfolio['strategy'].replace(' ', '_')}_"
-                f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
-            )
-            _quick_success = save_portfolio(
-                name=_quick_name, weights=current_portfolio["weights"],
-                investment_amount=current_portfolio["investment_amount"],
-                optimization_method=current_portfolio["strategy"],
-                expected_return=current_portfolio["expected_return"],
-                expected_volatility=current_portfolio["volatility"],
-                sharpe_ratio=current_portfolio["sharpe_ratio"], notes="",
-            )
-            if _quick_success:
-                st.success(t("opt_portfolio_saved_success", name=_quick_name))
+            # Issue #20 section 9D: a one-click "quick save" is exactly the
+            # flow most likely to spam identical rows (e.g. double-clicking,
+            # or clicking again after just re-viewing a workspace) -- this
+            # is the same pattern that produced 140 debug duplicates in the
+            # committed demo database, so a quick save never silently
+            # repeats an identical one; it points the user at the named
+            # Save & Export form instead, which supports an explicit
+            # "save anyway" confirmation.
+            _dup = _current_dup_check
+            if _dup:
+                st.warning(t("opt_duplicate_save_warning", name=_dup["name"]))
             else:
-                st.error(t("opt_portfolio_save_failed"))
+                _quick_name = (
+                    f"{current_portfolio['strategy'].replace(' ', '_')}_"
+                    f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+                )
+                _quick_success = save_portfolio(
+                    name=_quick_name, weights=current_portfolio["weights"],
+                    investment_amount=current_portfolio["investment_amount"],
+                    optimization_method=current_portfolio["strategy"],
+                    expected_return=current_portfolio["expected_return"],
+                    expected_volatility=current_portfolio["volatility"],
+                    sharpe_ratio=current_portfolio["sharpe_ratio"], notes="",
+                    metadata=_experiment_metadata,
+                )
+                if _quick_success:
+                    st.success(t("opt_portfolio_saved_success", name=_quick_name))
+                else:
+                    st.error(t("opt_portfolio_save_failed"))
 
     # ── Save & Download ──────────────────────────────────────────────────
     section_header(t("opt_save_export_title"))
@@ -1034,6 +1123,20 @@ else:  # opt_workspace == "Save & Actions"
     with col1:
         portfolio_name = st.text_input(t("field_portfolio_name"), value=f"Portfolio_{current_portfolio['strategy'].replace(' ', '_')}")
         notes = st.text_area(t("field_notes_optional"), height=80)
+        _named_dup = _current_dup_check
+        _confirm_dup_save = False
+        if _named_dup:
+            st.warning(t("opt_duplicate_save_warning", name=_named_dup["name"]))
+            # Keyed by the specific duplicate's ID (not a fixed key) --
+            # Streamlit persists a checkbox's checked state across reruns
+            # by key, so a fixed key would let confirming ONE duplicate
+            # (portfolio A) silently pre-confirm a LATER, different
+            # duplicate collision (portfolio B) in the same session without
+            # the user ever re-confirming for B specifically, defeating the
+            # whole point of this guard (Issue #20 section 9D).
+            _confirm_dup_save = st.checkbox(
+                t("opt_confirm_duplicate_save"), key=f"opt_confirm_dup_save_cb_{_named_dup['id']}",
+            )
         if st.button(t("btn_save_portfolio"), type="primary", key="opt_save_export_btn"):
             # Sourced from the canonical current_portfolio object (built
             # above, unconditionally) -- not independently recomputed
@@ -1041,18 +1144,22 @@ else:  # opt_workspace == "Save & Actions"
             # Efficient Frontier / Strategy Comparison show for the same
             # run. Strategy is stored in English (the canonical value)
             # regardless of which language was active when saved.
-            success = save_portfolio(
-                name=portfolio_name, weights=current_portfolio["weights"],
-                investment_amount=current_portfolio["investment_amount"],
-                optimization_method=current_portfolio["strategy"],
-                expected_return=current_portfolio["expected_return"],
-                expected_volatility=current_portfolio["volatility"],
-                sharpe_ratio=current_portfolio["sharpe_ratio"], notes=notes,
-            )
-            if success:
-                st.success(t("opt_portfolio_saved_success", name=portfolio_name))
+            if _named_dup and not _confirm_dup_save:
+                st.error(t("opt_duplicate_save_blocked"))
             else:
-                st.error(t("opt_portfolio_save_failed"))
+                success = save_portfolio(
+                    name=portfolio_name, weights=current_portfolio["weights"],
+                    investment_amount=current_portfolio["investment_amount"],
+                    optimization_method=current_portfolio["strategy"],
+                    expected_return=current_portfolio["expected_return"],
+                    expected_volatility=current_portfolio["volatility"],
+                    sharpe_ratio=current_portfolio["sharpe_ratio"], notes=notes,
+                    metadata=_experiment_metadata,
+                )
+                if success:
+                    st.success(t("opt_portfolio_saved_success", name=portfolio_name))
+                else:
+                    st.error(t("opt_portfolio_save_failed"))
 
     with col2:
         alloc_df_export = weights_to_dataframe(weights, investment_amount)
