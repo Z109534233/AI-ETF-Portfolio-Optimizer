@@ -30,7 +30,7 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html, g
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer,
     region_selector, region_etf_options, region_etf_multiselect,
-    render_current_portfolio_handoff,
+    render_current_portfolio_handoff, chart_caption, ai_interpret_button,
 )
 from src.i18n import (
     t, t_investment_objective, t_risk_level, t_country, get_language,
@@ -272,6 +272,11 @@ with tab_summary:
         with chart_card(t("ai_portfolio_overview_card")):
             fig_donut = allocation_donut_chart(port_ctx["weights"], "")
             st.plotly_chart(fig_donut, use_container_width=True, key="ai_advisor_allocation_donut")
+            chart_caption(t("ai_allocation_donut_caption"))
+            _alloc_context_text = "; ".join(
+                f"{tk}: {w:.2%}" for tk, w in sorted(port_ctx["weights"].items(), key=lambda kv: kv[1], reverse=True)
+            )
+            ai_interpret_button("ai_advisor_allocation_ai_interpret", st.session_state, _alloc_context_text)
 
     # ── Deterministic Data (computed, not AI-generated) ──────────────────
     section_header(t("ai_deterministic_data_title"))
