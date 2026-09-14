@@ -29,7 +29,7 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, dataframe_to_csv
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card,
-    render_footer, render_current_portfolio_handoff, error_state,
+    render_footer, render_current_portfolio_handoff, error_state, chart_caption,
 )
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, t_opt_method
@@ -657,6 +657,7 @@ with st.container(border=True):
     with tab1:
         fig_mc = monte_carlo_paths_chart(paths_df, t("chart_monte_carlo_simulation") + f" — {years}")
         st.plotly_chart(fig_mc, use_container_width=True, key="sim_monte_carlo_paths")
+        chart_caption(t("sim_monte_carlo_chart_caption"))
 
     with tab2:
         # Compound growth projection (deterministic)

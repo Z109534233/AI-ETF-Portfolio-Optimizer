@@ -59,7 +59,7 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
     region_selector, region_etf_options, region_etf_multiselect,
-    kpi_card,
+    kpi_card, chart_caption, ai_interpret_button,
 )
 from src.theme import COLORS
 from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
@@ -832,6 +832,9 @@ elif opt_workspace == "Allocation":
         with chart_card(t("opt_allocation_breakdown_card"), t_opt_method(optimization_method)):
             fig_donut = allocation_donut_chart(weights, "")
             st.plotly_chart(fig_donut, use_container_width=True, key="opt_allocation_donut")
+            chart_caption(t("opt_allocation_donut_caption"))
+            _alloc_context_text = "; ".join(f"{tk}: {w:.2%}" for tk, w in sorted(weights.items(), key=lambda kv: kv[1], reverse=True))
+            ai_interpret_button("opt_allocation_ai_interpret", st.session_state, _alloc_context_text)
 
 # ══════════════════════════════════════════════════════════════════════════
 # STRATEGY LAB -- Strategy Comparison / Efficient Frontier
