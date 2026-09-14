@@ -1346,6 +1346,11 @@ TRANSLATIONS = {
         "nav_market_intelligence": "市場情報中心",
         "mi_title": "市場情報中心",
         "mi_subtitle": "掌握今日市場動態、相關新聞，以及你的投資組合可能受到的影響。",
+        "mi_tab_overview": "總覽",
+        "mi_tab_news": "新聞",
+        "mi_tab_portfolio_impact": "投資組合影響",
+        "mi_tab_sentiment": "市場情緒",
+        "mi_tab_methodology": "方法論",
 
         "mi_section_overview_title": "今日市場總覽",
         "mi_section_news_title": "市場焦點新聞",
@@ -2790,6 +2795,11 @@ TRANSLATIONS = {
         "nav_market_intelligence": "Market Intelligence",
         "mi_title": "Market Intelligence Center",
         "mi_subtitle": "Stay on top of today's market moves, the news driving them, and how your portfolio may be affected.",
+        "mi_tab_overview": "Overview",
+        "mi_tab_news": "News",
+        "mi_tab_portfolio_impact": "Portfolio Impact",
+        "mi_tab_sentiment": "Sentiment",
+        "mi_tab_methodology": "Methodology",
 
         "mi_section_overview_title": "Today's Market Overview",
         "mi_section_news_title": "Breaking Market News",

@@ -1568,12 +1568,12 @@ def generate_todays_market_action(news_items: list) -> dict:
     calculate_regional_market_sentiment() exactly as already computed
     elsewhere on this page, not a second/different scoring pass.
 
-    Returns a dict: title ("📌 Today's Market Action", translated), items
+    Returns a dict: title ("Today's Market Action", translated), items
     (list of up to 3 display-safe bullet strings). When there is no news,
     items is a single neutral "not enough data" bullet.
     """
     lang = get_language()
-    title = "📌 今日觀察重點" if lang == "zh-TW" else "📌 Today's Watchlist"
+    title = "今日觀察重點" if lang == "zh-TW" else "Today's Watchlist"
 
     if not news_items:
         no_data = ("目前沒有足夠的新聞資料可產生今日行動建議。" if lang == "zh-TW"
