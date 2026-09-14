@@ -317,17 +317,17 @@ setup_summary_bar([
 
 # ── State Management ──────────────────────────────────────────────────────────
 # `run_inputs` fingerprints everything the optimization result depends on.
-# It is used two ways below: (1) to decide whether a fresh optimization is
-# needed at all (only on the very first render of this session, when there
-# is no result yet -- see the trigger condition just below), and (2) AFTER
-# a result exists, to detect that the sidebar has since diverged from
-# whatever produced it (Issue #24 item 5: the "Build Optimized Portfolio"
-# button is the ONE explicit trigger -- changing the country/ETF selection,
-# date range, or optimization method must invalidate the stale result with
-# a visible warning, never silently kick off a fresh optimization on its
-# own). Mirrors the same fingerprint-then-compare pattern already used by
-# Investment Simulator's Historical Simulation (`_hist_fingerprint` /
-# `sim_hist_inputs_changed_rerun`).
+# It is used AFTER a result exists, to detect that the sidebar has since
+# diverged from whatever produced it (Issue #24 item 5: the "Build Optimized
+# Portfolio" button is the ONE explicit trigger, on every render -- including
+# the very first one in a fresh session. A fresh session's opt_result is
+# None, but that alone must never kick off a download/FX/optimization pass;
+# only `run_btn` (checked just below) does. Changing the country/ETF
+# selection, date range, or optimization method after a build must
+# invalidate the stale result with a visible warning, never silently kick
+# off a fresh optimization on its own). Mirrors the same fingerprint-then-
+# compare pattern already used by Investment Simulator's Historical
+# Simulation (`_hist_fingerprint` / `sim_hist_inputs_changed_rerun`).
 run_inputs = (
     tuple(sorted(selected_etfs)), tuple(sorted(selected_regions)), str(start_date), str(end_date),
     optimization_method, round(min_weight, 6), round(max_weight, 6),
@@ -341,7 +341,7 @@ if "prices_df" not in st.session_state:
 if "opt_run_inputs" not in st.session_state:
     st.session_state.opt_run_inputs = None
 
-if run_btn or st.session_state.opt_result is None:
+if run_btn:
     with st.spinner(t("msg_running_optimization")):
         # Map display tickers to their actual Yahoo Finance-fetchable symbols
         # (e.g. "0050" -> "0050.TW"); tickers not in the ETF database pass

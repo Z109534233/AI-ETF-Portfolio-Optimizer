@@ -1105,6 +1105,80 @@ def test_pd_f_switch_strategy_updates_diagnosis():
               f"expected {expected_active!r} in corpus")
 
 
+# ── RUN-A: fresh first render must do zero price downloads / FX / optimizer
+# work -- "Build Optimized Portfolio" is the ONE explicit trigger, even on a
+# brand-new session where opt_result starts out None (Issue #24 item 5
+# follow-up: `if run_btn or st.session_state.opt_result is None:` used to
+# also fire on first load). Instruments download_etf_data() with a real
+# call counter rather than only inspecting session_state afterwards, since
+# a counter is the only way to prove the download path itself never ran.
+def test_run_a_no_download_before_explicit_build_click():
+    import src.data_loader as data_loader_mod
+    import streamlit as st
+
+    st.page_link = lambda *a, **k: None
+
+    call_count = {"n": 0}
+    original = data_loader_mod.download_etf_data
+
+    def _counting_download(tickers, start_date, end_date, price_field="Close"):
+        call_count["n"] += 1
+        return original(tickers, start_date, end_date, price_field)
+
+    data_loader_mod.download_etf_data = _counting_download
+    try:
+        at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at.session_state["language"] = "en"
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-A.no_exception_on_initial_render", exc is None, str(exc))
+        if exc:
+            return
+
+        check("RUN-A.zero_downloads_on_initial_render", call_count["n"] == 0, call_count["n"])
+        check("RUN-A.no_result_on_initial_render", at.session_state["opt_result"] is None,
+              at.session_state["opt_result"])
+        check("RUN-A.no_current_portfolio_on_initial_render",
+              "current_portfolio" not in at.session_state, "current_portfolio unexpectedly present")
+        info_corpus = "\n".join(i.value for i in at.info)
+        check("RUN-A.build_empty_state_shown", "Build Optimized Portfolio" in info_corpus, info_corpus)
+
+        # Changing a sidebar input on this still-unbuilt page must likewise
+        # never trigger a download on its own.
+        ms = None
+        for w in at.multiselect:
+            if w.key and w.key.startswith("selected_etfs_"):
+                ms = w
+                break
+        check("RUN-A.etf_multiselect_present", ms is not None)
+        if ms is None:
+            return
+        available = [tk for tk in _EF_TEST_TICKERS if tk in ms.options]
+        if available:
+            ms.set_value(available)
+            at.run()
+        check("RUN-A.still_zero_downloads_after_widget_change", call_count["n"] == 0, call_count["n"])
+        check("RUN-A.still_no_result_after_widget_change", at.session_state["opt_result"] is None,
+              at.session_state["opt_result"])
+
+        run_btn = _find_run_button(at)
+        check("RUN-A.run_button_present", run_btn is not None)
+        if run_btn is None:
+            return
+        run_btn.click()
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-A.no_exception_after_build_click", exc is None, str(exc))
+        if exc:
+            return
+
+        check("RUN-A.exactly_one_download_after_build_click", call_count["n"] == 1, call_count["n"])
+        check("RUN-A.result_present_after_build_click", at.session_state["opt_result"] is not None,
+              at.session_state["opt_result"])
+    finally:
+        data_loader_mod.download_etf_data = original
+
+
 # ── PD-G: zh-TW renders the diagnosis section with no raw translation keys ──
 def test_pd_g_zh_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
@@ -3824,6 +3898,7 @@ def main():
     _run(test_pd_d_effective_holdings_formula)
     _run(test_pd_e_no_side_effects_on_rerender)
     _run(test_pd_f_switch_strategy_updates_diagnosis)
+    _run(test_run_a_no_download_before_explicit_build_click)
     _run(test_pd_g_zh_no_raw_keys)
     _run(test_pd_h_en_no_raw_keys)
     _run(test_pd_i_tooltips_present)
