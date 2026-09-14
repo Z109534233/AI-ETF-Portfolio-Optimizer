@@ -33,7 +33,13 @@ CURATED_PORTFOLIOS = [
         "name": "US_Balanced",
         "weights": {"VOO": 0.40, "VXUS": 0.20, "BND": 0.30, "GLD": 0.10},
         "investment_amount": 10000.0,
-        "optimization_method": "Equal Weight",
+        # NOT "Equal Weight" -- these weights are a deliberately unequal
+        # 40/20/30/10 tilt, not a 1/N split. Labeling non-equal weights
+        # "Equal Weight" is a false optimization-method claim (Issue #20
+        # release-gate review); "Custom Allocation" is an honest label the
+        # app's t_opt_method() already falls back to displaying verbatim
+        # for any strategy string outside its five real optimizer methods.
+        "optimization_method": "Custom Allocation",
         "expected_return": 0.075, "expected_volatility": 0.11, "sharpe_ratio": 0.50,
         "notes": "Curated demo example -- diversified US-listed balanced allocation across equities, ex-US equities, bonds and gold.",
         "metadata": {
@@ -42,7 +48,7 @@ CURATED_PORTFOLIOS = [
             "risk_free_rate": 0.03, "min_weight": 0.0, "max_weight": 1.0, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",
             "covariance_estimator": "Sample covariance (historical, annualized)",
-            "strategy": "Equal Weight", "asset_universe": ["VOO", "VXUS", "BND", "GLD"],
+            "strategy": "Custom Allocation", "asset_universe": ["VOO", "VXUS", "BND", "GLD"],
             "data_as_of": "2024-01-01", "app_version": dbmod.APP_VERSION,
         },
     },
@@ -101,7 +107,8 @@ CURATED_PORTFOLIOS = [
         "name": "UK_UCITS_Diversified",
         "weights": {"VWRL": 0.50, "VGOV": 0.30, "VUKE": 0.20},
         "investment_amount": 10000.0,
-        "optimization_method": "Equal Weight",
+        # See US_Balanced above -- 50/30/20 is not an equal (1/3 each) split.
+        "optimization_method": "Custom Allocation",
         "expected_return": 0.068, "expected_volatility": 0.10, "sharpe_ratio": 0.48,
         "notes": "Curated demo example -- UK-listed UCITS ETFs spanning global equities, gilts and UK large-cap.",
         "metadata": {
@@ -110,7 +117,7 @@ CURATED_PORTFOLIOS = [
             "risk_free_rate": 0.04, "min_weight": 0.0, "max_weight": 1.0, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",
             "covariance_estimator": "Sample covariance (historical, annualized)",
-            "strategy": "Equal Weight", "asset_universe": ["VWRL", "VGOV", "VUKE"],
+            "strategy": "Custom Allocation", "asset_universe": ["VWRL", "VGOV", "VUKE"],
             "data_as_of": "2024-01-01", "app_version": dbmod.APP_VERSION,
         },
     },

@@ -13,7 +13,14 @@ gets back the SAME Trend Signal / Quant Score / Portfolio View / Signal
 Agreement, so the numbers can never disagree with each other.
 
 Three explicitly distinct, non-overlapping constructs (per the issue):
-  - Trend Signal: Bullish / Neutral / Bearish -- recent price direction only.
+  - Trend Signal: Bullish / Neutral / Bearish -- based ONLY on the trailing
+    TREND_LOOKBACK_DAYS-trading-day return (recent_trend_return()), never
+    the full selected-date-range annualized return. A ticker with a strong
+    multi-year annualized_return but a negative last-quarter move must be
+    able to show Bearish here -- that is the whole point of a "recent
+    direction" label, and pinning it to the full-window return (as an
+    earlier version of this module did) made the label false for any
+    window longer than the recent move it claims to describe.
   - Quant Score: 0-100, combining return, risk and momentum.
   - Portfolio View: Underweight / Neutral / Overweight -- a research framing
     derived from the Quant Score, NOT a Buy/Sell instruction.
@@ -45,17 +52,45 @@ VIEW_OVERWEIGHT, VIEW_NEUTRAL, VIEW_UNDERWEIGHT = "Overweight", "Neutral", "Unde
 # same confidence as a fully-populated series.
 MIN_RELIABLE_HISTORY_POINTS = 10
 
+# Trend Signal's lookback: ~1 trading quarter, deliberately much shorter
+# than the Quant Score's annualized_return window so the two can genuinely
+# disagree (e.g. a ticker up strongly over the full selected range but down
+# over the last quarter shows Bullish score inputs alongside a Bearish
+# Trend Signal -- exactly the "these signals may differ" case the page's
+# semantics note discloses, not a bug).
+TREND_LOOKBACK_DAYS = 60
+
 
 def has_sufficient_history(p) -> bool:
     return len(p) >= MIN_RELIABLE_HISTORY_POINTS
 
 
-def trend_signal_from_return(ann_ret: float) -> str:
+def recent_trend_return(p: pd.Series) -> float:
+    """Trailing ~TREND_LOOKBACK_DAYS-trading-day price return -- the ONLY
+    input to Trend Signal. Distinct from annualized_return(p) (used for the
+    Quant Score and the Overview return KPI), which reflects the full
+    user-selected date range and can span years.
+
+    Falls back to the longest window the series actually has (down to a
+    single period) rather than returning NaN on thin-history tickers --
+    has_sufficient_history() already gates whether the result is reliable
+    enough to display.
+    """
+    if len(p) < 2:
+        return 0.0
+    window = min(TREND_LOOKBACK_DAYS, len(p) - 1)
+    value = momentum(p, window).iloc[-1]
+    return float(value) if pd.notna(value) else 0.0
+
+
+def trend_signal_from_return(recent_ret: float) -> str:
     """Same thresholds as the page's KPI-row Trend chip -- this is the ONE
-    definition of Trend Signal used everywhere on the page."""
-    if ann_ret > 0.05:
+    definition of Trend Signal used everywhere on the page. `recent_ret`
+    must be a recent-window return (recent_trend_return()), not the full
+    selected-range annualized return."""
+    if recent_ret > 0.05:
         return TREND_BULLISH
-    if ann_ret < -0.05:
+    if recent_ret < -0.05:
         return TREND_BEARISH
     return TREND_NEUTRAL
 
@@ -73,10 +108,12 @@ def compute_quant_signals(p: pd.Series, risk_free_rate: float) -> dict:
 
     Returns the canonical dict every workspace on the ETF Analysis page
     reads from -- score/trend/portfolio_view/signal_agreement plus the raw
-    inputs (ret_ann, vol, sharpe, mdd, mom) so callers can build their own
-    rule-based commentary without recomputing any of them differently.
+    inputs (ret_ann, ret_recent, vol, sharpe, mdd, mom) so callers can build
+    their own rule-based commentary without recomputing any of them
+    differently.
     """
     ann_ret = annualized_return(p)
+    recent_ret = recent_trend_return(p)
     vol = annualized_volatility(p)
     sr = sharpe_ratio(p, risk_free_rate)
     mdd = maximum_drawdown(p)
@@ -94,9 +131,13 @@ def compute_quant_signals(p: pd.Series, risk_free_rate: float) -> dict:
     score -= max(0, min(22, abs(mdd) * 55))
     score = int(round(max(0, min(100, score))))
 
-    trend = trend_signal_from_return(ann_ret)
+    trend = trend_signal_from_return(recent_ret)
     portfolio_view = portfolio_view_from_score(score)
 
+    # Signal Agreement: the literal fraction of these four Quant-Score
+    # inputs that agree with the score's own direction, expressed as a
+    # percentage (0-100) -- NOT a statistical confidence interval, and
+    # never rescaled/floored, or the label would stop meaning what it says.
     signs = [
         1 if ann_ret > 0 else (-1 if ann_ret < 0 else 0),
         1 if sr > 0 else (-1 if sr < 0 else 0),
@@ -105,13 +146,12 @@ def compute_quant_signals(p: pd.Series, risk_free_rate: float) -> dict:
     ]
     overall_sign = 1 if score >= 50 else -1
     agreement = sum(1 for s in signs if s == overall_sign) / len(signs)
-    signal_agreement = round(55 + agreement * 40)
-    if vol > 0.30:
-        signal_agreement = max(50, signal_agreement - 5)
+    signal_agreement = round(agreement * 100)
 
     return {
         "score": score, "trend": trend, "portfolio_view": portfolio_view,
-        "signal_agreement": signal_agreement, "ret_ann": ann_ret, "vol": vol,
+        "signal_agreement": signal_agreement, "ret_ann": ann_ret,
+        "ret_recent": recent_ret, "vol": vol,
         "sharpe": sr, "mdd": mdd, "mom": mom, "price": price_now,
         "ma_short": ma_short, "ma_long": ma_long,
     }
@@ -143,6 +183,7 @@ def build_interpretation_prompt(ticker: str, lang: str, window_start, window_end
             f"標的：{ticker}\n"
             f"資料區間：{window_start} 至 {window_end}\n"
             f"年化報酬率：{signals['ret_ann']:.2%}\n"
+            f"近 {TREND_LOOKBACK_DAYS} 個交易日報酬率（Trend Signal 依據）：{signals['ret_recent']:.2%}\n"
             f"年化波動度：{signals['vol']:.2%}\n"
             f"夏普比率：{signals['sharpe']:.2f}\n"
             f"最大回撤：{signals['mdd']:.2%}\n"
@@ -157,6 +198,7 @@ def build_interpretation_prompt(ticker: str, lang: str, window_start, window_end
         f"Ticker: {ticker}\n"
         f"Data window: {window_start} to {window_end}\n"
         f"Annualized return: {signals['ret_ann']:.2%}\n"
+        f"Trailing {TREND_LOOKBACK_DAYS}-trading-day return (basis for Trend Signal): {signals['ret_recent']:.2%}\n"
         f"Annualized volatility: {signals['vol']:.2%}\n"
         f"Sharpe ratio: {signals['sharpe']:.2f}\n"
         f"Maximum drawdown: {signals['mdd']:.2%}\n"
@@ -174,7 +216,7 @@ def interpretation_fingerprint(ticker: str, lang: str, window_start, window_end,
     return _fingerprint(
         ticker, lang, window_start, window_end, signals["score"], signals["trend"],
         signals["portfolio_view"], signals["signal_agreement"],
-        round(signals["ret_ann"], 4), round(signals["vol"], 4),
+        round(signals["ret_ann"], 4), round(signals["ret_recent"], 4), round(signals["vol"], 4),
         round(signals["sharpe"], 4), round(signals["mdd"], 4), round(signals["mom"], 4),
     )
 

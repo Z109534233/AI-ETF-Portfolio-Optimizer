@@ -51,7 +51,8 @@ from src.ui import (
 )
 from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
 from src.etf_signals import (
-    compute_quant_signals, trend_signal_from_return, generate_etf_interpretation, has_sufficient_history,
+    compute_quant_signals, trend_signal_from_return, recent_trend_return,
+    generate_etf_interpretation, has_sufficient_history,
 )
 
 st.set_page_config(
@@ -226,7 +227,7 @@ _k_ret = annualized_return(_focus_p)
 _k_vol = annualized_volatility(_focus_p)
 _k_sharpe = sharpe_ratio(_focus_p, risk_free_rate)
 _k_mdd = maximum_drawdown(_focus_p)
-_k_trend = trend_signal_from_return(_k_ret)
+_k_trend = trend_signal_from_return(recent_trend_return(_focus_p))
 _K_TREND_META = {"Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)")}
 _k_emoji, _k_color = _K_TREND_META[_k_trend]
 kcol1, kcol2, kcol3, kcol4, kcol5 = st.columns(5)
