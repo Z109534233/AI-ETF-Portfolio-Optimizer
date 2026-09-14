@@ -1,13 +1,14 @@
 """
-Authentication Architecture (Issue #22 section C)
+Authentication Architecture (Issue #22 section C, extended by Issue #26)
 
 Uses Streamlit's own native auth (st.login / st.logout / st.user), which is
 an OpenID Connect (OIDC) client built into Streamlit itself -- no third-party
-auth library or hard-coded credentials are added by this module. Streamlit's
-native auth requires a [auth] section in .streamlit/secrets.toml pointing at
-a real OIDC provider (Google, Microsoft Entra ID, Auth0, Okta, or any other
-OIDC-compliant identity provider); see README/AUTH.md for the exact
-deployment steps, since committing real provider credentials into this repo
+auth library or hard-coded credentials are added by this module (Authlib is
+a runtime dependency Streamlit's native auth needs, not a separate auth
+implementation of ours). Streamlit's native auth requires a [auth] section in
+.streamlit/secrets.toml pointing at a real OIDC provider (Google is the
+supported/documented provider for this app; see README/AUTH.md for the exact
+deployment steps), since committing real provider credentials into this repo
 would be a secret leak.
 
 Design goal (Issue #22 section C): the app must NEVER become inaccessible to
@@ -20,11 +21,22 @@ Watchlist, Daily Brief) simply operate on the shared "demo" namespace for
 anonymous visitors, exactly as they did before auth existed -- this is what
 "existing anonymous/demo DB data remains backward compatible" means in
 practice (src/database.py's DEFAULT_USER_ID is the same constant used here).
+
+Issue #26 adds the other half of that same rule as an opt-in: require_login()
+is a central page guard that only starts requiring Google sign-in once an
+operator actually deploys [auth] secrets -- a fresh checkout with no secrets
+configured stays the same open public demo described above. See
+pages/9_Login.py for the dedicated login page require_login() redirects to,
+and render_account_section() for the compact sidebar widget every page picks
+up via src.ui.render_sidebar_nav().
 """
 
 import streamlit as st
 
 from src.database import DEFAULT_USER_ID
+from src.i18n import t
+
+LOGIN_PAGE = "pages/9_Login.py"
 
 
 def is_auth_configured() -> bool:
@@ -83,20 +95,42 @@ def get_current_user_display_name() -> str:
         return ""
 
 
-def render_auth_status(sign_in_label: str, sign_out_label: str, signed_in_as_label: str) -> None:
-    """Compact sign-in/sign-out control. Renders nothing but a disabled
-    "not configured" caption when [auth] isn't deployed, so this is always
-    safe to call from any page regardless of deployment state -- it never
-    blocks the rest of the page from rendering.
+def require_login() -> None:
+    """Central page guard (Issue #26) -- call once, near the top of every
+    page, right after st.set_page_config(). If this deployment has real
+    Google OIDC secrets configured (is_auth_configured()) and the current
+    visitor hasn't completed sign-in yet, this stops the current page from
+    rendering and sends them to the dedicated login page (LOGIN_PAGE)
+    instead.
+
+    A deployment with no [auth] secrets configured at all -- including
+    every checkout of this repo before a deployer opts in -- gets a no-op
+    here and keeps behaving exactly like the pre-Issue#26 public demo: this
+    guard can only ever make the app MORE restrictive than "always open",
+    never less, and only once an operator has actually turned Google
+    sign-in on.
     """
     if not is_auth_configured():
-        st.caption(sign_in_label + " — " + "not configured for this deployment")
         return
     if is_authenticated():
-        name = get_current_user_display_name()
-        st.caption(f"{signed_in_as_label}: {name}")
-        if st.button(sign_out_label, key="auth_sign_out_btn"):
-            st.logout()
-    else:
-        if st.button(sign_in_label, key="auth_sign_in_btn", type="primary"):
-            st.login()
+        return
+    st.switch_page(LOGIN_PAGE)
+
+
+def render_account_section() -> None:
+    """Compact signed-in account widget for the sidebar (Issue #26). Called
+    once inside src.ui.render_sidebar_nav(), so every page picks it up
+    automatically without each page having to render it itself.
+
+    Deliberately silent (renders nothing) unless the visitor is actually
+    signed in: require_login() already keeps anyone else off these pages
+    once auth is configured, and a deployment with no [auth] secrets has no
+    account concept to show at all -- exactly the same "never add visible
+    clutter to the public demo" rule the rest of this module follows.
+    """
+    if not is_authenticated():
+        return
+    st.markdown(f"### {t('auth_account_section_title')}")
+    st.caption(f"{t('auth_signed_in_as')}: {get_current_user_display_name()}")
+    if st.button(t("auth_sign_out"), key="sidebar_auth_sign_out_btn", use_container_width=True):
+        st.logout()

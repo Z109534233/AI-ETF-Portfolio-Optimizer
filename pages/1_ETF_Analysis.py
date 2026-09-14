@@ -54,12 +54,15 @@ from src.etf_signals import (
     compute_quant_signals, trend_signal_from_return, recent_trend_return,
     generate_etf_interpretation, has_sufficient_history,
 )
+from src.auth import require_login
 
 st.set_page_config(
     page_title="ETF Analysis | AI ETF Portfolio Optimizer",
     page_icon="📊",
     layout="wide"
 )
+
+require_login()
 
 load_css()
 

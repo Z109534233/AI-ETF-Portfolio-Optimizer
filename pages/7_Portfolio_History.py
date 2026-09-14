@@ -33,7 +33,7 @@ from src.ui import (
     chart_card, render_footer, empty_state, error_state, status_card,
 )
 from src.i18n import t, t_opt_method, t_country, t_goal_target_mode, t_goal_risk, t_goal_status
-from src.auth import get_current_user_id, is_authenticated, render_auth_status
+from src.auth import get_current_user_id, is_authenticated, require_login
 from src.goal_planner import (
     build_goal_plan, VALID_TARGET_MODES, VALID_MARKET_PREFERENCES,
     VALID_RISK_TOLERANCES, VALID_BASE_CURRENCIES,
@@ -48,6 +48,8 @@ st.set_page_config(
     layout="wide"
 )
 
+require_login()
+
 load_css()
 init_database()
 
@@ -55,8 +57,6 @@ page_header(t("my_portfolio_title"), t("my_portfolio_subtitle"))
 
 with st.sidebar:
     render_sidebar_nav()
-    st.markdown(f"### {t('my_portfolio_title')}")
-    render_auth_status(t("mp_auth_sign_in"), t("mp_auth_sign_out"), t("mp_auth_signed_in_as"))
     render_sidebar_footer()
 
 current_user_id = get_current_user_id()

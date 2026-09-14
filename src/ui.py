@@ -13,6 +13,7 @@ from src.i18n import t, t_country, t_opt_method, language_selector, get_language
 from src.etf_database import get_countries, get_tickers_by_country, get_etf
 from src.data_loader import DEFAULT_ETFS
 from src.financial_metrics import ACTIVE_POSITION_TOLERANCE
+from src.auth import render_account_section
 import src.openai_service as _openai_service
 
 # ── Global Market / Region Selector ─────────────────────────────────────────
@@ -425,10 +426,16 @@ NAV_ITEMS = [
 
 
 def render_sidebar_nav() -> None:
-    """Render the language switcher, branded product header, and primary
-    navigation list. The currently active page is highlighted automatically
-    by Streamlit (st.page_link sets aria-current="page"), styled via
-    assets/style.css.
+    """Render the language switcher, branded product header, primary
+    navigation list, and (Issue #26) the compact signed-in account section.
+    The currently active page is highlighted automatically by Streamlit
+    (st.page_link sets aria-current="page"), styled via assets/style.css.
+
+    render_account_section() is called last, here, so every page that calls
+    render_sidebar_nav() (which is all of them -- app.py and every page in
+    pages/) automatically gets the account widget without each page having
+    to wire it in separately; see src/auth.py for why it renders nothing
+    unless the visitor is actually signed in.
     """
     language_selector()
 
@@ -445,6 +452,8 @@ def render_sidebar_nav() -> None:
     st.markdown(f'<div class="sidebar-nav-label">{t("nav_section_label")}</div>', unsafe_allow_html=True)
     for item in NAV_ITEMS:
         st.page_link(item["page"], label=t(item["label_key"]), icon=item.get("icon"))
+
+    render_account_section()
 
 
 def render_sidebar_footer() -> None:
