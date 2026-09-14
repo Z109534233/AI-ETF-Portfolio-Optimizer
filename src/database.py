@@ -347,10 +347,11 @@ def add_user_holding(user_id: str, ticker: str, quantity: float, average_cost: f
     the supported ETF universe) is enforced by the CALLER before this is
     invoked -- this function only persists, it does not re-validate, so it
     stays reusable for any future bulk-import path."""
-    session = get_session()
-    if session is None:
-        return False
+    session = None
     try:
+        session = get_session()
+        if session is None:
+            return False
         session.add(UserHolding(
             user_id=user_id, ticker=ticker, quantity=float(quantity),
             average_cost=float(average_cost), currency=currency, purchase_date=purchase_date,
@@ -358,21 +359,28 @@ def add_user_holding(user_id: str, ticker: str, quantity: float, average_cost: f
         session.commit()
         return True
     except Exception as e:
-        session.rollback()
+        if session is not None:
+            session.rollback()
         print(f"Error adding holding: {e}")
         return False
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
 def load_user_holdings(user_id: str) -> list:
     """All holdings lots for one user, oldest first. Returns [] (never
     raises) on any DB error, matching load_all_portfolios()'s default
-    fail-safe behavior."""
-    session = get_session()
-    if session is None:
-        return []
+    fail-safe behavior. `get_session()` itself is inside this try block
+    (unlike the failure mode it can't normally hit -- init_database()
+    swallows its own errors and returns None -- a caller reaching in to
+    simulate a harder failure, e.g. a monkeypatched get_session that
+    raises, must still get [] here, not an unhandled exception)."""
+    session = None
     try:
+        session = get_session()
+        if session is None:
+            return []
         rows = (session.query(UserHolding)
                 .filter(UserHolding.user_id == user_id)
                 .order_by(UserHolding.created_at.asc()).all())
@@ -389,16 +397,18 @@ def load_user_holdings(user_id: str) -> list:
         print(f"Error loading holdings: {e}")
         return []
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
 def delete_user_holding(user_id: str, holding_id: int) -> bool:
     """Delete one holding lot. Scoped to `user_id` so one user can never
     delete another user's row even if they guess/replay an id."""
-    session = get_session()
-    if session is None:
-        return False
+    session = None
     try:
+        session = get_session()
+        if session is None:
+            return False
         row = (session.query(UserHolding)
                .filter(UserHolding.id == holding_id, UserHolding.user_id == user_id).first())
         if row:
@@ -407,11 +417,13 @@ def delete_user_holding(user_id: str, holding_id: int) -> bool:
             return True
         return False
     except Exception as e:
-        session.rollback()
+        if session is not None:
+            session.rollback()
         print(f"Error deleting holding: {e}")
         return False
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
 # ── Watchlist (Issue #22 section D) ─────────────────────────────────────────
@@ -419,10 +431,11 @@ def add_watchlist_item(user_id: str, ticker: str) -> bool:
     """Add a ticker to a user's watchlist. Silently no-ops (returns True
     without inserting a duplicate row) if the ticker is already on this
     user's watchlist, so repeated clicks can never create duplicate rows."""
-    session = get_session()
-    if session is None:
-        return False
+    session = None
     try:
+        session = get_session()
+        if session is None:
+            return False
         existing = (session.query(WatchlistItem)
                     .filter(WatchlistItem.user_id == user_id, WatchlistItem.ticker == ticker).first())
         if existing:
@@ -431,20 +444,24 @@ def add_watchlist_item(user_id: str, ticker: str) -> bool:
         session.commit()
         return True
     except Exception as e:
-        session.rollback()
+        if session is not None:
+            session.rollback()
         print(f"Error adding watchlist item: {e}")
         return False
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
 def load_watchlist(user_id: str) -> list:
     """All tickers on one user's watchlist, oldest first. Returns [] on
-    any DB error."""
-    session = get_session()
-    if session is None:
-        return []
+    any DB error (see load_user_holdings()'s docstring for why get_session()
+    itself is inside this try block)."""
+    session = None
     try:
+        session = get_session()
+        if session is None:
+            return []
         rows = (session.query(WatchlistItem)
                 .filter(WatchlistItem.user_id == user_id)
                 .order_by(WatchlistItem.created_at.asc()).all())
@@ -454,16 +471,18 @@ def load_watchlist(user_id: str) -> list:
         print(f"Error loading watchlist: {e}")
         return []
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
 def remove_watchlist_item(user_id: str, item_id: int) -> bool:
     """Remove one watchlist entry. Scoped to `user_id` (same reasoning as
     delete_user_holding() above)."""
-    session = get_session()
-    if session is None:
-        return False
+    session = None
     try:
+        session = get_session()
+        if session is None:
+            return False
         row = (session.query(WatchlistItem)
                .filter(WatchlistItem.id == item_id, WatchlistItem.user_id == user_id).first())
         if row:
@@ -472,11 +491,13 @@ def remove_watchlist_item(user_id: str, item_id: int) -> bool:
             return True
         return False
     except Exception as e:
-        session.rollback()
+        if session is not None:
+            session.rollback()
         print(f"Error removing watchlist item: {e}")
         return False
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
 def save_simulation(initial_investment: float, monthly_contribution: float,
