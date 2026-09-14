@@ -17,6 +17,15 @@ portfolios using real, currently-supported tickers:
 
 This DELETES and recreates database/portfolio.db. Never run this against
 a database containing real user data you want to keep.
+
+Every entry's expected_return/expected_volatility/sharpe_ratio below is a
+hand-authored illustrative figure -- NOT computed by running the app's real
+optimizer against downloaded historical prices (there is no live
+market-data fetch in this script). Each entry's metadata therefore carries
+"synthetic_demo": True, which pages/7_Portfolio_History.py reads to render
+an explicit "Curated Demo Example" badge wherever these rows are displayed,
+so they can never be mistaken for a live optimization result (Issue #20
+release-gate review, automated PR reviewer finding).
 """
 
 import os
@@ -43,7 +52,7 @@ CURATED_PORTFOLIOS = [
         "expected_return": 0.075, "expected_volatility": 0.11, "sharpe_ratio": 0.50,
         "notes": "Curated demo example -- diversified US-listed balanced allocation across equities, ex-US equities, bonds and gold.",
         "metadata": {
-            "schema_version": 1, "market": "United States",
+            "schema_version": 1, "synthetic_demo": True, "market": "United States",
             "historical_start_date": "2019-01-01", "historical_end_date": "2024-01-01",
             "risk_free_rate": 0.03, "min_weight": 0.0, "max_weight": 1.0, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",
@@ -60,7 +69,7 @@ CURATED_PORTFOLIOS = [
         "expected_return": 0.135, "expected_volatility": 0.19, "sharpe_ratio": 0.66,
         "notes": "Curated demo example -- growth-tilted, optimized for risk-adjusted return.",
         "metadata": {
-            "schema_version": 1, "market": "United States",
+            "schema_version": 1, "synthetic_demo": True, "market": "United States",
             "historical_start_date": "2019-01-01", "historical_end_date": "2024-01-01",
             "risk_free_rate": 0.03, "min_weight": 0.0, "max_weight": 0.7, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",
@@ -77,7 +86,7 @@ CURATED_PORTFOLIOS = [
         "expected_return": 0.058, "expected_volatility": 0.065, "sharpe_ratio": 0.43,
         "notes": "Curated demo example -- optimized to minimize portfolio volatility.",
         "metadata": {
-            "schema_version": 1, "market": "United States",
+            "schema_version": 1, "synthetic_demo": True, "market": "United States",
             "historical_start_date": "2019-01-01", "historical_end_date": "2024-01-01",
             "risk_free_rate": 0.03, "min_weight": 0.0, "max_weight": 0.7, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",
@@ -94,7 +103,7 @@ CURATED_PORTFOLIOS = [
         "expected_return": 0.095, "expected_volatility": 0.17, "sharpe_ratio": 0.51,
         "notes": "Curated demo example -- Taiwan-listed broad-market growth allocation.",
         "metadata": {
-            "schema_version": 1, "market": "Taiwan",
+            "schema_version": 1, "synthetic_demo": True, "market": "Taiwan",
             "historical_start_date": "2019-01-01", "historical_end_date": "2024-01-01",
             "risk_free_rate": 0.015, "min_weight": 0.0, "max_weight": 1.0, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",
@@ -112,7 +121,7 @@ CURATED_PORTFOLIOS = [
         "expected_return": 0.068, "expected_volatility": 0.10, "sharpe_ratio": 0.48,
         "notes": "Curated demo example -- UK-listed UCITS ETFs spanning global equities, gilts and UK large-cap.",
         "metadata": {
-            "schema_version": 1, "market": "United Kingdom",
+            "schema_version": 1, "synthetic_demo": True, "market": "United Kingdom",
             "historical_start_date": "2019-01-01", "historical_end_date": "2024-01-01",
             "risk_free_rate": 0.04, "min_weight": 0.0, "max_weight": 1.0, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",
@@ -129,7 +138,7 @@ CURATED_PORTFOLIOS = [
         "expected_return": 0.082, "expected_volatility": 0.13, "sharpe_ratio": 0.49,
         "notes": "Curated demo example -- cross-market allocation spanning US, UK-listed global, and Taiwan-listed ETFs.",
         "metadata": {
-            "schema_version": 1, "market": None,
+            "schema_version": 1, "synthetic_demo": True, "market": None,
             "historical_start_date": "2019-01-01", "historical_end_date": "2024-01-01",
             "risk_free_rate": 0.03, "min_weight": 0.0, "max_weight": 1.0, "allow_short": False,
             "expected_return_estimator": "Historical CAGR (annualized_return)",

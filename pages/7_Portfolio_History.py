@@ -159,9 +159,11 @@ for p in portfolios:
     except (TypeError, ValueError):
         holdings_str = "—"
         _has_corrupt_record = True
+    _is_synthetic_demo = bool((p.get("metadata") or {}).get("synthetic_demo"))
+    _display_name = (p["name"] or "—") + (t("hist_demo_portfolio_name_suffix") if _is_synthetic_demo else "")
     summary_rows.append({
         "ID": p["id"],
-        t("hist_col_name"): p["name"] or "—",
+        t("hist_col_name"): _display_name,
         t("hist_col_created"): p["created_at"],
         t("hist_col_method"): t_opt_method(p["optimization_method"]) if p["optimization_method"] else "—",
         t("hist_col_investment"): f"${_safe_num(p['investment_amount'])}",
@@ -198,9 +200,17 @@ if selected_portfolio:
 
     _current = st.session_state.get("current_portfolio")
     _is_current = bool(_current and _current.get("portfolio_id") == f"history-{selected_portfolio['id']}")
+    # An unmissable badge for the committed demo DB's curated example rows
+    # (scripts/reset_demo_portfolio_history.py) -- their expected_return/
+    # volatility/Sharpe are hand-authored illustrative figures, never a
+    # live optimizer result, so they must never be displayable as if they
+    # were (Issue #20 release-gate review, automated PR reviewer finding).
+    _is_synthetic_demo = bool((selected_portfolio.get("metadata") or {}).get("synthetic_demo"))
 
     with col_left:
         with chart_card(selected_portfolio["name"], selected_portfolio["created_at"]):
+            if _is_synthetic_demo:
+                st.warning(t("hist_demo_portfolio_badge"))
             if _is_current:
                 st.caption(f"✓ {t('hist_current_portfolio_badge')}")
             detail_data = {

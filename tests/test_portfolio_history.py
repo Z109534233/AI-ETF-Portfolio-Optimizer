@@ -416,3 +416,38 @@ def test_experiment_details_empty_state_for_legacy_portfolio(isolated_db):
     assert at.exception == []
     corpus = "\n".join(c.value for c in at.caption)
     assert "no metadata was recorded" in corpus
+
+
+# ── Demo/synthetic badge (Issue #20 release-gate review, automated PR
+# reviewer finding): scripts/reset_demo_portfolio_history.py's curated rows
+# carry hand-authored, not live-optimizer-computed, performance figures --
+# metadata["synthetic_demo"] must render an unmissable badge so they can
+# never be mistaken for a real optimization result. ───────────────────────
+
+def test_synthetic_demo_portfolio_shows_demo_badge(isolated_db):
+    isolated_db.save_portfolio(
+        name="US_Balanced", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Custom Allocation", expected_return=0.075,
+        expected_volatility=0.11, sharpe_ratio=0.50,
+        metadata={"schema_version": 1, "synthetic_demo": True},
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    warnings = "\n".join(w.value for w in at.warning)
+    assert "Curated Demo Example" in warnings
+    summary_corpus = str(at.dataframe[0].value)
+    assert "(Demo)" in summary_corpus
+
+
+def test_real_saved_portfolio_shows_no_demo_badge(isolated_db):
+    _seed_portfolio(isolated_db, "RealUserPortfolio", PORTFOLIO_A_HOLDINGS)
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    warnings = "\n".join(w.value for w in at.warning)
+    assert "Curated Demo Example" not in warnings
+    summary_corpus = str(at.dataframe[0].value)
+    assert "(Demo)" not in summary_corpus
