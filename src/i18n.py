@@ -460,6 +460,7 @@ TRANSLATIONS = {
         "etf_compare_nav_rankings": "排名與評分",
         "etf_compare_nav_correlation": "相關性與分散",
         "etf_compare_normalized_xref": "標準化績效比較請至「績效」工作區查看，以避免重複顯示相同圖表。",
+        "etf_thin_history_warning": "以下標的可用價格資料不足 10 個交易日，其量化評分／趨勢訊號／投資組合觀點可能不穩定，僅供參考：{tickers}",
         "etf_deep_analysis_select_ticker": "選擇要檢視技術指標的 ETF",
 
         "etf_download_data_title": "下載資料",
@@ -694,6 +695,8 @@ TRANSLATIONS = {
         "hist_no_common_data": "所選 ETF 沒有共同的歷史資料範圍，無法執行歷史模擬。",
         "hist_running": "正在執行歷史模擬……",
         "hist_result_interpretation_title": "結果解讀",
+        "sim_hist_inputs_changed_rerun": "⚠️ 輸入設定已變更（投資組合、投入金額或模擬期間），下方結果為先前設定所產生。請點選「執行模擬」以取得符合目前設定的結果。",
+        "sim_mc_inputs_changed_rerun": "⚠️ 輸入設定已變更（金額、年期、報酬假設或模擬次數），下方結果為先前設定所產生。請點選「執行模擬」以取得符合目前設定的結果。",
         "hist_results_title": "歷史模擬結果",
         "sim_assumption_source_label": "推估假設來源",
         "sim_assumption_source_portfolio": "投資組合歷史統計",
@@ -931,6 +934,7 @@ TRANSLATIONS = {
 
         # ── AI Advisor Page ───────────────────────────────────────────────
         "ai_title": "投資組合分析助手",
+        "ai_inputs_changed_regenerate": "⚠️ 輸入設定已變更（ETF、權重、投入金額或投資人設定），下方分析為先前設定所產生。請點選「產生 AI 分析」以取得符合目前設定的結果。",
         "ai_subtitle": "以自然語言說明投資組合的優勢、風險與分散程度。",
         "ai_mode_info": (
             "**AI 分析模式**：尚未設定 OpenAI API 金鑰，將以規則式分析產生內容。"
@@ -1778,6 +1782,7 @@ TRANSLATIONS = {
         "etf_compare_nav_rankings": "Rankings & Scores",
         "etf_compare_nav_correlation": "Correlation & Diversification",
         "etf_compare_normalized_xref": "See the Performance workspace for the normalized comparison chart, to avoid showing the same chart twice.",
+        "etf_thin_history_warning": "The following tickers have fewer than 10 trading days of available price history, so their Quant Score / Trend Signal / Portfolio View may be numerically unstable -- treat with caution: {tickers}",
         "etf_deep_analysis_select_ticker": "Select an ETF to view technical indicators",
 
         "etf_download_data_title": "Download Data",
@@ -2013,6 +2018,8 @@ TRANSLATIONS = {
         "hist_no_common_data": "The selected ETFs have no overlapping historical data range, so Historical Simulation cannot run.",
         "hist_running": "Running historical simulation...",
         "hist_result_interpretation_title": "Result Interpretation",
+        "sim_hist_inputs_changed_rerun": "⚠️ Inputs have changed (portfolio, contribution amounts, or simulated date range) since this result was run. The result below reflects the PREVIOUS settings. Click **Run Simulation** to re-run for the current settings.",
+        "sim_mc_inputs_changed_rerun": "⚠️ Inputs have changed (amounts, horizon, return assumptions, or simulation count) since this result was run. The result below reflects the PREVIOUS settings. Click **Run Simulation** to re-run for the current settings.",
         "hist_results_title": "Historical Simulation Results",
         "sim_assumption_source_label": "Projection Assumptions",
         "sim_assumption_source_portfolio": "Portfolio Historical Statistics",
@@ -2250,6 +2257,7 @@ TRANSLATIONS = {
 
         # ── AI Advisor Page ───────────────────────────────────────────────
         "ai_title": "AI Portfolio Analyst",
+        "ai_inputs_changed_regenerate": "⚠️ Inputs have changed (ETFs, weights, investment amount, or investor profile) since this analysis was generated. The result below reflects the PREVIOUS settings. Click **Generate AI Analysis** to regenerate for the current settings.",
         "ai_subtitle": "Explain portfolio strengths, risks, and diversification in plain language.",
         "ai_mode_info": (
             "**AI Analysis Mode**: OpenAI API key not configured. "

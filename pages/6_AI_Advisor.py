@@ -143,8 +143,23 @@ if not selected_etfs:
 st.caption(t("ai_source_mode_custom") if use_custom else t("ai_source_mode_current"))
 
 # ── Data Loading & Context Assembly ────────────────────────────────────────────
+# Stale-result guard (same fix as Issue #20 section 6A applied to Machine
+# Learning): the generated narrative must be bound to every input that
+# changes what it actually explains, so changing the ETF/weight selection,
+# investment amount, custom-vs-current toggle, or investor-profile inputs
+# without clicking "Generate Analysis" again shows a warning instead of
+# silently keeping the old narrative on screen next to new sidebar values.
+_ai_fingerprint = (
+    tuple(sorted(selected_etfs)), tuple(sorted(weights_input.items())),
+    round(investment_amount, 2) if investment_amount is not None else None,
+    use_custom, str(start_date), str(end_date),
+    investment_objective, risk_level, investment_horizon,
+)
+
 if "ai_result" not in st.session_state:
     st.session_state.ai_result = None
+if "ai_fingerprint" not in st.session_state:
+    st.session_state.ai_fingerprint = None
 
 if analyse_btn or st.session_state.ai_result is None:
     with st.spinner(t("msg_downloading_market_data")):
@@ -215,10 +230,15 @@ if analyse_btn or st.session_state.ai_result is None:
     st.session_state.ai_result = {
         "analysis": narrative["text"], "source": narrative["source"], "context": context,
     }
+    st.session_state.ai_fingerprint = _ai_fingerprint
 
 result = st.session_state.ai_result
 if result is None or not result["context"]["portfolio"]["available"]:
     st.info(t("ai_configure_and_generate"))
+    st.stop()
+
+if st.session_state.ai_fingerprint is not None and st.session_state.ai_fingerprint != _ai_fingerprint:
+    st.warning(t("ai_inputs_changed_regenerate"))
     st.stop()
 
 context = result["context"]

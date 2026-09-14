@@ -50,7 +50,9 @@ from src.ui import (
     region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
 )
 from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
-from src.etf_signals import compute_quant_signals, trend_signal_from_return, generate_etf_interpretation
+from src.etf_signals import (
+    compute_quant_signals, trend_signal_from_return, generate_etf_interpretation, has_sufficient_history,
+)
 
 st.set_page_config(
     page_title="ETF Analysis | AI ETF Portfolio Optimizer",
@@ -1032,6 +1034,21 @@ elif workspace == "Compare":
 
         st.caption(t("etf_compare_normalized_xref"))
         _ai_summary_data = {tk: _ai_summary_entry(tk, _lang) for tk in etf_prices.columns}
+        # Issue #20 release-gate review: the pre-redesign "ETF Compare
+        # Score" table used to silently EXCLUDE any ticker with fewer than
+        # 10 valid price points (too little history for a numerically
+        # stable Quant Score/Sharpe/moving-average signal). Consolidating
+        # onto one shared _ai_summary_data dict (section 2A) means every
+        # selected ticker now gets a score no matter how little history it
+        # has -- which is more consistent across Summary/Ranking/Compare
+        # Score, but must disclose the limitation rather than silently
+        # present a thin-history score at the same confidence as a
+        # fully-populated one.
+        _thin_history_tickers = [
+            tk for tk in etf_prices.columns if not has_sufficient_history(etf_prices[tk].dropna())
+        ]
+        if _thin_history_tickers:
+            st.warning(t("etf_thin_history_warning", tickers=", ".join(_thin_history_tickers)))
 
         if cmp_view == "Rankings":
             # ── ETF Analytical Summary (all selected tickers) ───────────────

@@ -13,17 +13,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import load_all_portfolios, delete_portfolio, init_database
-
-# Weights below this are hidden from the holdings summary (Issue #20
-# section 9B) -- e.g. an optimizer run that assigns 0.02% to a ticker
-# clutters the UI without being a meaningful allocation. Raw weights are
-# never discarded: total_disclosed_weight-style totals and "Set as Current
-# Portfolio" both keep operating on the FULL saved dict, only the display
-# table/summary text filters below this threshold, and always labels that
-# it did.
-_ACTIVE_HOLDING_THRESHOLD = 0.001
 from src.etf_database import get_country
-from src.financial_metrics import portfolio_diagnosis
+from src.financial_metrics import portfolio_diagnosis, ACTIVE_POSITION_TOLERANCE
 from src.charts import allocation_donut_chart, apply_dark_theme, CHART_COLORS
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
@@ -66,13 +57,16 @@ def _safe_num(value, fmt: str = ",.0f") -> str:
 
 
 def _active_holdings(holdings: dict) -> dict:
-    """Holdings at/above _ACTIVE_HOLDING_THRESHOLD, sorted by weight desc.
-    Never mutates or discards the underlying raw weights -- callers that
-    need the full saved dict (e.g. "Set as Current Portfolio", the CSV
-    export, or portfolio_diagnosis()) must keep reading `holdings` itself,
-    not this filtered view."""
+    """Holdings above ACTIVE_POSITION_TOLERANCE (src.financial_metrics --
+    the same constant/threshold portfolio_diagnosis()'s active_holdings
+    count already uses elsewhere in the app, so "active" means the same
+    thing on every page), sorted by weight desc. Never mutates or discards
+    the underlying raw weights -- callers that need the full saved dict
+    (e.g. "Set as Current Portfolio", the CSV export, or
+    portfolio_diagnosis()) must keep reading `holdings` itself, not this
+    filtered view."""
     return dict(sorted(
-        ((tk, w) for tk, w in holdings.items() if w >= _ACTIVE_HOLDING_THRESHOLD),
+        ((tk, w) for tk, w in holdings.items() if w > ACTIVE_POSITION_TOLERANCE),
         key=lambda kv: kv[1], reverse=True,
     ))
 

@@ -324,8 +324,22 @@ if simulation_mode == "Historical Simulation":
     effective_start = max(hist_start_date, hist_common_start.date())
     effective_end = min(hist_end_date, hist_common_end.date()) if hist_end_date else hist_common_end.date()
 
+    # Stale-result guard (same fix as Issue #20 section 6A applied to
+    # Machine Learning): a historical backtest result must be bound to
+    # every input that changes what it actually shows -- the portfolio's
+    # tickers/weights, contribution amounts, and the simulated date range --
+    # so changing any of them without clicking "Run Simulation" again shows
+    # a warning instead of silently keeping the old result on screen.
+    _hist_fingerprint = (
+        tuple(sorted((current_portfolio.get("weights") or {}).items())),
+        round(initial_investment, 2), round(monthly_contribution, 2),
+        str(effective_start), str(effective_end),
+    )
+
     if "hist_result" not in st.session_state:
         st.session_state.hist_result = None
+    if "hist_fingerprint" not in st.session_state:
+        st.session_state.hist_fingerprint = None
 
     if run_btn_hist or st.session_state.hist_result is None:
         with st.spinner(t("hist_running")):
@@ -365,12 +379,17 @@ if simulation_mode == "Historical Simulation":
             "active_weights": active_weights,
             "redistributed_from_missing": bool(_missing),
         }
+        st.session_state.hist_fingerprint = _hist_fingerprint
 
     hist_result = st.session_state.hist_result
     if not hist_result or hist_result.get("history") is None or hist_result["history"].empty:
         error_state(t("msg_no_price_data_title"), t("hist_no_common_data"))
         disclaimer_box()
         render_footer()
+        st.stop()
+
+    if st.session_state.hist_fingerprint is not None and st.session_state.hist_fingerprint != _hist_fingerprint:
+        st.warning(t("sim_hist_inputs_changed_rerun"))
         st.stop()
 
     history = hist_result["history"]
@@ -479,8 +498,22 @@ if simulation_mode == "Historical Simulation":
     st.stop()
 
 # ── Run Simulation ────────────────────────────────────────────────────────────
+# Stale-result guard (same fix as Issue #20 section 6A applied to Machine
+# Learning): the Monte Carlo result must be bound to every input that
+# changes what it actually shows, so changing a slider/scenario without
+# clicking "Run Simulation" again shows a warning instead of silently
+# keeping the old projection on screen next to the new widget values.
+_mc_fingerprint = (
+    round(initial_investment, 2), round(monthly_contribution, 2), years,
+    round(annual_return, 6), round(annual_volatility, 6),
+    round(inflation_rate, 6), round(annual_fee, 6), n_simulations,
+    projection_assumption_source,
+)
+
 if "sim_result" not in st.session_state:
     st.session_state.sim_result = None
+if "sim_fingerprint" not in st.session_state:
+    st.session_state.sim_fingerprint = None
 
 if run_btn or st.session_state.sim_result is None:
     with st.spinner(t("sim_running_monte_carlo")):
@@ -507,10 +540,15 @@ if run_btn or st.session_state.sim_result is None:
             "assumption_source": projection_assumption_source,
             "portfolio_strategy": current_portfolio.get("strategy") if current_portfolio else None,
         }
+        st.session_state.sim_fingerprint = _mc_fingerprint
 
 sim_result = st.session_state.sim_result
 if sim_result is None:
     st.info(t("msg_configure_and_run", action=t("btn_run_simulation")))
+    st.stop()
+
+if st.session_state.sim_fingerprint is not None and st.session_state.sim_fingerprint != _mc_fingerprint:
+    st.warning(t("sim_mc_inputs_changed_rerun"))
     st.stop()
 
 summary = sim_result["summary"]

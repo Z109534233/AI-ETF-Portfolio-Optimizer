@@ -35,6 +35,20 @@ from src.openai_service import cached_generate, generate_text, fingerprint as _f
 TREND_BULLISH, TREND_NEUTRAL, TREND_BEARISH = "Bullish", "Neutral", "Bearish"
 VIEW_OVERWEIGHT, VIEW_NEUTRAL, VIEW_UNDERWEIGHT = "Overweight", "Neutral", "Underweight"
 
+# Below this many valid price points, the 20/50-day moving averages behind
+# the sign-agreement calc are still NaN (or nearly so) and annualized_return/
+# sharpe_ratio are numerically unstable -- compute_quant_signals() still
+# returns a value (never raises) rather than crash on a thin-history
+# ticker, but callers displaying multiple tickers side by side (e.g. ETF
+# Analysis's Compare workspace) should disclose that a ticker under this
+# threshold has an unreliable Quant Score, not silently present it at the
+# same confidence as a fully-populated series.
+MIN_RELIABLE_HISTORY_POINTS = 10
+
+
+def has_sufficient_history(p) -> bool:
+    return len(p) >= MIN_RELIABLE_HISTORY_POINTS
+
 
 def trend_signal_from_return(ann_ret: float) -> str:
     """Same thresholds as the page's KPI-row Trend chip -- this is the ONE

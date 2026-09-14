@@ -28,7 +28,7 @@ import pandas as pd
 import pytest
 
 from src.ai_advisor import (
-    build_advisor_context, generate_rule_based_narrative, _build_prompt,
+    build_advisor_context, generate_rule_based_narrative, _build_prompt, advisor_fingerprint,
 )
 from src.machine_learning import run_ml_pipeline
 
@@ -333,3 +333,139 @@ def test_prompt_handles_fully_missing_context_without_raising():
     prompt = _build_prompt(context, "Long-term Growth", "Moderate", 10)
     assert isinstance(prompt, str)
     assert "not available" in prompt.lower()
+
+
+# ── advisor_fingerprint: cache invalidation must track everything the
+# prompt actually quotes (Issue #20 release-gate review) ───────────────────
+# advisor_fingerprint() feeds src.openai_service.cached_generate(): if it
+# omits a field _build_prompt() reads, running Investment Simulator/
+# Machine Learning after an initial "Generate Analysis" click and clicking
+# "Regenerate Analysis" again can silently keep serving a stale cached
+# narrative that still says that section is "not available" while the
+# freshly-built context (and the page's own Deterministic Data expander)
+# shows real numbers -- a visible, self-contradicting page.
+
+def test_fingerprint_changes_when_simulator_future_projection_appears():
+    portfolio = _sample_portfolio()
+    context_without = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    fp_without = advisor_fingerprint(context_without, "Long-term Growth", "Moderate", 10)
+
+    sim_result = {"summary": {"median_final": 15000.0, "probability_profit": 0.8}}
+    sim_params = {"portfolio_strategy": "Maximum Sharpe", "years": 10, "n_simulations": 1000}
+    context_with = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", sim_result=sim_result, sim_params=sim_params,
+    )
+    fp_with = advisor_fingerprint(context_with, "Long-term Growth", "Moderate", 10)
+
+    assert context_without["simulator"]["future_projection"]["available"] is False
+    assert context_with["simulator"]["future_projection"]["available"] is True
+    assert fp_without != fp_with
+
+
+def test_fingerprint_changes_when_historical_simulation_appears():
+    portfolio = _sample_portfolio()
+    context_without = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    fp_without = advisor_fingerprint(context_without, "Long-term Growth", "Moderate", 10)
+
+    hist_result = {"summary": {"final_value": 12000.0, "gain": 2000.0, "annualized_mwr": 0.08}}
+    hist_params = {"strategy": "Maximum Sharpe", "market": "United States"}
+    context_with = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", hist_result=hist_result, hist_params=hist_params,
+    )
+    fp_with = advisor_fingerprint(context_with, "Long-term Growth", "Moderate", 10)
+
+    assert fp_without != fp_with
+
+
+def test_fingerprint_changes_when_ml_result_appears():
+    portfolio = _sample_portfolio()
+    prices = _sample_prices()
+    context_without = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    fp_without = advisor_fingerprint(context_without, "Long-term Growth", "Moderate", 10)
+
+    ml_result = {
+        "metrics": {"accuracy": 0.58, "baseline_accuracy": 0.55, "auc": 0.6},
+        "model_type": "Random Forest", "test_size": 0.2, "lookahead_periods": 1,
+    }
+    context_with = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", portfolio_prices=prices,
+        ml_result=ml_result, ml_ticker="QQQ",
+    )
+    fp_with = advisor_fingerprint(context_with, "Long-term Growth", "Moderate", 10)
+
+    assert fp_without != fp_with
+
+
+def test_fingerprint_stable_when_nothing_relevant_changes():
+    portfolio = _sample_portfolio()
+    context_a = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    context_b = build_advisor_context(portfolio=dict(portfolio), portfolio_source="current")
+    fp_a = advisor_fingerprint(context_a, "Long-term Growth", "Moderate", 10)
+    fp_b = advisor_fingerprint(context_b, "Long-term Growth", "Moderate", 10)
+    assert fp_a == fp_b
+
+
+# ── Page-level stale-result guard (Issue #20 release-gate review, same
+# Priority-0 fix pattern as Machine Learning's section 6A) ─────────────────
+
+def _apptest_from_file(rel_path, **kwargs):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    st.page_link = lambda *a, **k: None
+    path = rel_path if os.path.isabs(rel_path) else os.path.join(REPO_ROOT, rel_path)
+    return AppTest.from_file(path, **kwargs)
+
+
+def _stale_warning_shown(at) -> bool:
+    warnings = "\n".join(w.value for w in at.warning)
+    return "changed" in warnings.lower() or "變更" in warnings
+
+
+def _generate_once(lang="en"):
+    at = _apptest_from_file("pages/6_AI_Advisor.py", default_timeout=180)
+    at.session_state["language"] = lang
+    at.run()
+    assert at.exception == []
+    gen_btn = next((b for b in at.button if (b.label or "") == "Generate AI Analysis"), None)
+    assert gen_btn is not None, "expected the Generate AI Analysis button (fresh session -> use_custom mode)"
+    gen_btn.click()
+    at.run()
+    assert at.exception == []
+    return at
+
+
+def test_ai_advisor_no_stale_warning_immediately_after_generate():
+    at = _generate_once()
+    assert not _stale_warning_shown(at)
+
+
+def test_ai_advisor_stale_warning_on_horizon_change_without_regenerate():
+    at = _generate_once()
+    sliders = [s for s in at.slider if (s.label or "") == "Investment Horizon (Years)"]
+    assert sliders, "expected the investment-horizon slider on the sidebar"
+    original = sliders[0].value
+    sliders[0].set_value(original + 5 if original + 5 <= 40 else original - 5)
+    at.run()
+    assert at.exception == []
+    assert _stale_warning_shown(at), "changing the investment horizon without regenerating must show the stale-result warning"
+
+
+def test_ai_advisor_stale_warning_clears_after_regenerate():
+    at = _generate_once()
+    sliders = [s for s in at.slider if (s.label or "") == "Investment Horizon (Years)"]
+    original = sliders[0].value
+    sliders[0].set_value(original + 5 if original + 5 <= 40 else original - 5)
+    at.run()
+    assert _stale_warning_shown(at)
+
+    # The stale-result guard st.stop()s the page right after the warning
+    # (same as Machine Learning's), so the page-body "Regenerate Analysis"
+    # button (rendered only past that point, for a non-stale result) isn't
+    # available here -- the sidebar's "Generate AI Analysis" button always
+    # is, exactly like ML's sidebar "Train Model" button.
+    gen_btn = next((b for b in at.button if (b.label or "") == "Generate AI Analysis"), None)
+    assert gen_btn is not None
+    gen_btn.click()
+    at.run()
+    assert at.exception == []
+    assert not _stale_warning_shown(at), "after regenerating, the stale-result warning must clear"

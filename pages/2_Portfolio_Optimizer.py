@@ -1056,6 +1056,17 @@ elif opt_workspace == "Backtest & Risk":
 # SAVE & ACTIONS -- Next Steps + Save / Export
 # ══════════════════════════════════════════════════════════════════════════
 else:  # opt_workspace == "Save & Actions"
+    # Computed once per rerun and reused by both the Quick Save button and
+    # the named Save & Export form below (previously each ran its own
+    # identical find_duplicate_portfolio() DB read against the same
+    # current_portfolio weights/strategy/amount every rerun of this
+    # workspace, including reruns triggered by unrelated widgets like
+    # typing in the notes field).
+    _current_dup_check = find_duplicate_portfolio(
+        current_portfolio["weights"], current_portfolio["strategy"],
+        current_portfolio["investment_amount"],
+    )
+
     # ── Next Steps (Portfolio Handoff) ──────────────────────────────────────
     # Navigation uses st.switch_page() (the same programmatic-navigation
     # mechanism already used in app.py / src/ui.py), which preserves the
@@ -1083,10 +1094,7 @@ else:  # opt_workspace == "Save & Actions"
             # repeats an identical one; it points the user at the named
             # Save & Export form instead, which supports an explicit
             # "save anyway" confirmation.
-            _dup = find_duplicate_portfolio(
-                current_portfolio["weights"], current_portfolio["strategy"],
-                current_portfolio["investment_amount"],
-            )
+            _dup = _current_dup_check
             if _dup:
                 st.warning(t("opt_duplicate_save_warning", name=_dup["name"]))
             else:
@@ -1115,14 +1123,20 @@ else:  # opt_workspace == "Save & Actions"
     with col1:
         portfolio_name = st.text_input(t("field_portfolio_name"), value=f"Portfolio_{current_portfolio['strategy'].replace(' ', '_')}")
         notes = st.text_area(t("field_notes_optional"), height=80)
-        _named_dup = find_duplicate_portfolio(
-            current_portfolio["weights"], current_portfolio["strategy"],
-            current_portfolio["investment_amount"],
-        )
+        _named_dup = _current_dup_check
         _confirm_dup_save = False
         if _named_dup:
             st.warning(t("opt_duplicate_save_warning", name=_named_dup["name"]))
-            _confirm_dup_save = st.checkbox(t("opt_confirm_duplicate_save"), key="opt_confirm_dup_save_cb")
+            # Keyed by the specific duplicate's ID (not a fixed key) --
+            # Streamlit persists a checkbox's checked state across reruns
+            # by key, so a fixed key would let confirming ONE duplicate
+            # (portfolio A) silently pre-confirm a LATER, different
+            # duplicate collision (portfolio B) in the same session without
+            # the user ever re-confirming for B specifically, defeating the
+            # whole point of this guard (Issue #20 section 9D).
+            _confirm_dup_save = st.checkbox(
+                t("opt_confirm_duplicate_save"), key=f"opt_confirm_dup_save_cb_{_named_dup['id']}",
+            )
         if st.button(t("btn_save_portfolio"), type="primary", key="opt_save_export_btn"):
             # Sourced from the canonical current_portfolio object (built
             # above, unconditionally) -- not independently recomputed

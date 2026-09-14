@@ -85,14 +85,28 @@ def _ensure_metadata_column(engine) -> None:
     demo database/portfolio.db, or any user's existing local file) without
     touching any existing row. Base.metadata.create_all() only creates
     missing TABLES, never adds a column to an existing table, so this is a
-    lightweight in-place ALTER TABLE run once per process at startup."""
+    lightweight in-place ALTER TABLE run every time init_database() runs
+    (get_engine() creates a fresh, unmemoized Engine each call -- there is
+    no "already migrated this process" flag).
+
+    Because Streamlit can serve concurrent sessions, two callers can both
+    see the column missing before either has run ALTER TABLE; the loser
+    then hits SQLite's "duplicate column name" error. That is swallowed
+    here (the column exists either way, which is the only postcondition
+    this function promises) rather than propagated up to fail the whole
+    init_database() call -- a caller must never get get_session() == None
+    just because it lost a harmless migration race.
+    """
     try:
         existing_columns = {col["name"] for col in inspect(engine).get_columns("portfolios")}
     except Exception:
         return  # table doesn't exist yet -- create_all() will create it fresh, already correct
     if "metadata_json" not in existing_columns:
-        with engine.begin() as conn:
-            conn.exec_driver_sql("ALTER TABLE portfolios ADD COLUMN metadata_json TEXT")
+        try:
+            with engine.begin() as conn:
+                conn.exec_driver_sql("ALTER TABLE portfolios ADD COLUMN metadata_json TEXT")
+        except Exception:
+            pass  # another concurrent caller already added it -- column exists either way
 
 
 def init_database():

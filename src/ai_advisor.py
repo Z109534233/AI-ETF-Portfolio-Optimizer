@@ -362,8 +362,20 @@ def advisor_fingerprint(context: dict, investment_objective: str, risk_level: st
     """Deterministic fingerprint of every input that can change the
     narrative's content, for src.openai_service.cached_generate() -- so a
     Streamlit rerun triggered by an unrelated widget never re-spends an
-    OpenAI call, but any change to the portfolio, its computed metrics, or
-    the investor-profile inputs invalidates the cached result."""
+    OpenAI call, but any change to the portfolio, its computed metrics, the
+    investor-profile inputs, or any of the other module outputs actually
+    quoted in _build_prompt() below invalidates the cached result.
+
+    Must track every field _build_prompt() reads, not just a proxy for it --
+    a field present in the prompt but missing here can leave a stale cached
+    narrative on screen (e.g. still saying "Investment Simulator: not
+    available") right next to a freshly-rendered "Deterministic Data"
+    section that already shows real numbers, once the user runs the
+    Simulator and returns without the fingerprint ever changing.
+    """
+    fp = context["simulator"]["future_projection"]
+    hs = context["simulator"]["historical_simulation"]
+    ml = context["ml"]
     return fingerprint(
         context.get("portfolio_source"),
         context["portfolio"].get("available"),
@@ -373,7 +385,16 @@ def advisor_fingerprint(context: dict, investment_objective: str, risk_level: st
         context["portfolio"].get("volatility"),
         context["portfolio"].get("sharpe_ratio"),
         context["risk"].get("var_cvar", {}).get("var") if context["risk"].get("available") else None,
-        context["ml"].get("accuracy") if context["ml"].get("available") else None,
+        fp.get("available"),
+        fp.get("summary", {}).get("median_final") if fp.get("available") else None,
+        fp.get("summary", {}).get("probability_profit") if fp.get("available") else None,
+        hs.get("available"),
+        hs.get("summary", {}).get("final_value") if hs.get("available") else None,
+        hs.get("summary", {}).get("annualized_mwr") if hs.get("available") else None,
+        ml.get("available"),
+        ml.get("ticker") if ml.get("available") else None,
+        ml.get("model_name") if ml.get("available") else None,
+        ml.get("accuracy") if ml.get("available") else None,
         context["news"].get("headline_count") if context["news"].get("available") else None,
         investment_objective, risk_level, investment_horizon,
     )
