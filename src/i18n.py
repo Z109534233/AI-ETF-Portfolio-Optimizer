@@ -905,6 +905,8 @@ TRANSLATIONS = {
         "ml_inputs_changed_retrain": "⚠️ 輸入設定已變更（ETF、日期範圍、模型或測試集比例），下方結果為先前設定所產生。請點選「訓練模型」以取得符合目前設定的結果。",
         "ml_results_title": "{model} 結果 — {ticker}",
         "ml_results_sub": "訓練樣本數：{train} ｜ 測試樣本數：{test}",
+        "ml_results_hero_title": "預測結果",
+        "ml_results_hero_subtitle": "模型已於樣本外資料上完成訓練與評估",
         "ml_target_definition_label": "預測目標",
         "ml_target_definition_value": "未來 {lookahead} 個交易日的簡單報酬率是否為正（1 = 上漲，0 = 持平或下跌）。",
         "ml_data_window_label": "資料區間（樣本外驗證揭露）",
@@ -923,14 +925,19 @@ TRANSLATIONS = {
         "ml_fi_title_rf": "隨機森林 — 基於不純度的特徵重要性",
         "ml_fi_title_lr": "邏輯斯迴歸 — 係數絕對值（標準化後）",
         "ml_fi_causality_disclaimer": "重要性反映該特徵在已訓練模型中被使用（降低不純度／取得較大係數）的頻率與程度，並不代表該特徵「造成」價格漲跌，也不構成因果關係的證據。",
+        "ml_caption_feature_importance": "此圖表依模型訓練時的權重／不純度減少程度，排序哪些技術指標特徵對預測影響最大。",
         "ml_top_10_features": "前 10 大特徵",
+        "ml_caption_feature_table": "此表格列出重要性分數最高的前 10 項特徵，順序與上方圖表一致。",
         "ml_confusion_matrix_interpretation": "混淆矩陣解讀",
+        "ml_caption_confusion_matrix": "此矩陣將模型在測試集（樣本外）上的預測結果，依漲跌方向拆解為正確與錯誤的次數。",
         "ml_confusion_matrix_table": (
             "| | 預測下跌 | 預測上漲 |\n"
             "|---|---|---|\n"
             "| **實際下跌** | 真陰性 | 偽陽性 |\n"
             "| **實際上漲** | 偽陰性 | 真陽性 |"
         ),
+        "ml_caption_predictions": "此圖表繪出測試期間 ETF 的實際價格，並標示模型每日漲跌方向預測的正確與錯誤位置。",
+        "ml_caption_prediction_probability": "此圖表顯示模型於測試期間每日預測「上漲」的機率；高於 0.5 虛線代表模型預測上漲。",
         "ml_model_limitations_title": "模型限制與注意事項",
         "ml_model_limitations_body": (
             "**本機器學習模型僅供教學展示使用。**\n\n"
@@ -2375,6 +2382,8 @@ TRANSLATIONS = {
         "ml_inputs_changed_retrain": "⚠️ Inputs have changed (ticker, date range, model, or test-set size) since this result was trained. The result below reflects the PREVIOUS settings. Click **Train Model** to retrain and see results for the current settings.",
         "ml_results_title": "{model} Results — {ticker}",
         "ml_results_sub": "Training samples: {train} | Test samples: {test}",
+        "ml_results_hero_title": "Prediction Results",
+        "ml_results_hero_subtitle": "Model trained and evaluated on out-of-sample data",
         "ml_target_definition_label": "Prediction Target",
         "ml_target_definition_value": "Whether the simple return over the next {lookahead} trading day(s) is positive (1 = up, 0 = flat or down).",
         "ml_data_window_label": "Data Window (Out-of-Sample Disclosure)",
@@ -2393,14 +2402,19 @@ TRANSLATIONS = {
         "ml_fi_title_rf": "Random Forest Impurity-Based Feature Importance",
         "ml_fi_title_lr": "Logistic Regression -- Absolute Coefficient Magnitude (Standardized)",
         "ml_fi_causality_disclaimer": "Importance indicates how frequently/effectively a feature reduced impurity (Random Forest) or received a large coefficient (Logistic Regression) in the fitted model; it does not imply the feature causes price direction, and is not evidence of causality.",
+        "ml_caption_feature_importance": "This chart ranks which technical-indicator features most influenced the model's prediction, based on how much each one reduced impurity or received weight during training.",
         "ml_top_10_features": "Top 10 Features",
+        "ml_caption_feature_table": "This table lists the top 10 features by importance score, in the same order shown in the chart above.",
         "ml_confusion_matrix_interpretation": "Confusion Matrix Interpretation",
+        "ml_caption_confusion_matrix": "This matrix breaks down the model's predictions on the held-out test set into correct and incorrect calls for each direction (up vs. down).",
         "ml_confusion_matrix_table": (
             "| | Predicted Down | Predicted Up |\n"
             "|---|---|---|\n"
             "| **Actual Down** | True Negative | False Positive |\n"
             "| **Actual Up** | False Negative | True Positive |"
         ),
+        "ml_caption_predictions": "This chart plots the ETF's actual price over the test period, marking where the model's daily direction prediction was correct or incorrect.",
+        "ml_caption_prediction_probability": "This chart shows the model's predicted probability of an upward move on each day in the test period; values above the dashed line at 0.5 indicate an \"up\" prediction.",
         "ml_model_limitations_title": "Model Limitations & Caveats",
         "ml_model_limitations_body": (
             "**This machine learning model is for educational demonstration only.**\n\n"
