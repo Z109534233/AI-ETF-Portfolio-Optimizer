@@ -16,6 +16,11 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "database")
 DB_PATH = os.path.join(DB_DIR, "portfolio.db")
 
+# Recorded in a saved portfolio's experiment metadata (Issue #20 section 9C)
+# so a reloaded portfolio's methodology can be traced to the app revision
+# that produced it. Bump when the optimization/estimator methodology changes.
+APP_VERSION = "2026.09-issue20"
+
 Base = declarative_base()
 
 
@@ -31,6 +36,13 @@ class Portfolio(Base):
     expected_volatility = Column(Float, default=0.0)
     sharpe_ratio = Column(Float, default=0.0)
     notes = Column(Text, default="")
+    # Experiment-tracking metadata (Issue #20 section 9C) -- a versioned
+    # JSON blob rather than one column per field, so new metadata fields can
+    # be added later without another schema migration. Nullable so every
+    # portfolio saved before this column existed still loads (see
+    # _ensure_metadata_column() below); load_all_portfolios() always
+    # returns a "metadata" dict, defaulting to {} when this is NULL/absent.
+    metadata_json = Column(Text, nullable=True)
 
     holdings = relationship("PortfolioHolding", back_populates="portfolio",
                             cascade="all, delete-orphan")
@@ -67,11 +79,28 @@ def get_engine():
     return engine
 
 
+def _ensure_metadata_column(engine) -> None:
+    """Backward-compatible migration: add portfolios.metadata_json to a
+    database file created before this column existed (e.g. the committed
+    demo database/portfolio.db, or any user's existing local file) without
+    touching any existing row. Base.metadata.create_all() only creates
+    missing TABLES, never adds a column to an existing table, so this is a
+    lightweight in-place ALTER TABLE run once per process at startup."""
+    try:
+        existing_columns = {col["name"] for col in inspect(engine).get_columns("portfolios")}
+    except Exception:
+        return  # table doesn't exist yet -- create_all() will create it fresh, already correct
+    if "metadata_json" not in existing_columns:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE portfolios ADD COLUMN metadata_json TEXT")
+
+
 def init_database():
     """Initialize database and create all tables if they don't exist."""
     try:
         engine = get_engine()
         Base.metadata.create_all(engine)
+        _ensure_metadata_column(engine)
         return engine
     except Exception as e:
         print(f"Database initialization error: {e}")
@@ -90,8 +119,17 @@ def get_session():
 def save_portfolio(name: str, weights: dict, investment_amount: float,
                    optimization_method: str, expected_return: float,
                    expected_volatility: float, sharpe_ratio: float,
-                   notes: str = "") -> bool:
-    """Save a portfolio to the database. Returns True on success."""
+                   notes: str = "", metadata: dict = None) -> bool:
+    """Save a portfolio to the database. Returns True on success.
+
+    `metadata` (Issue #20 section 9C -- experiment tracking) is an optional
+    dict of reproducibility fields (historical window, market, risk-free
+    rate, weight bounds, allow_short, estimator choices, strategy, asset
+    universe, generated timestamp, app version, etc.) stored as a single
+    versioned JSON blob. Old callers that don't pass it still work --
+    metadata_json stays NULL, and Portfolio History shows "no metadata
+    recorded" rather than fabricating any of these fields.
+    """
     session = get_session()
     if session is None:
         return False
@@ -103,7 +141,8 @@ def save_portfolio(name: str, weights: dict, investment_amount: float,
             expected_return=expected_return,
             expected_volatility=expected_volatility,
             sharpe_ratio=sharpe_ratio,
-            notes=notes
+            notes=notes,
+            metadata_json=json.dumps(metadata) if metadata else None,
         )
         session.add(portfolio)
         session.flush()
@@ -146,6 +185,10 @@ def load_all_portfolios(raise_on_error: bool = False) -> list:
         result = []
         for p in portfolios:
             holdings = {h.ticker: h.weight for h in p.holdings}
+            try:
+                metadata = json.loads(p.metadata_json) if getattr(p, "metadata_json", None) else {}
+            except (TypeError, ValueError):
+                metadata = {}  # corrupt/legacy value -- never crash the page over it
             result.append({
                 "id": p.id,
                 "name": p.name,
@@ -157,6 +200,7 @@ def load_all_portfolios(raise_on_error: bool = False) -> list:
                 "sharpe_ratio": p.sharpe_ratio,
                 "notes": p.notes,
                 "holdings": holdings,
+                "metadata": metadata,
             })
         return result
     except Exception as e:
@@ -166,6 +210,33 @@ def load_all_portfolios(raise_on_error: bool = False) -> list:
         return []
     finally:
         session.close()
+
+
+def find_duplicate_portfolio(weights: dict, optimization_method: str, investment_amount: float,
+                              tolerance: float = 1e-6):
+    """Return the most recently saved portfolio with the same method,
+    investment amount, and holdings weights (within `tolerance`), or None.
+
+    Used by the Save & Actions UI (Issue #20 section 9D) to warn before an
+    accidental repeated identical save, rather than silently accumulating
+    debug duplicates in Portfolio History the way the committed demo
+    database previously did. Does not delete or block anything itself --
+    callers decide whether to still save after the warning.
+    """
+    try:
+        existing = load_all_portfolios(raise_on_error=True)
+    except Exception:
+        return None
+    rounded_weights = {tk: round(w, 6) for tk, w in weights.items()}
+    for p in existing:
+        if p["optimization_method"] != optimization_method:
+            continue
+        if abs((p["investment_amount"] or 0) - investment_amount) > tolerance:
+            continue
+        other_weights = {tk: round(w, 6) for tk, w in (p["holdings"] or {}).items()}
+        if other_weights == rounded_weights:
+            return p
+    return None
 
 
 def delete_portfolio(portfolio_id: int) -> bool:

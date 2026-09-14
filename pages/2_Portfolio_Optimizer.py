@@ -43,7 +43,7 @@ from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
     sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis
 )
-from src.database import save_portfolio, init_database
+from src.database import save_portfolio, init_database, find_duplicate_portfolio, APP_VERSION
 from src.risk_analytics import holdings_overlap_matrix
 from src.report_generator import generate_portfolio_report
 from src.charts import (
@@ -504,6 +504,31 @@ st.session_state.current_portfolio = {
     "generated_at": st.session_state.get("opt_generated_at"),
 }
 current_portfolio = st.session_state.current_portfolio
+
+# ── Experiment metadata (Issue #20 section 9C) ──────────────────────────────
+# Everything needed to understand/reproduce this specific run, saved as a
+# single versioned JSON blob alongside the portfolio (src.database.
+# save_portfolio(metadata=...)). Deliberately built from the SAME
+# already-computed variables as current_portfolio above -- not
+# independently re-derived -- so it can never drift from what the page
+# actually used for this optimization.
+_experiment_metadata = {
+    "schema_version": 1,
+    "historical_start_date": str(start_date),
+    "historical_end_date": str(end_date),
+    "market": selected_region,
+    "risk_free_rate": risk_free_rate,
+    "min_weight": min_weight,
+    "max_weight": max_weight,
+    "allow_short": allow_short,
+    "expected_return_estimator": "Historical CAGR (annualized_return)",
+    "covariance_estimator": "Sample covariance (historical, annualized)",
+    "strategy": optimization_method,
+    "asset_universe": list(weights.keys()),
+    "generated_at": st.session_state.get("opt_generated_at"),
+    "data_as_of": str(end_date),
+    "app_version": APP_VERSION,
+}
 
 # ── Core Result KPI Row (always visible, near the top -- PRODUCT SPEC
 # section 3) ─────────────────────────────────────────────────────────────────
@@ -1050,22 +1075,38 @@ else:  # opt_workspace == "Save & Actions"
             # One-click save with an auto-generated name (canonical English
             # strategy value). The named/annotated Save & Export form below
             # remains for users who want to customize the name or add notes.
-            _quick_name = (
-                f"{current_portfolio['strategy'].replace(' ', '_')}_"
-                f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            # Issue #20 section 9D: a one-click "quick save" is exactly the
+            # flow most likely to spam identical rows (e.g. double-clicking,
+            # or clicking again after just re-viewing a workspace) -- this
+            # is the same pattern that produced 140 debug duplicates in the
+            # committed demo database, so a quick save never silently
+            # repeats an identical one; it points the user at the named
+            # Save & Export form instead, which supports an explicit
+            # "save anyway" confirmation.
+            _dup = find_duplicate_portfolio(
+                current_portfolio["weights"], current_portfolio["strategy"],
+                current_portfolio["investment_amount"],
             )
-            _quick_success = save_portfolio(
-                name=_quick_name, weights=current_portfolio["weights"],
-                investment_amount=current_portfolio["investment_amount"],
-                optimization_method=current_portfolio["strategy"],
-                expected_return=current_portfolio["expected_return"],
-                expected_volatility=current_portfolio["volatility"],
-                sharpe_ratio=current_portfolio["sharpe_ratio"], notes="",
-            )
-            if _quick_success:
-                st.success(t("opt_portfolio_saved_success", name=_quick_name))
+            if _dup:
+                st.warning(t("opt_duplicate_save_warning", name=_dup["name"]))
             else:
-                st.error(t("opt_portfolio_save_failed"))
+                _quick_name = (
+                    f"{current_portfolio['strategy'].replace(' ', '_')}_"
+                    f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+                )
+                _quick_success = save_portfolio(
+                    name=_quick_name, weights=current_portfolio["weights"],
+                    investment_amount=current_portfolio["investment_amount"],
+                    optimization_method=current_portfolio["strategy"],
+                    expected_return=current_portfolio["expected_return"],
+                    expected_volatility=current_portfolio["volatility"],
+                    sharpe_ratio=current_portfolio["sharpe_ratio"], notes="",
+                    metadata=_experiment_metadata,
+                )
+                if _quick_success:
+                    st.success(t("opt_portfolio_saved_success", name=_quick_name))
+                else:
+                    st.error(t("opt_portfolio_save_failed"))
 
     # ── Save & Download ──────────────────────────────────────────────────
     section_header(t("opt_save_export_title"))
@@ -1074,6 +1115,14 @@ else:  # opt_workspace == "Save & Actions"
     with col1:
         portfolio_name = st.text_input(t("field_portfolio_name"), value=f"Portfolio_{current_portfolio['strategy'].replace(' ', '_')}")
         notes = st.text_area(t("field_notes_optional"), height=80)
+        _named_dup = find_duplicate_portfolio(
+            current_portfolio["weights"], current_portfolio["strategy"],
+            current_portfolio["investment_amount"],
+        )
+        _confirm_dup_save = False
+        if _named_dup:
+            st.warning(t("opt_duplicate_save_warning", name=_named_dup["name"]))
+            _confirm_dup_save = st.checkbox(t("opt_confirm_duplicate_save"), key="opt_confirm_dup_save_cb")
         if st.button(t("btn_save_portfolio"), type="primary", key="opt_save_export_btn"):
             # Sourced from the canonical current_portfolio object (built
             # above, unconditionally) -- not independently recomputed
@@ -1081,18 +1130,22 @@ else:  # opt_workspace == "Save & Actions"
             # Efficient Frontier / Strategy Comparison show for the same
             # run. Strategy is stored in English (the canonical value)
             # regardless of which language was active when saved.
-            success = save_portfolio(
-                name=portfolio_name, weights=current_portfolio["weights"],
-                investment_amount=current_portfolio["investment_amount"],
-                optimization_method=current_portfolio["strategy"],
-                expected_return=current_portfolio["expected_return"],
-                expected_volatility=current_portfolio["volatility"],
-                sharpe_ratio=current_portfolio["sharpe_ratio"], notes=notes,
-            )
-            if success:
-                st.success(t("opt_portfolio_saved_success", name=portfolio_name))
+            if _named_dup and not _confirm_dup_save:
+                st.error(t("opt_duplicate_save_blocked"))
             else:
-                st.error(t("opt_portfolio_save_failed"))
+                success = save_portfolio(
+                    name=portfolio_name, weights=current_portfolio["weights"],
+                    investment_amount=current_portfolio["investment_amount"],
+                    optimization_method=current_portfolio["strategy"],
+                    expected_return=current_portfolio["expected_return"],
+                    expected_volatility=current_portfolio["volatility"],
+                    sharpe_ratio=current_portfolio["sharpe_ratio"], notes=notes,
+                    metadata=_experiment_metadata,
+                )
+                if success:
+                    st.success(t("opt_portfolio_saved_success", name=portfolio_name))
+                else:
+                    st.error(t("opt_portfolio_save_failed"))
 
     with col2:
         alloc_df_export = weights_to_dataframe(weights, investment_amount)

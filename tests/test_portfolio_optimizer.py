@@ -3635,8 +3635,15 @@ def test_owr_i_save_portfolio_receives_current_portfolio():
     # not a one-time cached Python import), so patching src.database's
     # save_portfolio before the click+rerun is picked up by the page's own
     # `from src.database import save_portfolio` when it re-runs.
+    # find_duplicate_portfolio is also patched here: this test runs against
+    # the real (unmocked) committed database/portfolio.db, which -- being a
+    # demo database -- may legitimately contain a portfolio with the same
+    # default weights/method/amount as this test builds (Issue #20 section
+    # 9D's duplicate-save guard is working as intended; it just isn't what
+    # this test is checking).
     import src.database as db_mod
-    with patch.object(db_mod, "save_portfolio", return_value=True) as mock_save:
+    with patch.object(db_mod, "save_portfolio", return_value=True) as mock_save, \
+         patch.object(db_mod, "find_duplicate_portfolio", return_value=None):
         save_btn.click()
         at.run()
     check("OWR-I.save_portfolio_called_with_current_portfolio_weights",
