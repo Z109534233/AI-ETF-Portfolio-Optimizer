@@ -46,8 +46,8 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, error_state, kpi_card, chart_caption,
-    region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
+    chart_card, render_footer, error_state, kpi_card, chart_caption, ai_interpret_button,
+    results_hero, region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
 )
 from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
 from src.etf_signals import (
@@ -464,7 +464,16 @@ st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 # OVERVIEW -- "What is this ETF?"
 # ══════════════════════════════════════════════════════════════════════════
 if workspace == "Overview":
-    section_header(t("etf_overview_snapshot_title"))
+    # Issue #24 light hierarchy pass: results_hero() is the strong,
+    # unmistakable visual break used elsewhere (see pages/2_Portfolio_
+    # Optimizer.py) for the first concrete result of a user's selection --
+    # here, that's the focus ETF's own snapshot, so it replaces the plain
+    # section_header() that used to open this workspace. The other five
+    # workspaces stay on section_header(): they're a continuous analytical
+    # explorer (Performance/Risk/Holdings/Compare/Deep Analysis), not a
+    # single "here's the answer" moment, so promoting all of them to hero
+    # weight would just make the whole page loud instead of clarifying it.
+    results_hero(t("etf_overview_snapshot_title"), subtitle=_focus_ticker)
     # Same thin-history disclosure as the Compare workspace (Issue #20
     # release-gate review, automated PR reviewer finding): a focus ticker
     # under MIN_RELIABLE_HISTORY_POINTS still gets a Quant Score/Trend/
@@ -511,6 +520,7 @@ elif workspace == "Performance":
             if price_view == "Historical":
                 fig = price_chart(etf_prices)
                 st.plotly_chart(fig, use_container_width=True, key="etf_price_historical")
+                chart_caption(t("etf_price_historical_caption"))
                 _chg = {}
                 for c in etf_prices.columns:
                     s = etf_prices[c].dropna()
@@ -537,6 +547,7 @@ elif workspace == "Performance":
             elif price_view == "Normalized":
                 fig = normalized_price_chart(etf_prices)
                 st.plotly_chart(fig, use_container_width=True, key="etf_price_normalized")
+                chart_caption(t("etf_price_normalized_caption"))
                 _norm_end = {}
                 for c in etf_prices.columns:
                     s = etf_prices[c].dropna()
@@ -570,6 +581,7 @@ elif workspace == "Performance":
             else:  # Cumulative
                 fig = cumulative_return_chart(etf_prices)
                 st.plotly_chart(fig, use_container_width=True, key="etf_price_cumulative")
+                chart_caption(t("etf_price_cumulative_caption"))
                 _cum = {}
                 for c in etf_prices.columns:
                     s = etf_prices[c].dropna()
@@ -607,6 +619,7 @@ elif workspace == "Performance":
             if ret_view == "Distribution":
                 fig = return_distribution_chart(etf_prices)
                 st.plotly_chart(fig, use_container_width=True, key="etf_return_distribution")
+                chart_caption(t("etf_return_distribution_caption"))
                 _daily = etf_prices.pct_change().dropna()
                 if not _daily.empty:
                     _pooled = _daily.values.flatten()
@@ -643,6 +656,7 @@ elif workspace == "Performance":
                             st.markdown(f"**{t('etf_monthly_returns_for', ticker=ticker)}**")
                             fig = monthly_heatmap(monthly_ret)
                             st.plotly_chart(fig, use_container_width=True, key=f"etf_monthly_heatmap_{ticker}")
+                            chart_caption(t("etf_monthly_heatmap_caption"))
                             _month_avg = monthly_ret.mean(axis=0, skipna=True)
                             _best_month, _worst_month = _month_avg.idxmax(), _month_avg.idxmin()
                             _pos_rate = (monthly_ret > 0).sum(axis=0) / monthly_ret.notna().sum(axis=0)
@@ -671,6 +685,7 @@ elif workspace == "Performance":
                 if len(p) > window:
                     fig = rolling_metrics_chart(p, window)
                     st.plotly_chart(fig, use_container_width=True, key="etf_rolling_metrics")
+                    chart_caption(t("etf_rolling_metrics_caption"))
                     _ret_series = p.pct_change().dropna()
                     _rolling_ret_valid = (_ret_series.rolling(window).mean() * 252).dropna()
                     if len(_rolling_ret_valid) > 5:
@@ -716,6 +731,7 @@ elif workspace == "Performance":
                 fig.update_layout(title=t("chart_annual_performance_pct"), xaxis_title=t("chart_year"),
                                    yaxis_title=t("chart_annual_return_pct"), barmode="group", height=420)
                 st.plotly_chart(apply_dark_theme(fig), use_container_width=True, key="etf_annual_performance")
+                chart_caption(t("etf_annual_performance_caption"))
                 _yearly_avg = annual_returns.mean(axis=1)
                 _best_year, _worst_year = _yearly_avg.idxmax().year, _yearly_avg.idxmin().year
                 if len(_yearly_avg) >= 2:
@@ -778,6 +794,7 @@ elif workspace == "Risk":
         with chart_card(t("etf_price_charts_card")):
             fig = drawdown_chart(etf_prices)
             st.plotly_chart(fig, use_container_width=True, key="etf_price_drawdown")
+            chart_caption(t("etf_price_drawdown_caption"))
             _dd, _cur_dd = {}, {}
             for c in etf_prices.columns:
                 s = etf_prices[c].dropna()
@@ -830,6 +847,7 @@ elif workspace == "Risk":
         with chart_card(t("etf_risk_vs_return_card")):
             fig = risk_return_scatter(etf_prices)
             st.plotly_chart(fig, use_container_width=True, key="etf_risk_return_scatter")
+            chart_caption(t("etf_risk_return_scatter_caption"))
             _rr = {}
             for c in etf_prices.columns:
                 s = etf_prices[c].dropna()
@@ -852,6 +870,15 @@ elif workspace == "Risk":
                     insight = "建議加入至少一檔其他 ETF 以評估相對風險報酬位置" if _lang == "zh-TW" else "Consider adding at least one more ETF to gauge its relative risk-return position"
                     risk = "單一標的的風險完全取決於該檔本身，缺乏分散效果" if _lang == "zh-TW" else "A single holding's risk is fully tied to that one ETF, with no diversification benefit"
                 _ai_interpretation(kf, insight, risk)
+                # Risk-return positioning directly informs which ETF to
+                # size up/down, so this is one of the more decision-relevant
+                # charts on the page -- context_text reuses ONLY the kf/
+                # insight/risk strings already rendered above by
+                # _ai_interpretation(), never a fresh computation.
+                ai_interpret_button(
+                    "etf_risk_return_scatter_ai_interpret", st.session_state,
+                    " ".join(kf) + " " + insight + " " + risk,
+                )
 
 # ══════════════════════════════════════════════════════════════════════════
 # HOLDINGS & EXPOSURE -- "What does it actually own?"
@@ -995,6 +1022,7 @@ elif workspace == "Holdings":
                 _hld_df, use_container_width=True, hide_index=True, height=420,
                 column_config={t("etf_holdings_col_weight"): st.column_config.NumberColumn(format="percent")},
             )
+            chart_caption(t("etf_holdings_all_table_caption"))
 
         else:  # Search
             _hld_query = st.text_input(
@@ -1025,6 +1053,7 @@ elif workspace == "Holdings":
                     pd.DataFrame(_hld_table_rows), use_container_width=True, hide_index=True,
                     column_config={t("etf_holdings_col_weight"): st.column_config.NumberColumn(format="percent")},
                 )
+                chart_caption(t("etf_holdings_search_table_caption"))
 
 # ══════════════════════════════════════════════════════════════════════════
 # COMPARE -- "How does it compare with other ETFs?"
@@ -1533,6 +1562,7 @@ elif workspace == "Compare":
                 corr = correlation_matrix(etf_prices)
                 fig = correlation_heatmap(corr)
                 st.plotly_chart(fig, use_container_width=True, key="etf_correlation_heatmap")
+                chart_caption(t("etf_correlation_heatmap_caption"))
                 _cols_c = corr.columns.tolist()
                 _pairs = [(_cols_c[a], _cols_c[b], corr.iloc[a, b]) for a in range(len(_cols_c)) for b in range(a + 1, len(_cols_c))]
                 if _pairs:
@@ -1567,10 +1597,20 @@ elif workspace == "Compare":
                         )
                         risk = "When holdings are highly correlated, a market downturn tends to drag several of them down together -- actual diversification may be less than it appears" if _limited_benefit else "Correlations shift with market conditions -- they often rise during systemic stress events, so diversification benefits can shrink exactly when they're needed most"
                     _ai_interpretation(kf, insight, risk)
+                    # Correlation directly drives diversification decisions
+                    # (which ETF to add/drop for the least overlap), so this
+                    # is one of the more decision-relevant charts here.
+                    # context_text reuses ONLY the kf/insight/risk strings
+                    # already rendered above by _ai_interpretation().
+                    ai_interpret_button(
+                        "etf_correlation_heatmap_ai_interpret", st.session_state,
+                        " ".join(kf) + " " + insight + " " + risk,
+                    )
 
             with chart_card(t("etf_covariance_matrix_card"), t("etf_covariance_matrix_sub")):
                 cov = covariance_matrix(etf_prices)
                 st.dataframe(cov.style.format("{:.6f}"), use_container_width=True)
+                chart_caption(t("etf_covariance_matrix_caption"))
 
 # ══════════════════════════════════════════════════════════════════════════
 # DEEP ANALYSIS -- "What do the advanced quantitative indicators show?"
@@ -1591,6 +1631,21 @@ else:  # workspace == "Deep Analysis"
         with chart_card(t("etf_risk_metrics_table_card")):
             metrics_df = pd.DataFrame(metrics_data).set_index("Ticker")
             st.dataframe(metrics_df.T, use_container_width=True)
+            chart_caption(t("etf_deep_metrics_table_caption"))
+            # Full quantitative comparison table -- one of the more
+            # decision-relevant views on the page. context_text is built
+            # ONLY from the Annualized Return / Sharpe / Max Drawdown
+            # columns already rendered in metrics_df.T above, never a
+            # fresh computation.
+            _deep_metrics_context = "; ".join(
+                f"{_tk}: Annualized Return {_row.get('Annualized Return', '—')}, "
+                f"Sharpe Ratio {_row.get('Sharpe Ratio', '—')}, "
+                f"Maximum Drawdown {_row.get('Maximum Drawdown', '—')}"
+                for _tk, _row in metrics_df.to_dict(orient="index").items()
+            )
+            ai_interpret_button(
+                "etf_deep_metrics_table_ai_interpret", st.session_state, _deep_metrics_context,
+            )
 
     with chart_card(t("etf_technical_indicators_title", ticker=_focus_ticker), t("etf_technical_indicators_sub")):
         import plotly.graph_objects as go
@@ -1609,6 +1664,7 @@ else:  # workspace == "Deep Analysis"
                                      fill="tonexty", fillcolor="rgba(52,211,153,0.05)"))
         fig_bb.update_layout(title=t("chart_bollinger_bands"), xaxis_title=t("chart_date"), yaxis_title=t("chart_price"), height=420)
         st.plotly_chart(apply_dark_theme(fig_bb), use_container_width=True, key="etf_bollinger_bands")
+        chart_caption(t("etf_bollinger_bands_caption"))
         _bb_last = bb.iloc[-1]
         _last_price = p.iloc[-1]
         _band_width = (_bb_last["Upper"] - _bb_last["Lower"]) / _bb_last["Middle"] * 100 if _bb_last["Middle"] else 0

@@ -347,6 +347,21 @@ TRANSLATIONS = {
         "etf_covariance_matrix_card": "共變異數矩陣",
         "etf_covariance_matrix_sub": "已年化",
 
+        # ── ETF Analysis — Chart/Table Explanations (Issue #24) ──────────
+        "etf_price_historical_caption": "此折線圖顯示所有選取 ETF 在所選期間內的實際歷史收盤價，可用於比較不同標的的價格走勢。",
+        "etf_price_normalized_caption": "此圖以相同起始基準（100）呈現各 ETF 的價格走勢，方便在不同價格量級下比較相對報酬表現。",
+        "etf_price_cumulative_caption": "此圖顯示各 ETF 自期間起點以來的累積報酬率百分比。",
+        "etf_price_drawdown_caption": "此圖顯示各 ETF 價格自歷史高點以來的百分比跌幅（回撤），數值越負代表跌幅越深。",
+        "etf_return_distribution_caption": "此直方圖顯示所選 ETF 每日報酬率的分布情形，可用於觀察報酬的集中程度與偏態。",
+        "etf_monthly_heatmap_caption": "此熱力圖依年份與月份呈現該 ETF 的歷史月報酬率，顏色深淺代表報酬高低。",
+        "etf_rolling_metrics_caption": "此圖顯示以指定天數為視窗計算的滾動報酬與波動率，用於觀察趨勢與風險隨時間的變化。",
+        "etf_annual_performance_caption": "此長條圖比較各 ETF 每一個完整年度的報酬率。",
+        "etf_risk_return_scatter_caption": "此散佈圖以年化波動率為橫軸、年化報酬率為縱軸，呈現各 ETF 的風險與報酬定位。",
+        "etf_correlation_heatmap_caption": "此熱力圖顯示所選 ETF 兩兩之間的價格報酬相關係數，數值越接近 1 代表走勢越同步，越接近 -1 代表走勢越相反。",
+        "etf_covariance_matrix_caption": "此表顯示所選 ETF 兩兩之間的年化報酬共變異數，用於投資組合風險計算。",
+        "etf_bollinger_bands_caption": "此圖顯示價格搭配 20 日布林通道（上軌、中軌、下軌），用於觀察價格相對於近期波動區間的位置。",
+        "etf_deep_metrics_table_caption": "此表彙整所選 ETF 的完整風險與報酬量化指標，可逐檔比較。",
+
         # ── ETF Analysis — Holdings & Exposure (Round 1: single ETF) ────
         "etf_holdings_title": "持股與曝險",
         "etf_holdings_subtitle": "檢視此 ETF 實際持有的成分股／資產及其權重",
@@ -397,6 +412,8 @@ TRANSLATIONS = {
         "etf_holdings_asset_type_derivative": "衍生性商品",
         "etf_holdings_aggregate_note": "彙總部位（非個別持股）",
         "etf_holdings_empty_no_holdings": "此 ETF 尚無可顯示的持股資料",
+        "etf_holdings_all_table_caption": "此表列出此 ETF 已揭露的全部成分持股及其權重與資產類型，可依權重排序。",
+        "etf_holdings_search_table_caption": "此表顯示符合搜尋條件的成分持股及其權重。",
 
         # ── ETF Analysis — Full Page Workspace Redesign ──────────────────
         "etf_analysis_settings_label": "分析設定",
@@ -1816,6 +1833,21 @@ TRANSLATIONS = {
         "etf_covariance_matrix_card": "Covariance Matrix",
         "etf_covariance_matrix_sub": "Annualized",
 
+        # ── ETF Analysis — Chart/Table Explanations (Issue #24) ──────────
+        "etf_price_historical_caption": "This line chart shows the actual historical closing prices for every selected ETF over the chosen period, useful for comparing price paths across holdings.",
+        "etf_price_normalized_caption": "This chart rebases every ETF to the same starting value (100) so relative performance can be compared regardless of each ETF's actual price level.",
+        "etf_price_cumulative_caption": "This chart shows each ETF's cumulative percentage return since the start of the selected period.",
+        "etf_price_drawdown_caption": "This chart shows each ETF's percentage decline from its own prior peak (drawdown) over time -- a more negative value means a deeper decline.",
+        "etf_return_distribution_caption": "This histogram shows the distribution of daily returns for the selected ETFs, useful for gauging how concentrated or skewed returns are.",
+        "etf_monthly_heatmap_caption": "This heatmap shows this ETF's historical monthly returns by year and month, with color intensity reflecting return magnitude.",
+        "etf_rolling_metrics_caption": "This chart shows rolling return and volatility computed over the selected window, useful for tracking how trend and risk change over time.",
+        "etf_annual_performance_caption": "This bar chart compares each ETF's return for every complete calendar year in the selected period.",
+        "etf_risk_return_scatter_caption": "This scatter plot places each ETF by annualized volatility (x-axis) against annualized return (y-axis), showing its risk-return position.",
+        "etf_correlation_heatmap_caption": "This heatmap shows the pairwise correlation of daily returns between selected ETFs -- values near 1 mean they move together, values near -1 mean they move oppositely.",
+        "etf_covariance_matrix_caption": "This table shows the pairwise annualized covariance of returns between selected ETFs, an input to portfolio risk calculations.",
+        "etf_bollinger_bands_caption": "This chart shows price alongside 20-day Bollinger Bands (upper, middle, lower), useful for seeing where price sits relative to its recent volatility range.",
+        "etf_deep_metrics_table_caption": "This table compiles the full set of risk and return metrics for each selected ETF for side-by-side comparison.",
+
         # ── ETF Analysis — Holdings & Exposure (Round 1: single ETF) ────
         "etf_holdings_title": "Holdings & Exposure",
         "etf_holdings_subtitle": "See what this ETF actually holds, and each position's weight",
@@ -1866,6 +1898,8 @@ TRANSLATIONS = {
         "etf_holdings_asset_type_derivative": "Derivative",
         "etf_holdings_aggregate_note": "Aggregate position (not an individual holding)",
         "etf_holdings_empty_no_holdings": "No holdings data available for this ETF",
+        "etf_holdings_all_table_caption": "This table lists every disclosed holding of this ETF with its weight and asset type, sortable by weight.",
+        "etf_holdings_search_table_caption": "This table shows the holdings matching the current search query along with their weights.",
 
         # ── ETF Analysis — Full Page Workspace Redesign ──────────────────
         "etf_analysis_settings_label": "Analysis Settings",
