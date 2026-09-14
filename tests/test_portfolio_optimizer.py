@@ -1179,6 +1179,86 @@ def test_run_a_no_download_before_explicit_build_click():
         data_loader_mod.download_etf_data = original
 
 
+# ── RUN-B: changing ONLY the risk-free rate after a successful build must
+# invalidate the result (stale-input warning) and NOT silently re-run the
+# optimizer -- risk_free_rate feeds the displayed Sharpe ratio (and Max-
+# Sharpe optimization itself) but was previously missing from `run_inputs`,
+# so the page kept showing a Sharpe ratio computed under the OLD rate as if
+# it reflected the new one. Mirrors RUN-A's instrumentation approach (a real
+# call counter on download_etf_data) so "no auto-run" is proven, not just
+# inferred from session_state.
+def test_run_b_risk_free_rate_change_triggers_stale_warning_not_autorun():
+    import src.data_loader as data_loader_mod
+    import streamlit as st
+
+    st.page_link = lambda *a, **k: None
+
+    call_count = {"n": 0}
+    original = data_loader_mod.download_etf_data
+
+    def _counting_download(tickers, start_date, end_date, price_field="Close"):
+        call_count["n"] += 1
+        return original(tickers, start_date, end_date, price_field)
+
+    data_loader_mod.download_etf_data = _counting_download
+    try:
+        at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")
+        exc = at.exception[0] if at.exception else None
+        check("RUN-B.no_exception_after_initial_build", exc is None, str(exc))
+        if exc:
+            return
+        check("RUN-B.result_present_after_initial_build", at.session_state["opt_result"] is not None,
+              at.session_state["opt_result"])
+        downloads_after_build = call_count["n"]
+        check("RUN-B.at_least_one_download_after_initial_build", downloads_after_build >= 1,
+              downloads_after_build)
+        result_before = dict(at.session_state["opt_result"])
+
+        rf_w = next((w for w in at.slider if w.key == "opt_risk_free_rate_slider"), None)
+        check("RUN-B.risk_free_slider_found", rf_w is not None)
+        if rf_w is None:
+            return
+        new_value = rf_w.value + 2.0 if rf_w.value < 8.0 else rf_w.value - 2.0
+        rf_w.set_value(new_value)
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-B.no_exception_after_rate_change", exc is None, str(exc))
+        if exc:
+            return
+
+        # No auto-run: the download path must not fire again just because
+        # the risk-free rate slider moved.
+        check("RUN-B.no_new_download_after_rate_change", call_count["n"] == downloads_after_build,
+              call_count["n"])
+        # The previously-built result must still be sitting in session_state
+        # (stale, not cleared and not silently replaced).
+        check("RUN-B.result_unchanged_after_rate_change",
+              at.session_state["opt_result"]["weights"] == result_before["weights"] and
+              at.session_state["opt_result"]["sharpe_ratio"] == result_before["sharpe_ratio"],
+              at.session_state["opt_result"])
+        warnings_text = "\n".join(w.value for w in at.warning)
+        check("RUN-B.stale_input_warning_shown", "Build Optimized Portfolio" in warnings_text, warnings_text)
+
+        # Clicking Build again must pick up the NEW risk-free rate.
+        run_btn = _find_run_button(at)
+        check("RUN-B.run_button_present", run_btn is not None)
+        if run_btn is None:
+            return
+        run_btn.click()
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-B.no_exception_after_rebuild", exc is None, str(exc))
+        if exc:
+            return
+        check("RUN-B.download_fired_on_explicit_rebuild", call_count["n"] == downloads_after_build + 1,
+              call_count["n"])
+        warnings_text_after = "\n".join(w.value for w in at.warning)
+        check("RUN-B.stale_warning_cleared_after_rebuild",
+              "Build Optimized Portfolio" not in warnings_text_after, warnings_text_after)
+    finally:
+        data_loader_mod.download_etf_data = original
+
+
 # ── PD-G: zh-TW renders the diagnosis section with no raw translation keys ──
 def test_pd_g_zh_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
@@ -3899,6 +3979,7 @@ def main():
     _run(test_pd_e_no_side_effects_on_rerender)
     _run(test_pd_f_switch_strategy_updates_diagnosis)
     _run(test_run_a_no_download_before_explicit_build_click)
+    _run(test_run_b_risk_free_rate_change_triggers_stale_warning_not_autorun)
     _run(test_pd_g_zh_no_raw_keys)
     _run(test_pd_h_en_no_raw_keys)
     _run(test_pd_i_tooltips_present)

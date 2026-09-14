@@ -331,7 +331,7 @@ setup_summary_bar([
 run_inputs = (
     tuple(sorted(selected_etfs)), tuple(sorted(selected_regions)), str(start_date), str(end_date),
     optimization_method, round(min_weight, 6), round(max_weight, 6),
-    allow_short, target_return_pct, base_currency,
+    allow_short, target_return_pct, base_currency, round(risk_free_rate, 6),
 )
 
 if "opt_result" not in st.session_state:
