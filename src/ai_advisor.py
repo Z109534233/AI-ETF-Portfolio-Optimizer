@@ -414,8 +414,13 @@ def generate_advisor_narrative(context: dict, investment_objective: str = "Long-
 
     # Only warn on a genuine API failure -- not configured at all is the
     # expected default state and should silently use the rule-based path.
+    # The error detail itself is an SDK exception message (type(e).__name__:
+    # e, see src/openai_service.py) and is deliberately left untranslated
+    # inside the localized sentence -- it is a diagnostic string, not UI
+    # copy, and is never a secret (fingerprint()/generate_text() never
+    # surface the API key).
     if is_configured() and result.get("error"):
-        st.warning(f"AI analysis unavailable: {result['error']}. Using rule-based analysis.")
+        st.warning(t("ai_generation_failed_fallback", error=result["error"]))
     return {"text": generate_rule_based_narrative(
         context, investment_objective, risk_level, investment_horizon), "source": "rule_based"}
 

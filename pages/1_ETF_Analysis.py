@@ -465,6 +465,14 @@ st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════
 if workspace == "Overview":
     section_header(t("etf_overview_snapshot_title"))
+    # Same thin-history disclosure as the Compare workspace (Issue #20
+    # release-gate review, automated PR reviewer finding): a focus ticker
+    # under MIN_RELIABLE_HISTORY_POINTS still gets a Quant Score/Trend/
+    # Portfolio View from compute_quant_signals() -- it must not be
+    # presented at the same confidence as a fully-populated series without
+    # this warning, here in Overview exactly as in Compare.
+    if not has_sufficient_history(_focus_p):
+        st.warning(t("etf_thin_history_warning", tickers=_focus_ticker))
     _focus_entry = _ai_summary_entry(_focus_ticker, _lang)
     _render_ai_summary_card(_focus_ticker, _focus_entry)
 

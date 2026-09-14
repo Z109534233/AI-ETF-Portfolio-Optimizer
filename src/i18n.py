@@ -941,6 +941,7 @@ TRANSLATIONS = {
             "如需啟用 AI 驅動分析，請於 Streamlit 密鑰設定中加入 `OPENAI_API_KEY`。"
         ),
         "ai_mode_success": "AI 驅動分析目前可以使用。",
+        "ai_generation_failed_fallback": "AI 分析目前無法使用（{error}），已改用規則式分析。",
         "ai_disclaimer_banner": "**重要提醒**：本系統內容僅供教學與研究展示使用，不構成任何投資建議。過去績效不代表未來結果。",
         "ai_sidebar_config": "投資組合設定",
         "ai_weights_label": "投資組合權重",
@@ -2267,6 +2268,7 @@ TRANSLATIONS = {
             "To enable AI-powered analysis, add `OPENAI_API_KEY` to your Streamlit secrets."
         ),
         "ai_mode_success": "AI-powered analysis is available.",
+        "ai_generation_failed_fallback": "AI analysis unavailable ({error}). Using rule-based analysis instead.",
         "ai_disclaimer_banner": "**Important**: This content is for educational purposes only and does not constitute financial advice. Past performance does not guarantee future results.",
         "ai_sidebar_config": "Portfolio Configuration",
         "ai_weights_label": "Portfolio Weights",
