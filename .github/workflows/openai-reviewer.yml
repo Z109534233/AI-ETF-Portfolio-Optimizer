@@ -1,8 +1,10 @@
 name: OpenAI PR Reviewer
 
+# Automatic OpenAI PR review is disabled.
+# Normal development flow is: @claude implements -> Claude runs tests/self-review -> pushes branch/PR -> human reviews/merges.
+# Keep this workflow file for reference/manual re-enablement only.
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 concurrency:
   group: openai-reviewer-${{ github.event.pull_request.number }}
