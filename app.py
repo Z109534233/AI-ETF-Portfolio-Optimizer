@@ -32,6 +32,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, get_language
+from src.auth import require_login
 
 # ── Page Configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -50,6 +51,7 @@ st.set_page_config(
 ensure_directories()
 init_database()
 load_css()
+require_login()
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
