@@ -35,7 +35,7 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, style_signed_columns, chart_caption,
     ai_interpret_button, region_selector, region_etf_options, region_etf_multiselect,
-    region_benchmark_selector, render_current_portfolio_handoff,
+    region_benchmark_selector, render_current_portfolio_handoff, results_hero,
 )
 from src.theme import COLORS
 from src.i18n import t, t_country
@@ -48,30 +48,6 @@ st.set_page_config(
 
 load_css()
 
-
-def _results_hero(title: str, subtitle: str = None) -> None:
-    """Strong, elevated, colored header marking where this page's actual
-    risk analysis for the user's current selection begins -- visually
-    distinct from the plain sidebar setup controls above it (setup vs.
-    results hierarchy pass). No src/ui.py helper of this shape exists yet
-    in this codebase, so this is a small page-local equivalent rather than
-    a shared component; it intentionally mirrors section_header()'s
-    markup conventions (inline CSS vars already used elsewhere on this
-    page, e.g. the chart-card styling) so it stays visually consistent.
-    """
-    sub_html = (
-        f'<div style="color:var(--text-secondary);font-size:13px;margin-top:4px;">{subtitle}</div>'
-        if subtitle else ""
-    )
-    st.markdown(
-        '<div style="background:linear-gradient(135deg, rgba(59,130,246,0.16), rgba(59,130,246,0.03));'
-        f'border-left:4px solid {COLORS["primary"]};border-radius:var(--radius-lg);'
-        'padding:16px 20px;margin:10px 0 18px 0;box-shadow:var(--shadow-md);">'
-        f'<div style="color:var(--text);font-weight:800;font-size:21px;letter-spacing:-0.01em;">{title}</div>'
-        f'{sub_html}'
-        '</div>',
-        unsafe_allow_html=True,
-    )
 
 page_header(t("risk_title"), t("risk_subtitle"))
 
@@ -178,7 +154,7 @@ port_prices = (1 + port_returns).cumprod() * 100
 # (setup vs. results hierarchy pass) -- everything above this point (the
 # sidebar) is input/setup; everything from here down is the computed
 # result for that setup. ─────────────────────────────────────────────────
-_results_hero(
+results_hero(
     t("risk_hero_title"),
     t("risk_hero_subtitle", n=len(etf_prices.columns), start=str(start_date), end=str(end_date)),
 )

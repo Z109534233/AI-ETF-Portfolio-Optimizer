@@ -430,7 +430,7 @@ if simulation_mode == "Historical Simulation":
         f"{_currency_symbol}{hist_params['initial_investment']:,.0f} + {_currency_symbol}{hist_params['monthly_contribution']:,.0f}/mo",
         f"{hist_summary['num_contributions']} {t('hist_setup_unit_contributions')}",
         t("hist_rebalancing_monthly"),
-    ])
+    ], title=t("hist_backtest_setup_title"))
 
     # ── KPI Cards ─────────────────────────────────────────────────────────
     results_hero(t("hist_results_hero_title"), t(
@@ -590,7 +590,7 @@ setup_summary_bar([
     f"${sim_params['initial_investment']:,.0f} + ${sim_params['monthly_contribution']:,.0f}/mo",
     f"{sim_params['annual_return']:.1%} / {sim_params['annual_volatility']:.1%}",
     f"{sim_params['n_simulations']:,} {t('sim_setup_unit_simulations')}",
-])
+], title=t("sim_projection_setup_title"))
 
 # ── Methodology & Assumptions (M2) ──────────────────────────────────────────
 # Compact disclosure of the ACTUAL Monte Carlo methodology -- see

@@ -679,17 +679,24 @@ def badge(text: str, variant: str = "neutral") -> str:
 
 
 # ── Setup vs Results Visual Hierarchy (Issue #24 items 2/3) ──────────────────
-def setup_summary_bar(parts: list) -> None:
+def setup_summary_bar(parts: list, title: str = None) -> None:
     """Compact, single-line 'Current setup' summary -- replaces a wide,
     equally-weighted multi-field settings strip that gave setup inputs the
     same visual prominence as the actual results. Deliberately plain,
     muted, low-emphasis text (not a card, no color) so the eye moves past
     it straight to results_hero() below, which carries the strong visual
     weight instead. `parts` is a list of short pre-formatted strings (e.g.
-    "2 Markets", "5 ETFs", "USD", "Max Sharpe"), joined with a bullet."""
+    "2 Markets", "5 ETFs", "USD", "Max Sharpe"), joined with a bullet.
+    `title` is the already-translated eyebrow label (e.g. t("opt_setup_
+    summary_title") / t("sim_projection_setup_title")) -- defaults to the
+    Portfolio Optimizer's own "Portfolio Setup" wording for backward
+    compatibility with its original single-page call site; every other
+    page should pass its own page-appropriate title explicitly."""
+    if title is None:
+        title = t("opt_setup_summary_title")
     st.markdown(
         '<div class="setup-summary-bar">'
-        f'<span class="setup-summary-eyebrow">{t("opt_setup_summary_title")}</span>'
+        f'<span class="setup-summary-eyebrow">{title}</span>'
         "&nbsp;&nbsp;" + "&nbsp;&nbsp;•&nbsp;&nbsp;".join(parts) +
         "</div>",
         unsafe_allow_html=True,
