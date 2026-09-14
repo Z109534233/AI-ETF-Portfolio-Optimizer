@@ -1,0 +1,189 @@
+"""
+Shared ETF quant-signal computations for pages/1_ETF_Analysis.py (Issue #20
+section 2 -- "Fix interpretation inconsistency").
+
+Before this module existed, the ETF Analysis page computed a ticker's
+score/trend/recommendation in THREE independently-tuned places (the
+Overview "AI Score" card, the Overview "Key Observations" block, and the
+Compare workspace's "ETF Compare Score" table) with different weightings
+and thresholds -- so the same ticker could legitimately show Trend =
+Bullish in one card and a contradictory recommendation in another. Every
+workspace now calls compute_quant_signals() for a given price series and
+gets back the SAME Trend Signal / Quant Score / Portfolio View / Signal
+Agreement, so the numbers can never disagree with each other.
+
+Three explicitly distinct, non-overlapping constructs (per the issue):
+  - Trend Signal: Bullish / Neutral / Bearish -- recent price direction only.
+  - Quant Score: 0-100, combining return, risk and momentum.
+  - Portfolio View: Underweight / Neutral / Overweight -- a research framing
+    derived from the Quant Score, NOT a Buy/Sell instruction.
+  - Signal Agreement: the fraction of the underlying indicators (return,
+    Sharpe, momentum, price-vs-long-MA) that agree with the overall score's
+    direction, expressed as a percentage. This is genuinely what the old
+    "Confidence" label measured -- it is not a statistical/probabilistic
+    confidence interval, so it must never be re-labeled "Confidence".
+"""
+
+import pandas as pd
+
+from src.financial_metrics import (
+    annualized_return, annualized_volatility, sharpe_ratio, maximum_drawdown,
+)
+from src.technical_indicators import sma, momentum
+from src.openai_service import cached_generate, generate_text, fingerprint as _fingerprint
+
+TREND_BULLISH, TREND_NEUTRAL, TREND_BEARISH = "Bullish", "Neutral", "Bearish"
+VIEW_OVERWEIGHT, VIEW_NEUTRAL, VIEW_UNDERWEIGHT = "Overweight", "Neutral", "Underweight"
+
+
+def trend_signal_from_return(ann_ret: float) -> str:
+    """Same thresholds as the page's KPI-row Trend chip -- this is the ONE
+    definition of Trend Signal used everywhere on the page."""
+    if ann_ret > 0.05:
+        return TREND_BULLISH
+    if ann_ret < -0.05:
+        return TREND_BEARISH
+    return TREND_NEUTRAL
+
+
+def portfolio_view_from_score(score: float) -> str:
+    if score >= 65:
+        return VIEW_OVERWEIGHT
+    if score <= 35:
+        return VIEW_UNDERWEIGHT
+    return VIEW_NEUTRAL
+
+
+def compute_quant_signals(p: pd.Series, risk_free_rate: float) -> dict:
+    """`p` is one ticker's cleaned, already-.dropna()'d price Series.
+
+    Returns the canonical dict every workspace on the ETF Analysis page
+    reads from -- score/trend/portfolio_view/signal_agreement plus the raw
+    inputs (ret_ann, vol, sharpe, mdd, mom) so callers can build their own
+    rule-based commentary without recomputing any of them differently.
+    """
+    ann_ret = annualized_return(p)
+    vol = annualized_volatility(p)
+    sr = sharpe_ratio(p, risk_free_rate)
+    mdd = maximum_drawdown(p)
+    ma_short = sma(p, 20).iloc[-1]
+    ma_long = sma(p, 50).iloc[-1]
+    mom_last = momentum(p, 10).iloc[-1]
+    mom = mom_last if pd.notna(mom_last) else 0.0
+    price_now = p.iloc[-1]
+
+    score = 50.0
+    score += max(-22, min(22, ann_ret * 140))
+    score += max(-18, min(18, sr * 11))
+    score += max(-12, min(12, mom * 200))
+    score -= max(-8, min(22, (vol - 0.15) * 90))
+    score -= max(0, min(22, abs(mdd) * 55))
+    score = int(round(max(0, min(100, score))))
+
+    trend = trend_signal_from_return(ann_ret)
+    portfolio_view = portfolio_view_from_score(score)
+
+    signs = [
+        1 if ann_ret > 0 else (-1 if ann_ret < 0 else 0),
+        1 if sr > 0 else (-1 if sr < 0 else 0),
+        1 if mom > 0 else (-1 if mom < 0 else 0),
+        1 if price_now > ma_long else (-1 if price_now < ma_long else 0),
+    ]
+    overall_sign = 1 if score >= 50 else -1
+    agreement = sum(1 for s in signs if s == overall_sign) / len(signs)
+    signal_agreement = round(55 + agreement * 40)
+    if vol > 0.30:
+        signal_agreement = max(50, signal_agreement - 5)
+
+    return {
+        "score": score, "trend": trend, "portfolio_view": portfolio_view,
+        "signal_agreement": signal_agreement, "ret_ann": ann_ret, "vol": vol,
+        "sharpe": sr, "mdd": mdd, "mom": mom, "price": price_now,
+        "ma_short": ma_short, "ma_long": ma_long,
+    }
+
+
+# ── OpenAI "AI Interpretation" (Issue #20 section 2C) ───────────────────────
+# The LLM is only ever shown the numbers compute_quant_signals() already
+# produced -- it explains the tension between Trend Signal / Quant Score /
+# Portfolio View in natural language, it never recomputes or invents one of
+# them. Grounding rule identical to src/ai_advisor.py.
+
+_INTERPRETATION_SYSTEM_INSTRUCTIONS = """You are a financial analytics explainer embedded in an ETF analytics platform.
+You will be given a ticker and a set of ALREADY-COMPUTED deterministic values: annualized return, volatility,
+Sharpe ratio, maximum drawdown, momentum, a Quant Score (0-100), a Trend Signal (Bullish/Neutral/Bearish), and a
+Portfolio View (Underweight/Neutral/Overweight).
+
+Your job is ONLY to explain, in 2-4 short sentences, why these signals might agree or disagree with each other
+(e.g. a bullish recent trend but a middling Quant Score because volatility or drawdown is elevated), and what
+that tension means for how a reader should interpret the page. Do NOT invent, recompute, or restate any number
+that was not given to you. Do NOT issue a buy/sell/hold instruction or personalized financial advice. Do NOT
+introduce any new quantitative claim. If the signals are aligned, say so plainly instead of manufacturing tension.
+Respond in the same language as the user message (Traditional Chinese if the input is in Traditional Chinese,
+English otherwise)."""
+
+
+def build_interpretation_prompt(ticker: str, lang: str, window_start, window_end, signals: dict) -> str:
+    if lang == "zh-TW":
+        return (
+            f"標的：{ticker}\n"
+            f"資料區間：{window_start} 至 {window_end}\n"
+            f"年化報酬率：{signals['ret_ann']:.2%}\n"
+            f"年化波動度：{signals['vol']:.2%}\n"
+            f"夏普比率：{signals['sharpe']:.2f}\n"
+            f"最大回撤：{signals['mdd']:.2%}\n"
+            f"動能（10 日）：{signals['mom']:.2%}\n"
+            f"Quant Score（量化評分，0-100）：{signals['score']}\n"
+            f"Trend Signal（趨勢訊號）：{signals['trend']}\n"
+            f"Portfolio View（投資組合觀點）：{signals['portfolio_view']}\n"
+            f"Signal Agreement（訊號一致性）：{signals['signal_agreement']}%\n"
+            "請用繁體中文，以 2-4 句話說明上述訊號之間為何一致或存在張力，並說明讀者應如何解讀這些差異。"
+        )
+    return (
+        f"Ticker: {ticker}\n"
+        f"Data window: {window_start} to {window_end}\n"
+        f"Annualized return: {signals['ret_ann']:.2%}\n"
+        f"Annualized volatility: {signals['vol']:.2%}\n"
+        f"Sharpe ratio: {signals['sharpe']:.2f}\n"
+        f"Maximum drawdown: {signals['mdd']:.2%}\n"
+        f"10-day momentum: {signals['mom']:.2%}\n"
+        f"Quant Score (0-100): {signals['score']}\n"
+        f"Trend Signal: {signals['trend']}\n"
+        f"Portfolio View: {signals['portfolio_view']}\n"
+        f"Signal Agreement: {signals['signal_agreement']}%\n"
+        "In 2-4 sentences, explain why these signals agree or are in tension with each other, "
+        "and what that means for how the reader should interpret this page."
+    )
+
+
+def interpretation_fingerprint(ticker: str, lang: str, window_start, window_end, signals: dict) -> str:
+    return _fingerprint(
+        ticker, lang, window_start, window_end, signals["score"], signals["trend"],
+        signals["portfolio_view"], signals["signal_agreement"],
+        round(signals["ret_ann"], 4), round(signals["vol"], 4),
+        round(signals["sharpe"], 4), round(signals["mdd"], 4), round(signals["mom"], 4),
+    )
+
+
+def generate_etf_interpretation(ticker: str, lang: str, window_start, window_end, signals: dict,
+                                 session_state=None) -> dict:
+    """Returns {"text": str|None, "source": "ai"|"rule_based", "error": str|None}.
+
+    Caches by interpretation_fingerprint() when `session_state` is given
+    (any dict-like -- st.session_state in the app, a plain dict in tests),
+    so an unrelated widget rerun never re-spends an OpenAI call, and only
+    a material change to the ticker/window/signals triggers a new one.
+    """
+    prompt = build_interpretation_prompt(ticker, lang, window_start, window_end, signals)
+    if session_state is not None:
+        fp = interpretation_fingerprint(ticker, lang, window_start, window_end, signals)
+        result = cached_generate(
+            session_state, f"_etf_ai_interp_cache_{ticker}", fp,
+            _INTERPRETATION_SYSTEM_INSTRUCTIONS, prompt, max_output_tokens=400,
+        )
+    else:
+        result = generate_text(_INTERPRETATION_SYSTEM_INSTRUCTIONS, prompt, max_output_tokens=400)
+
+    if result["available"]:
+        return {"text": result["text"], "source": "ai", "error": None}
+    return {"text": None, "source": "rule_based", "error": result.get("error")}

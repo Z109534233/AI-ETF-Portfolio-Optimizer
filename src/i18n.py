@@ -412,6 +412,41 @@ TRANSLATIONS = {
         "etf_overview_snapshot_title": "ETF 智慧摘要",
         "etf_overview_chart_title": "主要績效走勢",
         "etf_overview_interpretation_title": "重點觀察",
+        "etf_quant_score_label": "量化評分",
+        "etf_signal_agreement_label": "訊號一致性",
+        "etf_portfolio_view_label": "投資組合觀點",
+        "etf_trend_signal_label": "趨勢訊號",
+        "etf_quant_insights_label": "量化洞察",
+        "etf_portfolio_view_overweight": "加碼",
+        "etf_portfolio_view_neutral": "中立",
+        "etf_portfolio_view_underweight": "減碼",
+        "etf_signal_semantics_note": "趨勢訊號反映近期市場方向；量化評分綜合報酬、風險與動能；投資組合觀點則考量更完整的評分架構。這些訊號可能出現不一致的情況。",
+        "etf_analysis_notes_title": "分析註記",
+        "etf_key_findings_label": "重點發現",
+        "etf_investment_insight_label": "投資洞察",
+        "etf_risk_reminder_label": "風險提醒",
+        "etf_ai_interpretation_title": "AI 解讀",
+        "etf_ai_interpretation_btn": "AI 解讀",
+        "etf_ai_interpretation_desc": "以下方已計算完成的量化數值為基礎，由 AI 進一步說明訊號之間的關聯與落差（AI 不會重新計算或創造任何數字）。",
+        "etf_ai_interpretation_unavailable": "AI 解讀目前無法使用，以下為規則式量化洞察。",
+        "etf_analytical_summary_title": "ETF 分析摘要",
+        "etf_comparison_notes_title": "比較說明",
+        "etf_portfolio_view_summary_title": "投資組合觀點總結",
+        "etf_ranking_title": "ETF 排名",
+        "etf_compare_score_title": "ETF 比較評分",
+        "etf_compare_mode_title": "比較模式",
+        "etf_investment_verdict_title": "投資組合觀點總結",
+        "etf_dna_title": "ETF 特徵剖析",
+        "etf_rank_col_rank": "排名",
+        "etf_rank_col_etf": "ETF",
+        "etf_rank_col_score": "量化評分",
+        "etf_rank_col_trend": "趨勢訊號",
+        "etf_rank_col_view": "投資組合觀點",
+        "etf_rank_col_risk": "風險等級",
+        "etf_verdict_notes_title": "觀點說明",
+        "etf_trend_bullish": "偏多",
+        "etf_trend_neutral": "中性",
+        "etf_trend_bearish": "偏空",
         "etf_perf_nav_price": "價格績效",
         "etf_perf_nav_returns": "報酬分析",
         "etf_perf_nav_annual": "年度績效",
@@ -1675,6 +1710,41 @@ TRANSLATIONS = {
         "etf_overview_snapshot_title": "ETF Intelligence Snapshot",
         "etf_overview_chart_title": "Primary Performance Chart",
         "etf_overview_interpretation_title": "Key Observations",
+        "etf_quant_score_label": "Quant Score",
+        "etf_signal_agreement_label": "Signal Agreement",
+        "etf_portfolio_view_label": "Portfolio View",
+        "etf_trend_signal_label": "Trend Signal",
+        "etf_quant_insights_label": "Quant Insights",
+        "etf_portfolio_view_overweight": "Overweight",
+        "etf_portfolio_view_neutral": "Neutral",
+        "etf_portfolio_view_underweight": "Underweight",
+        "etf_signal_semantics_note": "Trend Signal measures recent market direction; Quant Score combines return, risk and momentum; Portfolio View considers the broader scoring framework. These signals may differ.",
+        "etf_analysis_notes_title": "Analysis Notes",
+        "etf_key_findings_label": "Key Findings",
+        "etf_investment_insight_label": "Investment Insight",
+        "etf_risk_reminder_label": "Risk Reminder",
+        "etf_ai_interpretation_title": "AI Interpretation",
+        "etf_ai_interpretation_btn": "AI Interpretation",
+        "etf_ai_interpretation_desc": "Uses the already-computed quantitative values below to explain, in natural language, how the signals relate to and diverge from each other (the AI never recalculates or invents a number).",
+        "etf_ai_interpretation_unavailable": "AI Interpretation is currently unavailable -- showing rule-based quant insights instead.",
+        "etf_analytical_summary_title": "ETF Analytical Summary",
+        "etf_comparison_notes_title": "Comparison Notes",
+        "etf_portfolio_view_summary_title": "Portfolio View Summary",
+        "etf_ranking_title": "ETF Ranking",
+        "etf_compare_score_title": "ETF Compare Score",
+        "etf_compare_mode_title": "Compare Mode",
+        "etf_investment_verdict_title": "Portfolio View Summary",
+        "etf_dna_title": "ETF DNA",
+        "etf_rank_col_rank": "Rank",
+        "etf_rank_col_etf": "ETF",
+        "etf_rank_col_score": "Quant Score",
+        "etf_rank_col_trend": "Trend Signal",
+        "etf_rank_col_view": "Portfolio View",
+        "etf_rank_col_risk": "Risk Level",
+        "etf_verdict_notes_title": "Notes",
+        "etf_trend_bullish": "Bullish",
+        "etf_trend_neutral": "Neutral",
+        "etf_trend_bearish": "Bearish",
         "etf_perf_nav_price": "Price Performance",
         "etf_perf_nav_returns": "Return Analysis",
         "etf_perf_nav_annual": "Annual Performance",
@@ -2664,6 +2734,22 @@ SECTOR_KEYS = {
     "Small Cap": "mi_sector_small_cap",
 }
 
+# src/etf_signals.py's compute_quant_signals() returns canonical English
+# values ("Overweight"/"Neutral"/"Underweight", "Bullish"/"Neutral"/
+# "Bearish") regardless of language -- these translate them for display
+# only, same pattern as COUNTRY_KEYS etc. above.
+PORTFOLIO_VIEW_KEYS = {
+    "Overweight": "etf_portfolio_view_overweight",
+    "Neutral": "etf_portfolio_view_neutral",
+    "Underweight": "etf_portfolio_view_underweight",
+}
+
+TREND_SIGNAL_KEYS = {
+    "Bullish": "etf_trend_bullish",
+    "Neutral": "etf_trend_neutral",
+    "Bearish": "etf_trend_bearish",
+}
+
 
 def _translate_option(value: str, mapping: dict) -> str:
     """Translate a raw option value for display; returns the value unchanged
@@ -2698,6 +2784,14 @@ def t_country(value: str) -> str:
 
 def t_sector(value: str) -> str:
     return _translate_option(value, SECTOR_KEYS)
+
+
+def t_portfolio_view(value: str) -> str:
+    return _translate_option(value, PORTFOLIO_VIEW_KEYS)
+
+
+def t_trend_signal(value: str) -> str:
+    return _translate_option(value, TREND_SIGNAL_KEYS)
 
 
 def language_selector() -> None:
