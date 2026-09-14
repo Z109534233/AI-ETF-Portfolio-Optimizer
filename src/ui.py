@@ -1084,17 +1084,27 @@ def chart_caption(text: str) -> None:
 
 def ai_interpret_button(cache_key: str, session_state, context_text: str) -> None:
     """Optional, user-triggered 'Ask AI to interpret' enrichment for a chart
-    or table (Issue #22 section L). Renders nothing if OpenAI isn't
-    configured -- chart_caption() above always works regardless. No API
-    call happens just from rendering this button; a call only happens on
-    click, and only once per distinct (cache_key, context_text, language)
-    combination -- cached_generate() reuses the prior result on any rerun
-    that doesn't change those (e.g. switching tabs), so repeated clicks or
-    reruns with unchanged inputs never re-spend a call. The system prompt
-    restricts the model to ONLY the metrics passed in `context_text` --
-    it must never invent a number, price, or piece of advice.
+    or table (Issue #22 section L). No API call happens just from rendering
+    this button; a call only happens on click, and only once per distinct
+    (cache_key, context_text, language) combination -- cached_generate()
+    reuses the prior result on any rerun that doesn't change those (e.g.
+    switching tabs), so repeated clicks or reruns with unchanged inputs
+    never re-spend a call. The system prompt restricts the model to ONLY
+    the metrics passed in `context_text` -- it must never invent a number,
+    price, or piece of advice.
+
+    When OpenAI isn't configured, still renders a disabled button (never
+    clickable, never spends a call) plus a caption explaining why -- a
+    silent no-op here would make the whole feature invisible to a user who
+    never sees the button and has no way to know the capability exists or
+    why it's unavailable.
     """
     if not _openai_service.is_configured():
+        st.button(
+            t("chart_ask_ai_interpret"), key=f"{cache_key}_btn_disabled", disabled=True,
+            help=t("chart_ai_interpret_unavailable"),
+        )
+        st.caption(t("chart_ai_interpret_unavailable"))
         return
     if st.button(t("chart_ask_ai_interpret"), key=f"{cache_key}_btn"):
         system_prompt = (

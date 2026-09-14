@@ -1079,6 +1079,14 @@ def test_pd_f_switch_strategy_updates_diagnosis():
                 w.set_value(method)
                 at.run()
                 break
+        # Issue #24 item 5: changing the method alone no longer auto-runs a
+        # new optimization -- "Build Optimized Portfolio" is the one
+        # explicit trigger. Click it to actually produce this method's
+        # result before checking the diagnosis reflects it.
+        run_btn = _find_run_button(at)
+        if run_btn:
+            run_btn.click()
+            at.run()
         exc = at.exception[0] if at.exception else None
         check(f"PD-F.{method}.no_exception", exc is None, str(exc))
         if exc:

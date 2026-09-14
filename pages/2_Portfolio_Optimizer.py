@@ -317,11 +317,17 @@ setup_summary_bar([
 
 # ── State Management ──────────────────────────────────────────────────────────
 # `run_inputs` fingerprints everything the optimization result depends on.
-# Without this, changing the ETF selection, date range, or optimization
-# method WITHOUT re-clicking "Run Optimization" would silently keep
-# showing stale results computed from a previous, different selection.
-# UNCHANGED this round (PRODUCT SPEC section 14: the Build button remains
-# the explicit trigger; workspace navigation never re-runs this).
+# It is used two ways below: (1) to decide whether a fresh optimization is
+# needed at all (only on the very first render of this session, when there
+# is no result yet -- see the trigger condition just below), and (2) AFTER
+# a result exists, to detect that the sidebar has since diverged from
+# whatever produced it (Issue #24 item 5: the "Build Optimized Portfolio"
+# button is the ONE explicit trigger -- changing the country/ETF selection,
+# date range, or optimization method must invalidate the stale result with
+# a visible warning, never silently kick off a fresh optimization on its
+# own). Mirrors the same fingerprint-then-compare pattern already used by
+# Investment Simulator's Historical Simulation (`_hist_fingerprint` /
+# `sim_hist_inputs_changed_rerun`).
 run_inputs = (
     tuple(sorted(selected_etfs)), tuple(sorted(selected_regions)), str(start_date), str(end_date),
     optimization_method, round(min_weight, 6), round(max_weight, 6),
@@ -335,9 +341,7 @@ if "prices_df" not in st.session_state:
 if "opt_run_inputs" not in st.session_state:
     st.session_state.opt_run_inputs = None
 
-inputs_changed = run_inputs != st.session_state.opt_run_inputs
-
-if run_btn or inputs_changed or st.session_state.opt_result is None:
+if run_btn or st.session_state.opt_result is None:
     with st.spinner(t("msg_running_optimization")):
         # Map display tickers to their actual Yahoo Finance-fetchable symbols
         # (e.g. "0050" -> "0050.TW"); tickers not in the ETF database pass
@@ -502,6 +506,15 @@ if result is None or prices_df is None or prices_df.empty:
     st.info(t("msg_configure_and_run", action=t("btn_run_optimization")))
     st.stop()
 
+# Stale-result guard (Issue #24 item 5): the sidebar has changed since this
+# result was computed. Never silently recompute here -- only the "Build
+# Optimized Portfolio" button (checked above) is allowed to trigger a new
+# optimization -- so this warns and stops instead of rendering a result
+# that no longer matches the currently-selected inputs.
+if st.session_state.opt_run_inputs != run_inputs:
+    st.warning(t("opt_inputs_changed_rerun", action=t("btn_run_optimization")))
+    st.stop()
+
 weights = result["weights"]
 exp_ret = result["expected_return"]
 exp_vol = result["expected_volatility"]
@@ -594,17 +607,29 @@ results_hero(t("opt_results_hero_title"), t("opt_results_hero_subtitle"))
 
 # ── Core Result KPI Row (always visible, near the top -- PRODUCT SPEC
 # section 3) ─────────────────────────────────────────────────────────────────
-kcol1, kcol2, kcol3, kcol4, kcol5 = st.columns(5)
+# Primary row: only the most decision-useful figures the optimizer actually
+# solved for -- return, volatility, Sharpe (Issue #24 item 2 follow-up: five
+# equal-weight KPI cards gave "Method" and "Diversification Ratio" the same
+# visual prominence as the actual optimization result, even though Method
+# is just an echo of a sidebar setting already shown in the compact setup
+# line above, and Diversification Ratio is a secondary diagnostic, not a
+# decision-driving number). Both move into "More metrics" below instead of
+# competing for equal weight with these three.
+kcol1, kcol2, kcol3 = st.columns(3)
 with kcol1:
     st.markdown(metric_card_html(t("metric_expected_annual_return"), f"{exp_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
 with kcol2:
     st.markdown(metric_card_html(t("metric_expected_volatility"), f"{exp_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with kcol3:
     st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sharpe:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
-with kcol4:
-    st.markdown(metric_card_html(t("metric_diversification_ratio"), f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
-with kcol5:
-    st.markdown(metric_card_html(t("metric_method"), t_opt_method(optimization_method), color=COLORS["warning"]), unsafe_allow_html=True)
+chart_caption(t("opt_kpi_row_caption"))
+
+with st.expander(t("opt_more_metrics_title"), expanded=False):
+    mcol1, mcol2 = st.columns(2)
+    with mcol1:
+        st.markdown(metric_card_html(t("metric_diversification_ratio"), f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
+    with mcol2:
+        st.markdown(metric_card_html(t("metric_method"), t_opt_method(optimization_method), color=COLORS["warning"]), unsafe_allow_html=True)
 
 # ── Methodology & Assumptions (M1) ──────────────────────────────────────────
 # Compact, always-visible (independent of which workspace is open) disclosure
@@ -834,6 +859,7 @@ elif opt_workspace == "Allocation":
             alloc_df = weights_to_dataframe(weights, investment_amount)
             st.dataframe(alloc_df[["Ticker", "Weight", "Allocation ($)"]].style.hide(axis="index"),
                          use_container_width=True)
+            chart_caption(t("opt_allocation_table_caption"))
 
     with col_right:
         with chart_card(t("opt_allocation_breakdown_card"), t_opt_method(optimization_method)):
@@ -959,6 +985,16 @@ elif opt_workspace == "Strategy Lab":
             _comparison_df = pd.DataFrame(_table_rows)
             st.dataframe(_comparison_df.style.hide(axis="index"), use_container_width=True)
             st.caption(f"★ {t('opt_current_strategy_label')}: {t_opt_method(optimization_method)}")
+            chart_caption(t("opt_comparison_table_caption"))
+            _comparison_context_text = "; ".join(
+                f"{_opt_method_labels[_cm]}: {t('metric_expected_annual_return')} "
+                f"{_comparison_results[_cm]['expected_return']:.2%}, "
+                f"{t('metric_sharpe_ratio')} {_comparison_results[_cm]['sharpe_ratio']:.2f}, "
+                f"{t('opt_col_largest_position')} {_comparison_results[_cm]['largest_ticker']} "
+                f"{_comparison_results[_cm]['largest_weight']:.2%}"
+                for _cm in _COMPARISON_METHODS
+            )
+            ai_interpret_button("opt_comparison_ai_interpret", st.session_state, _comparison_context_text)
 
     else:  # Frontier
         section_header(t("opt_efficient_frontier_title"), t("opt_efficient_frontier_sub", count=f"{n_simulations:,}"))
@@ -1018,6 +1054,20 @@ elif opt_workspace == "Strategy Lab":
             st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
             if frontier_df is None or len(frontier_df) < 2:
                 st.info(t("opt_frontier_insufficient_points"))
+            chart_caption(t("opt_efficient_frontier_caption"))
+            _ef_context_text = (
+                f"{t('opt_current_strategy_label')}: {t_opt_method(optimization_method)}, "
+                f"{t('metric_expected_annual_return')} {exp_ret:.2%}, "
+                f"{t('metric_expected_volatility')} {exp_vol:.2%}, "
+                f"{t('metric_sharpe_ratio')} {sharpe:.2f}; " +
+                "; ".join(
+                    f"{_opt_method_labels[_cm]}: {t('metric_expected_annual_return')} "
+                    f"{_comparison_results[_cm]['expected_return']:.2%}, "
+                    f"{t('metric_expected_volatility')} {_comparison_results[_cm]['expected_volatility']:.2%}"
+                    for _cm in _COMPARISON_METHODS
+                )
+            )
+            ai_interpret_button("opt_frontier_ai_interpret", st.session_state, _ef_context_text)
 
         with chart_card(t("opt_how_to_read_title")):
             st.markdown(
@@ -1077,6 +1127,7 @@ elif opt_workspace == "Backtest & Risk":
                                           xaxis_title=t("chart_date"), yaxis_title=t("chart_portfolio_value_usd"),
                                           height=420)
                     st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True, key="opt_backtest_growth")
+                    chart_caption(t("opt_backtest_chart_caption"))
 
                 bt_metrics = {
                     t("metric_total_return"): f"{backtest_df['Cumulative Return'].iloc[-1]:.2%}",
@@ -1091,6 +1142,8 @@ elif opt_workspace == "Backtest & Risk":
                 for i, (k, v) in enumerate(bt_metrics.items()):
                     with cols[i]:
                         st.metric(k, v)
+                _backtest_context_text = "; ".join(f"{k}: {v}" for k, v in bt_metrics.items())
+                ai_interpret_button("opt_backtest_ai_interpret", st.session_state, _backtest_context_text)
 
         else:  # Drawdown
             section_header(t("opt_drawdown_comparison_card"))
@@ -1109,15 +1162,21 @@ elif opt_workspace == "Backtest & Risk":
                     fig_dd.update_layout(title=t("chart_drawdown_comparison_pct"), xaxis_title=t("chart_date"),
                                           yaxis_title=t("chart_drawdown_pct"), height=420)
                     st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True, key="opt_backtest_drawdown")
+                    chart_caption(t("opt_drawdown_chart_caption"))
 
                 _dd_mcol1, _dd_mcol2 = st.columns(2)
+                _dd_current = maximum_drawdown(backtest_df['Portfolio Value'])
                 with _dd_mcol1:
                     st.metric(f"{t_opt_method(optimization_method)} {t('metric_maximum_drawdown')}",
-                               f"{maximum_drawdown(backtest_df['Portfolio Value']):.2%}")
+                               f"{_dd_current:.2%}")
+                _dd_context_text = f"{t_opt_method(optimization_method)} {t('metric_maximum_drawdown')}: {_dd_current:.2%}"
                 with _dd_mcol2:
                     if not equal_backtest_df.empty:
+                        _dd_equal = maximum_drawdown(equal_backtest_df['Portfolio Value'])
                         st.metric(f"{t('chart_equal_weight')} {t('metric_maximum_drawdown')}",
-                                   f"{maximum_drawdown(equal_backtest_df['Portfolio Value']):.2%}")
+                                   f"{_dd_equal:.2%}")
+                        _dd_context_text += f"; {t('chart_equal_weight')} {t('metric_maximum_drawdown')}: {_dd_equal:.2%}"
+                ai_interpret_button("opt_drawdown_ai_interpret", st.session_state, _dd_context_text)
 
     else:  # Diagnosis (detailed view)
         section_header(t("opt_diagnosis_title"), t("opt_diagnosis_subtitle"))
