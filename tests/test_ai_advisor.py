@@ -505,3 +505,27 @@ def test_ai_advisor_stale_warning_clears_after_regenerate():
     at.run()
     assert at.exception == []
     assert not _stale_warning_shown(at), "after regenerating, the stale-result warning must clear"
+
+
+def test_ai_advisor_stale_warning_on_language_change_without_regenerate():
+    # Regression test: the cached narrative text is only ever generated in
+    # ONE language (whichever was active when "Generate Analysis" was
+    # clicked). _ai_fingerprint previously omitted get_language(), so
+    # switching the UI language afterwards left the old-language narrative
+    # on screen with no warning, alongside a freshly re-rendered page shell
+    # in the new language -- a visible, self-contradicting page.
+    #
+    # The language switch must go through the real sidebar selectbox
+    # (key="_language_selector_widget") rather than writing
+    # at.session_state["language"] directly: that widget key already holds
+    # a value from the first run, and Streamlit reuses a widget's own
+    # persisted session_state value over a freshly computed `index=` on
+    # rerun, so a direct session_state write gets silently reverted the
+    # next time the selector renders unless the widget itself is driven.
+    at = _generate_once(lang="en")
+    lang_selector = at.selectbox(key="_language_selector_widget")
+    lang_selector.set_value("繁體中文")
+    at.run()
+    assert at.exception == []
+    assert at.session_state["language"] == "zh-TW"
+    assert _stale_warning_shown(at), "changing the language without regenerating must show the stale-result warning"

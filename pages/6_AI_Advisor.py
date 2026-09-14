@@ -33,7 +33,7 @@ from src.ui import (
     render_current_portfolio_handoff,
 )
 from src.i18n import (
-    t, t_investment_objective, t_risk_level, t_country,
+    t, t_investment_objective, t_risk_level, t_country, get_language,
     INVESTMENT_OBJECTIVE_KEYS, RISK_LEVEL_KEYS
 )
 
@@ -146,14 +146,19 @@ st.caption(t("ai_source_mode_custom") if use_custom else t("ai_source_mode_curre
 # Stale-result guard (same fix as Issue #20 section 6A applied to Machine
 # Learning): the generated narrative must be bound to every input that
 # changes what it actually explains, so changing the ETF/weight selection,
-# investment amount, custom-vs-current toggle, or investor-profile inputs
-# without clicking "Generate Analysis" again shows a warning instead of
-# silently keeping the old narrative on screen next to new sidebar values.
+# investment amount, custom-vs-current toggle, investor-profile inputs, or
+# the active UI language without clicking "Generate Analysis" again shows a
+# warning instead of silently keeping the old narrative on screen next to
+# new sidebar values -- language matters because the cached narrative text
+# itself is only ever generated in ONE language (whichever was active at
+# generation time), so a language switch alone must also trigger this guard
+# (Issue #20 release-gate review: previously omitted, so switching zh-TW/EN
+# after generating a narrative left it on screen in the old language).
 _ai_fingerprint = (
     tuple(sorted(selected_etfs)), tuple(sorted(weights_input.items())),
     round(investment_amount, 2) if investment_amount is not None else None,
     use_custom, str(start_date), str(end_date),
-    investment_objective, risk_level, investment_horizon,
+    investment_objective, risk_level, investment_horizon, get_language(),
 )
 
 if "ai_result" not in st.session_state:
