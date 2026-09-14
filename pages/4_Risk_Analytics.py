@@ -39,6 +39,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_country
+from src.auth import require_login
 
 st.set_page_config(
     page_title="Risk Analytics | AI ETF Portfolio Optimizer",
@@ -47,6 +48,7 @@ st.set_page_config(
 )
 
 load_css()
+require_login()
 
 page_header(t("risk_title"), t("risk_subtitle"))
 
