@@ -41,6 +41,7 @@ from src.ui import (
     market_impact_card, ai_sentiment_card, empty_state, error_state,
 )
 from src.i18n import t, get_language, t_opt_method
+from src.auth import require_login
 
 st.set_page_config(
     page_title="Market Intelligence | AI ETF Portfolio Optimizer",
@@ -49,6 +50,7 @@ st.set_page_config(
 )
 
 load_css()
+require_login()
 init_database()
 
 page_header(t("mi_title"), t("mi_subtitle"))
