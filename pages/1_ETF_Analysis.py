@@ -50,6 +50,7 @@ from src.ui import (
     region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
 )
 from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
+from src.auth import require_login
 from src.etf_signals import (
     compute_quant_signals, trend_signal_from_return, recent_trend_return,
     generate_etf_interpretation, has_sufficient_history,
@@ -62,6 +63,7 @@ st.set_page_config(
 )
 
 load_css()
+require_login()
 
 page_header(t("etf_analysis_title"), t("etf_analysis_subtitle"))
 
