@@ -364,40 +364,19 @@ def advisor_fingerprint(context: dict, investment_objective: str, risk_level: st
     Streamlit rerun triggered by an unrelated widget never re-spends an
     OpenAI call, but any change to the portfolio, its computed metrics, the
     investor-profile inputs, or any of the other module outputs actually
-    quoted in _build_prompt() below invalidates the cached result.
+    quoted in _build_prompt() invalidates the cached result.
 
-    Must track every field _build_prompt() reads, not just a proxy for it --
-    a field present in the prompt but missing here can leave a stale cached
-    narrative on screen (e.g. still saying "Investment Simulator: not
-    available") right next to a freshly-rendered "Deterministic Data"
-    section that already shows real numbers, once the user runs the
-    Simulator and returns without the fingerprint ever changing.
+    Fingerprints the fully-rendered prompt text itself rather than a
+    hand-maintained list of context fields: _build_prompt() is the single
+    source of truth for what the LLM sees, so hashing its exact output can
+    never drift out of sync with it the way a manually-curated field list
+    previously did (a field quoted in the prompt but missing from the list
+    could leave a stale cached narrative on screen, e.g. still saying
+    "Investment Simulator: not available" next to a freshly-rendered
+    "Deterministic Data" section that already shows real numbers).
     """
-    fp = context["simulator"]["future_projection"]
-    hs = context["simulator"]["historical_simulation"]
-    ml = context["ml"]
-    return fingerprint(
-        context.get("portfolio_source"),
-        context["portfolio"].get("available"),
-        context["portfolio"].get("strategy"),
-        context["portfolio"].get("weights"),
-        context["portfolio"].get("expected_return"),
-        context["portfolio"].get("volatility"),
-        context["portfolio"].get("sharpe_ratio"),
-        context["risk"].get("var_cvar", {}).get("var") if context["risk"].get("available") else None,
-        fp.get("available"),
-        fp.get("summary", {}).get("median_final") if fp.get("available") else None,
-        fp.get("summary", {}).get("probability_profit") if fp.get("available") else None,
-        hs.get("available"),
-        hs.get("summary", {}).get("final_value") if hs.get("available") else None,
-        hs.get("summary", {}).get("annualized_mwr") if hs.get("available") else None,
-        ml.get("available"),
-        ml.get("ticker") if ml.get("available") else None,
-        ml.get("model_name") if ml.get("available") else None,
-        ml.get("accuracy") if ml.get("available") else None,
-        context["news"].get("headline_count") if context["news"].get("available") else None,
-        investment_objective, risk_level, investment_horizon,
-    )
+    prompt = _build_prompt(context, investment_objective, risk_level, investment_horizon)
+    return fingerprint(prompt)
 
 
 def generate_advisor_narrative(context: dict, investment_objective: str = "Long-term Growth",

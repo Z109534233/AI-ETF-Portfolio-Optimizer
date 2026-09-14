@@ -405,6 +405,42 @@ def test_fingerprint_stable_when_nothing_relevant_changes():
     assert fp_a == fp_b
 
 
+def test_fingerprint_changes_when_investment_amount_changes():
+    # Regression test: investment_amount is quoted verbatim in _build_prompt()
+    # ("Investment amount: ...") but was previously omitted from the manually
+    # curated fingerprint field list, so changing only the dollar amount left
+    # the cached AI narrative (which had quoted the old amount) on screen.
+    portfolio = _sample_portfolio()
+    other = dict(portfolio, investment_amount=50000.0)
+    fp_a = advisor_fingerprint(
+        build_advisor_context(portfolio=portfolio, portfolio_source="current"),
+        "Long-term Growth", "Moderate", 10,
+    )
+    fp_b = advisor_fingerprint(
+        build_advisor_context(portfolio=other, portfolio_source="current"),
+        "Long-term Growth", "Moderate", 10,
+    )
+    assert fp_a != fp_b
+
+
+def test_fingerprint_changes_when_max_drawdown_or_market_changes():
+    portfolio = _sample_portfolio()
+    fp_base = advisor_fingerprint(
+        build_advisor_context(portfolio=portfolio, portfolio_source="current"),
+        "Long-term Growth", "Moderate", 10,
+    )
+    fp_drawdown = advisor_fingerprint(
+        build_advisor_context(portfolio=dict(portfolio, max_drawdown=-0.55), portfolio_source="current"),
+        "Long-term Growth", "Moderate", 10,
+    )
+    fp_market = advisor_fingerprint(
+        build_advisor_context(portfolio=dict(portfolio, market="Taiwan"), portfolio_source="current"),
+        "Long-term Growth", "Moderate", 10,
+    )
+    assert fp_base != fp_drawdown
+    assert fp_base != fp_market
+
+
 # ── Page-level stale-result guard (Issue #20 release-gate review, same
 # Priority-0 fix pattern as Machine Learning's section 6A) ─────────────────
 
