@@ -33,6 +33,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, t_opt_method
+from src.auth import require_login, render_account_section
 
 # Display-currency symbol per market (Round 2 spec section 20) -- this
 # ONLY changes which symbol is shown; every underlying calculation stays
@@ -52,6 +53,7 @@ st.set_page_config(
 
 load_css()
 init_database()
+require_login()
 
 page_header(t("sim_title"), t("sim_subtitle"))
 
@@ -87,6 +89,7 @@ def _shadow_default(name: str, default):
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_nav()
+    render_account_section()
 
     # ── Simulation Mode ───────────────────────────────────────────────────
     # Canonical (untranslated) values stored in session_state, per spec

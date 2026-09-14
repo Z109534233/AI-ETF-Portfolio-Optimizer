@@ -63,6 +63,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
+from src.auth import require_login, render_account_section
 
 st.set_page_config(
     page_title="Portfolio Optimizer | AI ETF Portfolio Optimizer",
@@ -72,6 +73,7 @@ st.set_page_config(
 
 load_css()
 init_database()
+require_login()
 
 page_header(t("opt_title"), t("opt_subtitle"))
 
@@ -104,6 +106,7 @@ def _shadow_default(name: str, default):
 
 with st.sidebar:
     render_sidebar_nav()
+    render_account_section()
 
     # ── Build Your Portfolio ─────────────────────────────────────────────
     st.markdown(f"### {t('opt_build_portfolio_title')}")

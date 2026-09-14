@@ -26,6 +26,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_model_type, t_country, MODEL_TYPE_KEYS
+from src.auth import require_login, render_account_section
 
 st.set_page_config(
     page_title="Machine Learning | AI ETF Portfolio Optimizer",
@@ -34,6 +35,7 @@ st.set_page_config(
 )
 
 load_css()
+require_login()
 
 page_header(t("ml_title"), t("ml_subtitle"))
 
@@ -42,6 +44,7 @@ st.warning(t("ml_disclaimer_banner"))
 # ── Sidebar Controls ──────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_nav()
+    render_account_section()
     st.markdown(f"### {t('ml_sidebar_settings')}")
 
     # ── Region Selector (Global ETF Support) ─────────────────────────────

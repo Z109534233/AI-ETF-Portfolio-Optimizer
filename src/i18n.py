@@ -38,6 +38,8 @@ TRANSLATIONS = {
         "sidebar_footer_badge": "僅供教學使用",
         "sidebar_footer_text": "非投資建議",
         "nav_section_label": "導覽",
+        "account_section_label": "帳戶",
+        "account_sign_out": "登出",
 
         # ── Sidebar Navigation ──────────────────────────────────────────
         "nav_home": "首頁",
@@ -1095,9 +1097,6 @@ TRANSLATIONS = {
         "mp_tab_watchlist": "觀察清單",
         "mp_tab_history": "投資組合紀錄",
         "mp_tab_brief": "每日摘要",
-        "mp_auth_sign_in": "登入",
-        "mp_auth_sign_out": "登出",
-        "mp_auth_signed_in_as": "已登入",
         "mp_demo_mode_note": "目前使用的是共用的示範資料。若此站台已設定登入功能，登入後可保留你自己的持股與觀察清單。",
 
         "gp_section_title": "目標規劃",
@@ -1496,6 +1495,8 @@ TRANSLATIONS = {
         "sidebar_footer_badge": "Educational Use Only",
         "sidebar_footer_text": "Not financial advice",
         "nav_section_label": "Navigation",
+        "account_section_label": "Account",
+        "account_sign_out": "Sign out",
 
         # ── Sidebar Navigation ──────────────────────────────────────────
         "nav_home": "Home",
@@ -2556,9 +2557,6 @@ TRANSLATIONS = {
         "mp_tab_watchlist": "Watchlist",
         "mp_tab_history": "Portfolio History",
         "mp_tab_brief": "Daily Brief",
-        "mp_auth_sign_in": "Sign in",
-        "mp_auth_sign_out": "Sign out",
-        "mp_auth_signed_in_as": "Signed in as",
         "mp_demo_mode_note": "You're using shared demo data. If sign-in is configured for this deployment, sign in to keep your own private holdings and watchlist.",
 
         "gp_section_title": "Goal Planner",
