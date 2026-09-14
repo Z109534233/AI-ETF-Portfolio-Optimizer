@@ -33,6 +33,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, t_opt_method
+from src.auth import require_login
 
 # Display-currency symbol per market (Round 2 spec section 20) -- this
 # ONLY changes which symbol is shown; every underlying calculation stays
@@ -51,6 +52,7 @@ st.set_page_config(
 )
 
 load_css()
+require_login()
 init_database()
 
 page_header(t("sim_title"), t("sim_subtitle"))
