@@ -33,7 +33,7 @@ from src.ui import (
     chart_card, render_footer, empty_state, error_state, status_card,
 )
 from src.i18n import t, t_opt_method, t_country, t_goal_target_mode, t_goal_risk, t_goal_status
-from src.auth import get_current_user_id, is_authenticated, render_auth_status
+from src.auth import get_current_user_id, is_authenticated, render_auth_status, require_login
 from src.goal_planner import (
     build_goal_plan, VALID_TARGET_MODES, VALID_MARKET_PREFERENCES,
     VALID_RISK_TOLERANCES, VALID_BASE_CURRENCIES,
@@ -49,6 +49,7 @@ st.set_page_config(
 )
 
 load_css()
+require_login()
 init_database()
 
 page_header(t("my_portfolio_title"), t("my_portfolio_subtitle"))
