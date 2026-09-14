@@ -894,6 +894,21 @@ TRANSLATIONS = {
         "risk_scenario_note_covid": "近似 2020 年 COVID-19 崩盤期間廣泛市場由高點到低點的跌幅，僅為常見引用的估計值。",
         "risk_scenario_note_tech_bubble": "近似 2000–2002 年科技泡沫破裂期間廣泛市場（如標普 500）由高點到低點的跌幅，僅為常見引用的估計值；那斯達克指數同期跌幅遠大於此。",
 
+        # ── Risk Analytics: Setup vs. Results Hierarchy + Chart Captions ──
+        "risk_hero_title": "您的投資組合風險概況",
+        "risk_hero_subtitle": "根據 {n} 檔 ETF 及 {start} 至 {end} 的歷史資料計算。",
+        "risk_kpi_row_caption": "這四項指標共同快速呈現投資組合的風險概況：日常波動幅度（波動率）、歷史上由高點到低點的最大跌幅（最大回撤）、每單位風險獲得的報酬（Sharpe 比率），以及 95% 信賴水準下的單日預估損失門檻（風險值）。",
+        "risk_more_metrics_title": "更多風險指標",
+        "risk_caption_drawdown_all": "每條線代表個別 ETF 從自身歷史高點下跌的百分比——曲線越深代表該 ETF 曾經歷越大的跌幅。",
+        "risk_caption_drawdown_portfolio": "以側邊欄設定的權重計算，投資組合整體從其歷史高點下跌的百分比。",
+        "risk_caption_rolling_metrics": "所選 ETF 在指定滾動視窗內的報酬與波動率變化，讓您觀察風險／報酬特性隨時間的變化，而非單一固定平均值。",
+        "risk_caption_rolling_beta": "所選 ETF 相對於基準的貝塔值，以滾動視窗重新計算——數值大於 1 代表近期波動被放大，小於 1 代表被縮小。",
+        "risk_caption_return_distribution_all": "各檔所選 ETF 每日報酬率的分布直方圖——分布越寬代表日常波動越大。",
+        "risk_caption_return_distribution_portfolio": "投資組合整體每日報酬率的分布直方圖，並於可取得時標示風險值（VaR）／條件風險值（CVaR）門檻。",
+        "risk_caption_contribution_bar": "各 ETF 佔投資組合整體風險的比例（與其權重不同）——長條越高代表該持股對整體波動的貢獻越不成比例地高。",
+        "risk_caption_holdings_overlap": "所選 ETF 之間底層持股的兩兩重疊程度，與上方顯示的報酬相關性為不同概念。",
+        "risk_caption_stress_test_table": "各情境對投資組合的預估影響，以市場衝擊乘以投資組合貝塔值計算——為簡化線性估算，並非完整的歷史重建。",
+
         # ── Machine Learning Page ────────────────────────────────────────
         "ml_title": "機器學習",
         "ml_subtitle": "本頁面使用機器學習進行教育性市場分析，而非投資預測。",
@@ -2402,6 +2417,21 @@ TRANSLATIONS = {
         "risk_scenario_note_2008": "Approximates the broad market's (e.g. S&P 500) commonly-cited peak-to-trough decline during the 2008 Global Financial Crisis -- an approximate, commonly-cited figure.",
         "risk_scenario_note_covid": "Approximates the broad market's commonly-cited peak-to-trough decline during the 2020 COVID-19 crash -- an approximate, commonly-cited figure.",
         "risk_scenario_note_tech_bubble": "Approximates the broad market's (e.g. S&P 500) commonly-cited peak-to-trough decline during the 2000-2002 dot-com bust -- an approximate figure; the Nasdaq Composite itself fell far more over the same period.",
+
+        # ── Risk Analytics: Setup vs. Results Hierarchy + Chart Captions ──
+        "risk_hero_title": "Your Portfolio's Risk Profile",
+        "risk_hero_subtitle": "Based on {n} ETFs and historical data from {start} to {end}.",
+        "risk_kpi_row_caption": "Together, these four figures summarize the portfolio's risk at a glance: how much it swings day to day (volatility), the worst peak-to-trough loss seen historically (max drawdown), return earned per unit of risk (Sharpe ratio), and the estimated one-day loss threshold at 95% confidence (VaR).",
+        "risk_more_metrics_title": "More risk metrics",
+        "risk_caption_drawdown_all": "Each line traces one ETF's percentage decline from its own running peak -- deeper troughs mean larger historical losses from a prior high for that ETF.",
+        "risk_caption_drawdown_portfolio": "The combined portfolio's percentage decline from its own running peak, using the weights set in the sidebar.",
+        "risk_caption_rolling_metrics": "Rolling return/volatility for the selected ETF over the chosen trailing window, so you can see how its risk/return profile has shifted over time rather than as one fixed average.",
+        "risk_caption_rolling_beta": "The selected ETF's beta against the benchmark, recalculated on a rolling trailing window -- values above 1 mean it has recently amplified benchmark moves, below 1 means it has dampened them.",
+        "risk_caption_return_distribution_all": "Histogram of each selected ETF's daily returns -- a wider spread means more day-to-day variability.",
+        "risk_caption_return_distribution_portfolio": "Histogram of the combined portfolio's daily returns, with the VaR/CVaR thresholds marked where available.",
+        "risk_caption_contribution_bar": "Each ETF's share of total portfolio risk (not the same as its weight) -- a higher bar means that holding contributes disproportionately more to overall volatility.",
+        "risk_caption_holdings_overlap": "Pairwise overlap in underlying holdings between the selected ETFs, independent of the return correlation shown above.",
+        "risk_caption_stress_test_table": "Estimated portfolio impact of each scenario, computed as market shock times portfolio beta -- a simplified linear approximation, not a full historical reconstruction.",
 
         # ── Machine Learning Page ────────────────────────────────────────
         "ml_title": "Machine Learning",
