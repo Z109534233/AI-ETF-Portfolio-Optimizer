@@ -943,6 +943,11 @@ TRANSLATIONS = {
 
         # ── AI Advisor Page ───────────────────────────────────────────────
         "ai_title": "投資組合分析助手",
+        "ai_tab_summary": "摘要",
+        "ai_tab_risk": "風險",
+        "ai_tab_simulation": "模擬",
+        "ai_tab_ml": "機器學習",
+        "ai_tab_market": "市場",
         "ai_inputs_changed_regenerate": "⚠️ 輸入設定已變更（ETF、權重、投入金額或投資人設定），下方分析為先前設定所產生。請點選「產生 AI 分析」以取得符合目前設定的結果。",
         "ai_subtitle": "以自然語言說明投資組合的優勢、風險與分散程度。",
         "ai_mode_info": (
@@ -2391,6 +2396,11 @@ TRANSLATIONS = {
 
         # ── AI Advisor Page ───────────────────────────────────────────────
         "ai_title": "AI Portfolio Analyst",
+        "ai_tab_summary": "Summary",
+        "ai_tab_risk": "Risk",
+        "ai_tab_simulation": "Simulation",
+        "ai_tab_ml": "ML",
+        "ai_tab_market": "Market",
         "ai_inputs_changed_regenerate": "⚠️ Inputs have changed (ETFs, weights, investment amount, or investor profile) since this analysis was generated. The result below reflects the PREVIOUS settings. Click **Generate AI Analysis** to regenerate for the current settings.",
         "ai_subtitle": "Explain portfolio strengths, risks, and diversification in plain language.",
         "ai_mode_info": (
