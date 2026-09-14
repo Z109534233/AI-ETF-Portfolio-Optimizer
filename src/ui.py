@@ -442,6 +442,23 @@ def render_sidebar_nav() -> None:
     </div>
     """, unsafe_allow_html=True)
 
+    # Account identity is shown globally once Google OIDC is enabled.
+    # Local import avoids coupling the shared UI module to auth at import time.
+    try:
+        from src.auth import is_auth_configured, is_authenticated, get_current_user_display_name
+        if is_auth_configured() and is_authenticated():
+            account_name = get_current_user_display_name()
+            if account_name:
+                st.caption(("登入：" if get_language() == "zh-TW" else "Signed in: ") + account_name)
+            if st.button(
+                "登出" if get_language() == "zh-TW" else "Sign out",
+                key="global_auth_sign_out_btn",
+                use_container_width=True,
+            ):
+                st.logout()
+    except Exception:
+        pass
+
     st.markdown(f'<div class="sidebar-nav-label">{t("nav_section_label")}</div>', unsafe_allow_html=True)
     for item in NAV_ITEMS:
         st.page_link(item["page"], label=t(item["label_key"]), icon=item.get("icon"))
