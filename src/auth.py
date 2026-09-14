@@ -83,6 +83,112 @@ def get_current_user_display_name() -> str:
         return ""
 
 
+
+def require_login() -> bool:
+    """Show a dedicated Google sign-in screen when OIDC auth is configured.
+
+    The gate is intentionally inactive until deployment secrets contain an
+    [auth] section. This keeps local development and first-time deployment
+    usable while the Google OAuth client is being configured. As soon as
+    [auth] is present, every page that calls this helper requires a signed-in
+    Google identity before rendering private portfolio tools.
+
+    Returns True for an authenticated user and False when auth is not yet
+    configured. For an unauthenticated visitor on an auth-enabled deployment,
+    this function renders the login screen and stops the Streamlit script.
+    """
+    if not is_auth_configured():
+        return False
+
+    if is_authenticated():
+        return True
+
+    # Keep the login experience focused and separate from the analytics UI.
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {display: none;}
+        [data-testid="collapsedControl"] {display: none;}
+        .block-container {
+            max-width: 760px;
+            padding-top: 8vh;
+            padding-bottom: 6vh;
+        }
+        .login-shell {
+            text-align: center;
+            padding: 28px 20px 8px;
+        }
+        .login-mark {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 18px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 25px;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            color: white;
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            box-shadow: 0 14px 34px rgba(37, 99, 235, 0.24);
+        }
+        .login-title {
+            font-size: 2.15rem;
+            line-height: 1.15;
+            font-weight: 800;
+            letter-spacing: -0.035em;
+            margin-bottom: 10px;
+        }
+        .login-subtitle {
+            max-width: 580px;
+            margin: 0 auto 22px;
+            color: #8b93a7;
+            font-size: 1rem;
+            line-height: 1.65;
+        }
+        .login-note {
+            margin-top: 18px;
+            color: #8b93a7;
+            font-size: 0.82rem;
+            line-height: 1.55;
+        }
+        </style>
+        <div class="login-shell">
+            <div class="login-mark">AI</div>
+            <div class="login-title">AI ETF Portfolio Optimizer</div>
+            <div class="login-subtitle">
+                Sign in to keep your portfolio data private and sync your saved
+                analysis across sessions.<br>
+                使用 Google 帳號登入，安全保存你的投資組合與分析紀錄。
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    left, center, right = st.columns([1, 1.35, 1])
+    with center:
+        st.button(
+            "Continue with Google",
+            type="primary",
+            use_container_width=True,
+            on_click=st.login,
+            key="google_login_btn",
+        )
+        st.markdown(
+            '<div class="login-note">'
+            'We use Google only to verify your identity. '
+            'This app does not read your Gmail inbox, contacts, or Drive files.'
+            '<br>Google 僅用於登入驗證，不會讀取 Gmail 信件、聯絡人或雲端硬碟。'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.stop()
+    return False
+
+
 def render_auth_status(sign_in_label: str, sign_out_label: str, signed_in_as_label: str) -> None:
     """Compact sign-in/sign-out control. Renders nothing but a disabled
     "not configured" caption when [auth] isn't deployed, so this is always
