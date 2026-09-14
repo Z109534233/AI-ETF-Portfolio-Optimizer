@@ -39,6 +39,7 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, news_card, status_card, star_rating_html,
     market_impact_card, ai_sentiment_card, empty_state, error_state,
+    chart_caption, ai_interpret_button,
 )
 from src.i18n import t, get_language, t_opt_method
 
@@ -291,6 +292,7 @@ with tab_overview:
             for e in calendar_events
         ])
         st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+        chart_caption(t("mi_caption_calendar"))
 
 # ══════════════════════════════════════════════════════════════════════════
 # NEWS
@@ -368,6 +370,19 @@ with tab_impact:
             with chart_card(t("hist_allocation_breakdown_card")):
                 fig = allocation_donut_chart(mi_portfolio_holdings, "")
                 st.plotly_chart(fig, use_container_width=True, key="mi_portfolio_allocation_donut")
+                chart_caption(t("mi_caption_allocation_donut"))
+                # context_text built ONLY from values already displayed in
+                # this donut -- the portfolio name/strategy and each
+                # holding's own allocation share (Issue #24 item 4 rule E:
+                # explain what's already computed, never predict/recommend).
+                _allocation_context = "Portfolio: {}. Allocation by ticker: {}.".format(
+                    mi_portfolio_name,
+                    ", ".join(
+                        f"{tk} {w:.1%}"
+                        for tk, w in sorted(mi_portfolio_holdings.items(), key=lambda kv: kv[1], reverse=True)
+                    ),
+                )
+                ai_interpret_button("mi_allocation_donut_interpret", st.session_state, _allocation_context)
 
 # ══════════════════════════════════════════════════════════════════════════
 # SENTIMENT
@@ -399,6 +414,16 @@ with tab_sentiment:
             with col_chart:
                 fig = sentiment_donut_chart(sentiment["bullish_pct"], sentiment["neutral_pct"], sentiment["bearish_pct"])
                 st.plotly_chart(fig, use_container_width=True, key="mi_sentiment_donut")
+                chart_caption(t("mi_caption_sentiment_donut"))
+                # context_text built ONLY from the already-displayed bullish/
+                # neutral/bearish percentages -- explains the existing
+                # breakdown, never predicts a market move (Issue #24 item 4
+                # rule E).
+                _sentiment_context = (
+                    f"Today's news sentiment breakdown: {sentiment['bullish_pct']:.1f}% bullish, "
+                    f"{sentiment['neutral_pct']:.1f}% neutral, {sentiment['bearish_pct']:.1f}% bearish."
+                )
+                ai_interpret_button("mi_sentiment_donut_interpret", st.session_state, _sentiment_context)
             with col_bars:
                 st.caption(f"{t('mi_sentiment_bullish_pct_label')}: {sentiment['bullish_pct']:.1f}%")
                 st.progress(min(int(sentiment["bullish_pct"]), 100))

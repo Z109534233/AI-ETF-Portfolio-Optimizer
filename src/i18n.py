@@ -1479,6 +1479,11 @@ TRANSLATIONS = {
         "mi_impact_level_caption": "影響程度",
         "mi_affected_by_caption": "受影響原因：",
 
+        # ── Chart/Table Explanations (Issue #24 item 4) ──────────────────────
+        "mi_caption_calendar": "此表列出即將公布的經濟事件、發布時間與重要性等級；為範例資料，尚未串接即時經濟行事曆資料來源。",
+        "mi_caption_allocation_donut": "顯示你目前投資組合中，各持股占總配置的比例。",
+        "mi_caption_sentiment_donut": "顯示今日已分析的新聞標題中，被分類為偏多、中性與偏空的比例分布。",
+
         # ── Methodology & Validation (M4) ────────────────────────────────
         "mi_methodology_title": "方法論與驗證狀態",
         "mi_methodology_subtitle": "本頁的資料流程實際上是如何運作的，以及哪些部分已經／尚未經過驗證",
@@ -2949,6 +2954,11 @@ TRANSLATIONS = {
         "mi_section_affected_markets_subtitle": "The rating indicates how strongly current global events are expected to influence each market. It does not predict market direction.",
         "mi_impact_level_caption": "Impact Level",
         "mi_affected_by_caption": "Affected by:",
+
+        # ── Chart/Table Explanations (Issue #24 item 4) ──────────────────────
+        "mi_caption_calendar": "A list of upcoming economic events with their timing and importance level; this is example data and is not yet connected to a live economic-calendar feed.",
+        "mi_caption_allocation_donut": "Your current portfolio's holdings, each shown as a share of total allocation.",
+        "mi_caption_sentiment_donut": "The share of today's analyzed news headlines classified as bullish, neutral, or bearish.",
 
         # ── Methodology & Validation (M4) ────────────────────────────────
         "mi_methodology_title": "Methodology & Validation",
