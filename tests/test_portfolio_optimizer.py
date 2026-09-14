@@ -258,7 +258,7 @@ def test_h_backtest_uses_selected_weights():
     check("H.minvol_weights_non_uniform_for_this_fixture", not is_uniform, str(w))
 
 
-# ── Test I: global market state survives running optimization ──────────
+# ── Test I: multi-country selection survives running optimization ───────
 def test_i_global_market_state():
     import streamlit as st
     from streamlit.testing.v1 import AppTest
@@ -270,11 +270,11 @@ def test_i_global_market_state():
     at.run()
 
     region_w = None
-    for w in at.selectbox:
-        if w.key == "selected_region":
+    for w in at.multiselect:
+        if w.key == "selected_regions":
             region_w = w
             break
-    region_w.set_value("Taiwan")
+    region_w.set_value(["Taiwan"])
     at.run()
 
     ms = None
@@ -296,13 +296,13 @@ def test_i_global_market_state():
         at.run()
 
     region_after = None
-    for w in at.selectbox:
-        if w.key == "selected_region":
+    for w in at.multiselect:
+        if w.key == "selected_regions":
             region_after = w
             break
     exc = at.exception[0] if at.exception else None
     check("I.no_exception", exc is None, str(exc))
-    check("I.market_still_taiwan", region_after is not None and region_after.value == "Taiwan",
+    check("I.market_still_taiwan", region_after is not None and region_after.value == ["Taiwan"],
           str(region_after.value if region_after else None))
 
 
@@ -944,7 +944,7 @@ def test_ef_j_switch_strategy_no_side_effects():
             return None
 
     def snapshot(a):
-        keys = ["selected_region", "investment_goal", "risk_tolerance", "investment_horizon"]
+        keys = ["selected_regions", "investment_goal", "risk_tolerance", "investment_horizon"]
         snap = {k: _sget(a, k) for k in keys}
         ms = next((w for w in a.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
         snap["etfs"] = sorted(ms.value) if ms else None
@@ -1448,8 +1448,8 @@ def test_ph_g_language_switch_preserves_portfolio():
 # ── PH-H: global market/ETF state unchanged through the handoff ─────────
 def test_ph_h_market_state_unchanged_through_handoff():
     at = _setup_ef_page(method="Minimum Volatility", lang="en")
-    region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
-    region_w.set_value("Taiwan")
+    region_w = next((w for w in at.multiselect if w.key == "selected_regions"), None)
+    region_w.set_value(["Taiwan"])
     at.run()
     run_btn = _find_run_button(at)
     if run_btn:
@@ -2355,7 +2355,11 @@ def test_twu_regression_multiselect_survives_unrelated_rerun():
 
 # ── Test 17 (cross-page consistency): a Taiwan ETF outside the old
 # hardcoded list is recognized identically in ETF Analysis and Portfolio
-# Optimizer, and remains compatible with the shared global market state ──
+# Optimizer. Portfolio Optimizer's country/ETF picker is intentionally its
+# OWN independent multi-select state (Issue #24 item 1) -- it no longer
+# shares selected_region/selected_etfs_shadow with ETF Analysis, so this
+# confirms the new ticker is recognized there too via its OWN Taiwan
+# selection, not via the (now removed, for this page) state sharing. ────
 def test_twu_cross_page_consistency():
     import streamlit as st
     from streamlit.testing.v1 import AppTest
@@ -2375,29 +2379,22 @@ def test_twu_cross_page_consistency():
     exc = etf_at.exception[0] if etf_at.exception else None
     check("TWU-cross.etf_analysis_accepts_new_ticker", exc is None, str(exc))
 
-    # Different AppTest instances do NOT share session_state (unlike two
-    # pages in the same real browser session via st.switch_page) -- seed
-    # the receiving page's session_state with exactly what the shared
-    # global-market-state mechanism (src/ui.py's region_selector() /
-    # region_etf_multiselect()) would have carried over for real.
-    def sget(a, k):
-        try:
-            return a.session_state[k]
-        except Exception:
-            return None
-
     opt_at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     opt_at.session_state["language"] = "en"
-    opt_at.session_state["selected_region"] = sget(etf_at, "selected_region")
-    opt_at.session_state["_selected_region_shadow"] = sget(etf_at, "_selected_region_shadow")
-    opt_at.session_state["_selected_etfs_shadow"] = sget(etf_at, "_selected_etfs_shadow")
     opt_at.run()
-    region_w2 = next((w for w in opt_at.selectbox if w.key == "selected_region"), None)
-    check("TWU-cross.optimizer_sees_shared_region_taiwan",
-          region_w2 is not None and region_w2.value == "Taiwan", region_w2.value if region_w2 else None)
+    region_w2 = next((w for w in opt_at.multiselect if w.key == "selected_regions"), None)
+    region_w2.set_value(["Taiwan"])
+    opt_at.run()
+    # ms2.options is the FORMATTED "TICKER — Name" display list (per
+    # format_func), not raw tickers -- match on the leading ticker token.
     ms2 = next((w for w in opt_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
-    check("TWU-cross.optimizer_shares_new_ticker_selection",
-          ms2 is not None and new_ticker in ms2.value, ms2.value if ms2 else None)
+    _opt2_by_ticker = {opt.split(" — ")[0]: opt for opt in ms2.options} if ms2 else {}
+    check("TWU-cross.optimizer_offers_new_ticker",
+          new_ticker in _opt2_by_ticker, list(_opt2_by_ticker.keys()))
+    if new_ticker in _opt2_by_ticker:
+        other = next((tk for tk in _opt2_by_ticker if tk != new_ticker), None)
+        ms2.set_value([_opt2_by_ticker[new_ticker]] + ([_opt2_by_ticker[other]] if other else []))
+        opt_at.run()
     exc2 = opt_at.exception[0] if opt_at.exception else None
     check("TWU-cross.optimizer_no_exception", exc2 is None, str(exc2))
 
@@ -3037,17 +3034,13 @@ def test_geu_d_uk_universe_not_old_curated_list():
           len(uk - _OLD_UK_CURATED_TICKERS) >= 10, len(uk - _OLD_UK_CURATED_TICKERS))
 
 
-# ── Test E: a newly-selected (bulk-only) ETF persists across compatible views ──
+# ── Test E: a newly-selected (bulk-only) ETF is offered consistently on
+# both ETF Analysis and Portfolio Optimizer's own (independent, Issue #24
+# item 1) multi-country picker ────────────────────────────────────────────
 def test_geu_e_new_etf_selection_persists_across_views():
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
-
-    def sget(state, key, default=None):
-        try:
-            return state[key]
-        except Exception:
-            return default
 
     etf_at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     etf_at.session_state["language"] = "en"
@@ -3065,20 +3058,20 @@ def test_geu_e_new_etf_selection_persists_across_views():
         return
     ms.set_value(["00400A"])
     etf_at.run()
+    exc = etf_at.exception[0] if etf_at.exception else None
+    check("GEU-E.etf_analysis_accepts_bulk_ticker", exc is None, str(exc))
 
-    # A second, independent AppTest instance simulates st.switch_page's
-    # session_state carryover (two separate AppTest instances do NOT share
-    # session_state automatically -- see test_twu_cross_page_consistency's
-    # docstring precedent -- so it's seeded explicitly here).
     opt_at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     opt_at.session_state["language"] = "en"
-    opt_at.session_state["selected_region"] = sget(etf_at.session_state, "selected_region")
-    opt_at.session_state["_selected_region_shadow"] = sget(etf_at.session_state, "_selected_region_shadow")
-    opt_at.session_state["_selected_etfs_shadow"] = sget(etf_at.session_state, "_selected_etfs_shadow")
     opt_at.run()
+    opt_region_w = next((w for w in opt_at.multiselect if w.key == "selected_regions"), None)
+    opt_region_w.set_value(["Taiwan"])
+    opt_at.run()
+    # opt_ms.options is the FORMATTED "TICKER — Name" display list, not raw
+    # tickers -- match on the leading ticker token (see TWU-cross above).
     opt_ms = next((w for w in opt_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
-    check("GEU-E.new_ticker_persists_into_optimizer_page",
-          opt_ms is not None and "00400A" in opt_ms.value, opt_ms.value if opt_ms else None)
+    _opt_tickers = [opt.split(" — ")[0] for opt in opt_ms.options] if opt_ms else []
+    check("GEU-E.new_ticker_offered_on_optimizer_page", "00400A" in _opt_tickers, _opt_tickers)
 
 
 # ── Test F: provider (Yahoo) failure never deletes a bulk-imported ETF ──────

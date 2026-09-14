@@ -220,6 +220,9 @@ TRANSLATIONS = {
         "field_select_etfs": "選擇 ETF",
         "field_select_region": "選擇地區",
         "field_all_regions": "所有地區",
+        "field_select_countries": "選擇國家／市場",
+        "field_select_countries_help": "可選擇 1 至 3 個市場，建立單一市場或跨市場投資組合。",
+        "msg_select_one_country": "請至少選擇一個國家／市場。",
         "field_add_custom_ticker": "新增自訂代碼",
         "etf_badge_leveraged": "槓桿",
         "etf_badge_inverse": "反向",
@@ -291,6 +294,7 @@ TRANSLATIONS = {
         "disclaimer_projections_hypothetical": "所有預測結果均為假設情境，並具有不確定性。",
         "chart_caption_prefix": "圖表解讀：",
         "chart_ask_ai_interpret": "請 AI 解讀",
+        "results_hero_eyebrow": "結果",
         "opt_allocation_donut_caption": "圓餅圖顯示最終配置中每個 ETF 佔投資組合的權重百分比；切片越大代表該持股在整體投資組合中的比重越高。",
 
         "footer_brand": "AI ETF 投資組合最佳化平台",
@@ -515,6 +519,12 @@ TRANSLATIONS = {
         "opt_setup_label_amount": "投資金額",
         "opt_setup_label_strategy": "優化策略",
         "opt_constraints_label": "最佳化限制條件",
+        "opt_setup_unit_market": "個市場",
+        "opt_setup_unit_markets": "個市場",
+        "opt_setup_unit_etf": "檔 ETF",
+        "opt_setup_unit_etfs": "檔 ETF",
+        "opt_results_hero_title": "最佳化結果",
+        "opt_results_hero_subtitle": "根據上方設定計算出的最佳化投資組合",
 
         # ── Portfolio Optimizer — Full Workspace UI Redesign ─────────────
         "opt_ws_overview": "總覽",
@@ -1678,6 +1688,9 @@ TRANSLATIONS = {
         "field_select_etfs": "Select ETFs",
         "field_select_region": "Select Region",
         "field_all_regions": "All Regions",
+        "field_select_countries": "Select Countries",
+        "field_select_countries_help": "Choose 1 to 3 markets to build a single-market or cross-market portfolio.",
+        "msg_select_one_country": "Please select at least one country/market.",
         "field_add_custom_ticker": "Add Custom Ticker",
         "etf_badge_leveraged": "Leveraged",
         "etf_badge_inverse": "Inverse",
@@ -1750,6 +1763,7 @@ TRANSLATIONS = {
         "disclaimer_projections_hypothetical": "All projections are hypothetical and involve uncertainty.",
         "chart_caption_prefix": "What this shows:",
         "chart_ask_ai_interpret": "Ask AI to interpret",
+        "results_hero_eyebrow": "Results",
         "opt_allocation_donut_caption": "This donut chart shows each ETF's share of the final allocation as a percentage of the whole portfolio; a larger slice means a larger weight in the overall mix.",
 
         "footer_brand": "AI ETF Portfolio Optimizer",
@@ -1974,6 +1988,12 @@ TRANSLATIONS = {
         "opt_setup_label_amount": "Investment Amount",
         "opt_setup_label_strategy": "Optimization Strategy",
         "opt_constraints_label": "Optimization Constraints",
+        "opt_setup_unit_market": "Market",
+        "opt_setup_unit_markets": "Markets",
+        "opt_setup_unit_etf": "ETF",
+        "opt_setup_unit_etfs": "ETFs",
+        "opt_results_hero_title": "Optimization Results",
+        "opt_results_hero_subtitle": "Your optimized portfolio, based on the setup above",
 
         # ── Portfolio Optimizer — Full Workspace UI Redesign ─────────────
         "opt_ws_overview": "Overview",

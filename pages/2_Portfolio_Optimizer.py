@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.data_loader import download_etf_data, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data, get_common_date_range
-from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns, get_etf
+from src.etf_database import to_yahoo_symbol, rename_yahoo_columns, get_etf
 from src.fx import convert_prices_to_base_currency
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
@@ -58,11 +58,12 @@ from src.utils import (
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
-    region_selector, region_etf_options, region_etf_multiselect,
+    region_multiselect, region_etf_options_multi, multi_region_etf_multiselect,
     kpi_card, chart_caption, ai_interpret_button,
+    setup_summary_bar, results_hero,
 )
 from src.theme import COLORS
-from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
+from src.i18n import t, t_opt_method, get_language, OPTIMIZATION_METHOD_KEYS
 
 st.set_page_config(
     page_title="Portfolio Optimizer | AI ETF Portfolio Optimizer",
@@ -108,18 +109,21 @@ with st.sidebar:
     # ── Build Your Portfolio ─────────────────────────────────────────────
     st.markdown(f"### {t('opt_build_portfolio_title')}")
 
-    # 1. Market -- shared global state (src/ui.py), same canonical
-    # st.session_state["selected_region"] used by ETF Analysis, Risk
-    # Analytics, Machine Learning, and AI Advisor. Picking a market here
-    # updates those pages too, and vice versa.
-    selected_region, ALL_REGIONS_LABEL = region_selector()
-    etf_options = region_etf_options(selected_region, ALL_REGIONS_LABEL)
+    # 1. Countries -- Portfolio Optimizer's OWN true multi-select (Issue
+    # #24 item 1), independent of the single-select "selected_region"
+    # global state shared by ETF Analysis / Risk Analytics / Machine
+    # Learning / AI Advisor. The user picks exactly the 1-3 markets they
+    # want (e.g. Taiwan + United States) -- there is no "All Regions"
+    # shortcut here.
+    selected_regions = region_multiselect()
+    etf_options = region_etf_options_multi(selected_regions)
 
-    # 2. ETF Selection -- shared global state, same as above. Invalid
-    # tickers from a since-changed market are dropped automatically since
-    # region_etf_multiselect() filters against the current `etf_options`.
-    selected_etfs = region_etf_multiselect(
-        selected_region, etf_options, t("field_select_etfs"),
+    # 2. ETF Selection -- the union of ETFs from ONLY the selected
+    # countries. Removing a country automatically prunes any ETF that
+    # belonged exclusively to it (see multi_region_etf_multiselect()'s
+    # docstring) while keeping every other already-selected ETF intact.
+    selected_etfs = multi_region_etf_multiselect(
+        selected_regions, etf_options, t("field_select_etfs"),
         help_text=t("opt_select_etfs_help"), n_default=5,
     )
     with st.expander(t("field_add_custom_etf"), expanded=False):
@@ -285,6 +289,10 @@ with st.sidebar:
     render_sidebar_footer()
 
 # ── Validation ────────────────────────────────────────────────────────────────
+if len(selected_regions) < 1:
+    st.warning(t("msg_select_one_country"))
+    st.stop()
+
 if len(selected_etfs) < 2:
     st.warning(t("msg_select_two_etfs"))
     st.stop()
@@ -293,34 +301,19 @@ if start_date >= end_date:
     st.error(t("msg_start_before_end"))
     st.stop()
 
-# ── Compact Page Header: Portfolio Setup Summary ────────────────────────────
-# Compact confirmation of "what portfolio am I currently building", shown
-# before any optimization results -- not a results section, just an echo of
-# the current inputs above. NOT a large hero section (PRODUCT SPEC section 2).
-_market_display = t_country(selected_region) if selected_region != ALL_REGIONS_LABEL else selected_region
-_setup_rows = [
-    (t("opt_setup_label_market"), _market_display),
-    (t("opt_setup_label_etfs"), " · ".join(selected_etfs)),
-    (t("opt_investment_goal_label"), _goal_labels.get(investment_goal, investment_goal)),
-    (t("opt_risk_tolerance_label"), _risk_labels.get(risk_tolerance, risk_tolerance)),
-    (t("opt_investment_horizon_label"), _horizon_labels.get(investment_horizon, investment_horizon)),
-    (t("opt_setup_label_amount"), f"${investment_amount:,.0f}"),
-    (t("opt_base_currency_label"), base_currency),
-    (t("opt_setup_label_strategy"), _opt_method_labels.get(optimization_method, optimization_method)),
-]
-st.markdown(
-    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-    'padding:12px 16px;margin:6px 0 16px 0;box-shadow:var(--shadow-sm);">'
-    f'<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">{t("opt_setup_summary_title")}</div>'
-    '<div style="display:flex;flex-wrap:wrap;gap:20px;">'
-    + "".join(
-        '<div><div style="color:var(--text-muted);font-size:10px;margin-bottom:2px;">'
-        f'{label}</div><div style="color:var(--text);font-weight:700;font-size:13px;">{value}</div></div>'
-        for label, value in _setup_rows
-    )
-    + '</div></div>',
-    unsafe_allow_html=True,
-)
+# ── Compact "Current Setup" Summary (Issue #24 item 2) ──────────────────────
+# Replaces the old wide, equally-weighted horizontal strip (every setting
+# shown at the same visual weight as the eventual results) with a single
+# muted line -- setup stays visually secondary; results_hero() further down
+# is where the eye is meant to land once a portfolio has been built.
+_market_word = t("opt_setup_unit_market") if len(selected_regions) == 1 else t("opt_setup_unit_markets")
+_etf_word = t("opt_setup_unit_etf") if len(selected_etfs) == 1 else t("opt_setup_unit_etfs")
+setup_summary_bar([
+    f"{len(selected_regions)} {_market_word}",
+    f"{len(selected_etfs)} {_etf_word}",
+    base_currency,
+    _opt_method_labels.get(optimization_method, optimization_method),
+])
 
 # ── State Management ──────────────────────────────────────────────────────────
 # `run_inputs` fingerprints everything the optimization result depends on.
@@ -330,7 +323,7 @@ st.markdown(
 # UNCHANGED this round (PRODUCT SPEC section 14: the Build button remains
 # the explicit trigger; workspace navigation never re-runs this).
 run_inputs = (
-    tuple(sorted(selected_etfs)), str(start_date), str(end_date),
+    tuple(sorted(selected_etfs)), tuple(sorted(selected_regions)), str(start_date), str(end_date),
     optimization_method, round(min_weight, 6), round(max_weight, 6),
     allow_short, target_return_pct, base_currency,
 )
@@ -537,7 +530,14 @@ _cp_max_drawdown = maximum_drawdown(backtest_df["Portfolio Value"]) if not backt
 st.session_state.current_portfolio = {
     "portfolio_id": st.session_state.get("opt_portfolio_id"),
     "strategy": optimization_method,
-    "market": selected_region,
+    # "market": kept as a single string for backward compatibility with
+    # every existing consumer of saved portfolio/history metadata (AI
+    # Advisor caching, Investment Simulator, Portfolio History display,
+    # tests) -- a "+"-joined display string for a multi-country portfolio.
+    # "markets" (Issue #24 item 1) is the new canonical list, always safe
+    # to use for anything that needs the real selected-country set.
+    "market": " + ".join(selected_regions),
+    "markets": list(selected_regions),
     "tickers": list(weights.keys()),
     "weights": dict(weights),
     "investment_amount": investment_amount,
@@ -569,7 +569,8 @@ _experiment_metadata = {
     "schema_version": 1,
     "historical_start_date": str(start_date),
     "historical_end_date": str(end_date),
-    "market": selected_region,
+    "market": " + ".join(selected_regions),
+    "markets": list(selected_regions),
     "base_currency": base_currency,
     "currency_adjusted": bool(st.session_state.get("opt_fx_result") and st.session_state["opt_fx_result"]["currency_adjusted"]),
     "risk_free_rate": risk_free_rate,
@@ -584,6 +585,12 @@ _experiment_metadata = {
     "data_as_of": str(end_date),
     "app_version": APP_VERSION,
 }
+
+# ── Results Hero (Issue #24 item 3) ─────────────────────────────────────────
+# The FIRST thing visible after a successful build -- a strong, elevated,
+# colored header that is unmistakably different from the muted setup bar
+# above it, so a first-time user can immediately tell "this is the answer".
+results_hero(t("opt_results_hero_title"), t("opt_results_hero_subtitle"))
 
 # ── Core Result KPI Row (always visible, near the top -- PRODUCT SPEC
 # section 3) ─────────────────────────────────────────────────────────────────
