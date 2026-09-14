@@ -43,6 +43,11 @@ class Portfolio(Base):
     # _ensure_metadata_column() below); load_all_portfolios() always
     # returns a "metadata" dict, defaulting to {} when this is NULL/absent.
     metadata_json = Column(Text, nullable=True)
+    # User-scoping (Issue #22 section C): NULL for every portfolio saved
+    # before auth existed (and for anonymous/public-demo saves after) --
+    # load_all_portfolios() treats NULL the same as the shared "demo" owner,
+    # so this column never hides or breaks pre-existing saved history.
+    user_id = Column(String(100), nullable=True)
 
     holdings = relationship("PortfolioHolding", back_populates="portfolio",
                             cascade="all, delete-orphan")
@@ -70,6 +75,47 @@ class SimulationHistory(Base):
     years = Column(Integer, default=10)
     expected_return = Column(Float, default=0.0)
     final_value = Column(Float, default=0.0)
+
+
+# Default owner for every row created before user-scoping existed (Issue #22
+# section C -- auth architecture). Anonymous/public-demo activity is also
+# recorded under this same value, so a fresh deployment with no auth
+# configured behaves exactly as before: one shared demo namespace. A signed-in
+# user's stable identifier (see src/auth.py) is stored here for their own
+# rows so per-user data can be isolated without a destructive migration.
+DEFAULT_USER_ID = "demo"
+
+
+class UserHolding(Base):
+    """A single lot in a user's real, self-reported "Current Holdings" list
+    (Issue #22 section D) -- deliberately a SEPARATE table from
+    PortfolioHolding above, which stores an OPTIMIZER's target weights, not
+    what a user actually owns. No price/value columns are stored here: current
+    market value and unrealized P/L are always computed on read from live
+    data (never a fabricated/fallback price), so this table can never go
+    stale relative to the market.
+    """
+    __tablename__ = "user_holdings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, default=DEFAULT_USER_ID)
+    ticker = Column(String(20), nullable=False)
+    quantity = Column(Float, nullable=False, default=0.0)
+    average_cost = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(10), nullable=False, default="USD")
+    purchase_date = Column(String(20), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WatchlistItem(Base):
+    """A user's watchlist (Issue #22 section D) -- tracked tickers with no
+    quantity/cost basis, purely for monitoring."""
+    __tablename__ = "watchlist_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(100), nullable=False, default=DEFAULT_USER_ID)
+    ticker = Column(String(20), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 def get_engine():
@@ -109,12 +155,33 @@ def _ensure_metadata_column(engine) -> None:
             pass  # another concurrent caller already added it -- column exists either way
 
 
+def _ensure_user_id_column(engine, table: str) -> None:
+    """Same guarded-migration pattern as _ensure_metadata_column() above,
+    generalized to any table needing a backward-compatible `user_id` column
+    (Issue #22 section C: auth architecture). Every row that existed before
+    this column did defaults to NULL here, and every reader in this module
+    treats NULL/missing the same as DEFAULT_USER_ID -- so pre-existing
+    anonymous/demo data is never hidden or reassigned by this migration.
+    """
+    try:
+        existing_columns = {col["name"] for col in inspect(engine).get_columns(table)}
+    except Exception:
+        return  # table doesn't exist yet -- create_all() will create it fresh, already correct
+    if "user_id" not in existing_columns:
+        try:
+            with engine.begin() as conn:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN user_id VARCHAR(100)")
+        except Exception:
+            pass  # another concurrent caller already added it -- column exists either way
+
+
 def init_database():
     """Initialize database and create all tables if they don't exist."""
     try:
         engine = get_engine()
         Base.metadata.create_all(engine)
         _ensure_metadata_column(engine)
+        _ensure_user_id_column(engine, "portfolios")
         return engine
     except Exception as e:
         print(f"Database initialization error: {e}")
@@ -271,6 +338,166 @@ def delete_portfolio(portfolio_id: int) -> bool:
         return False
     finally:
         session.close()
+
+
+# ── Current Holdings (Issue #22 section D) ──────────────────────────────────
+def add_user_holding(user_id: str, ticker: str, quantity: float, average_cost: float,
+                      currency: str, purchase_date: str = None) -> bool:
+    """Add one lot to a user's Current Holdings. Ticker validity (must be in
+    the supported ETF universe) is enforced by the CALLER before this is
+    invoked -- this function only persists, it does not re-validate, so it
+    stays reusable for any future bulk-import path."""
+    session = None
+    try:
+        session = get_session()
+        if session is None:
+            return False
+        session.add(UserHolding(
+            user_id=user_id, ticker=ticker, quantity=float(quantity),
+            average_cost=float(average_cost), currency=currency, purchase_date=purchase_date,
+        ))
+        session.commit()
+        return True
+    except Exception as e:
+        if session is not None:
+            session.rollback()
+        print(f"Error adding holding: {e}")
+        return False
+    finally:
+        if session is not None:
+            session.close()
+
+
+def load_user_holdings(user_id: str) -> list:
+    """All holdings lots for one user, oldest first. Returns [] (never
+    raises) on any DB error, matching load_all_portfolios()'s default
+    fail-safe behavior. `get_session()` itself is inside this try block
+    (unlike the failure mode it can't normally hit -- init_database()
+    swallows its own errors and returns None -- a caller reaching in to
+    simulate a harder failure, e.g. a monkeypatched get_session that
+    raises, must still get [] here, not an unhandled exception)."""
+    session = None
+    try:
+        session = get_session()
+        if session is None:
+            return []
+        rows = (session.query(UserHolding)
+                .filter(UserHolding.user_id == user_id)
+                .order_by(UserHolding.created_at.asc()).all())
+        return [
+            {
+                "id": r.id, "ticker": r.ticker, "quantity": r.quantity,
+                "average_cost": r.average_cost, "currency": r.currency,
+                "purchase_date": r.purchase_date,
+                "created_at": r.created_at.strftime("%Y-%m-%d") if r.created_at else None,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"Error loading holdings: {e}")
+        return []
+    finally:
+        if session is not None:
+            session.close()
+
+
+def delete_user_holding(user_id: str, holding_id: int) -> bool:
+    """Delete one holding lot. Scoped to `user_id` so one user can never
+    delete another user's row even if they guess/replay an id."""
+    session = None
+    try:
+        session = get_session()
+        if session is None:
+            return False
+        row = (session.query(UserHolding)
+               .filter(UserHolding.id == holding_id, UserHolding.user_id == user_id).first())
+        if row:
+            session.delete(row)
+            session.commit()
+            return True
+        return False
+    except Exception as e:
+        if session is not None:
+            session.rollback()
+        print(f"Error deleting holding: {e}")
+        return False
+    finally:
+        if session is not None:
+            session.close()
+
+
+# ── Watchlist (Issue #22 section D) ─────────────────────────────────────────
+def add_watchlist_item(user_id: str, ticker: str) -> bool:
+    """Add a ticker to a user's watchlist. Silently no-ops (returns True
+    without inserting a duplicate row) if the ticker is already on this
+    user's watchlist, so repeated clicks can never create duplicate rows."""
+    session = None
+    try:
+        session = get_session()
+        if session is None:
+            return False
+        existing = (session.query(WatchlistItem)
+                    .filter(WatchlistItem.user_id == user_id, WatchlistItem.ticker == ticker).first())
+        if existing:
+            return True
+        session.add(WatchlistItem(user_id=user_id, ticker=ticker))
+        session.commit()
+        return True
+    except Exception as e:
+        if session is not None:
+            session.rollback()
+        print(f"Error adding watchlist item: {e}")
+        return False
+    finally:
+        if session is not None:
+            session.close()
+
+
+def load_watchlist(user_id: str) -> list:
+    """All tickers on one user's watchlist, oldest first. Returns [] on
+    any DB error (see load_user_holdings()'s docstring for why get_session()
+    itself is inside this try block)."""
+    session = None
+    try:
+        session = get_session()
+        if session is None:
+            return []
+        rows = (session.query(WatchlistItem)
+                .filter(WatchlistItem.user_id == user_id)
+                .order_by(WatchlistItem.created_at.asc()).all())
+        return [{"id": r.id, "ticker": r.ticker,
+                 "created_at": r.created_at.strftime("%Y-%m-%d") if r.created_at else None} for r in rows]
+    except Exception as e:
+        print(f"Error loading watchlist: {e}")
+        return []
+    finally:
+        if session is not None:
+            session.close()
+
+
+def remove_watchlist_item(user_id: str, item_id: int) -> bool:
+    """Remove one watchlist entry. Scoped to `user_id` (same reasoning as
+    delete_user_holding() above)."""
+    session = None
+    try:
+        session = get_session()
+        if session is None:
+            return False
+        row = (session.query(WatchlistItem)
+               .filter(WatchlistItem.id == item_id, WatchlistItem.user_id == user_id).first())
+        if row:
+            session.delete(row)
+            session.commit()
+            return True
+        return False
+    except Exception as e:
+        if session is not None:
+            session.rollback()
+        print(f"Error removing watchlist item: {e}")
+        return False
+    finally:
+        if session is not None:
+            session.close()
 
 
 def save_simulation(initial_investment: float, monthly_contribution: float,

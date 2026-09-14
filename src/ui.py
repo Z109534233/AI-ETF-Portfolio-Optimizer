@@ -13,6 +13,7 @@ from src.i18n import t, t_country, t_opt_method, language_selector, get_language
 from src.etf_database import get_countries, get_tickers_by_country, get_etf
 from src.data_loader import DEFAULT_ETFS
 from src.financial_metrics import ACTIVE_POSITION_TOLERANCE
+import src.openai_service as _openai_service
 
 # ── Global Market / Region Selector ─────────────────────────────────────────
 # Shared by every page that lets the user scope ETFs to a market (currently
@@ -417,8 +418,8 @@ NAV_ITEMS = [
     {"page": "pages/3_Investment_Simulator.py", "label_key": "nav_investment_simulator"},
     {"page": "pages/4_Risk_Analytics.py", "label_key": "nav_risk_analytics"},
     {"page": "pages/5_Machine_Learning.py", "label_key": "nav_machine_learning"},
+    {"page": "pages/8_Market_Intelligence.py", "label_key": "nav_market_intelligence"},
     {"page": "pages/6_AI_Advisor.py", "label_key": "nav_ai_advisor"},
-    {"page": "pages/8_Market_Intelligence.py", "label_key": "nav_market_intelligence", "icon": "📰"},
     {"page": "pages/7_Portfolio_History.py", "label_key": "nav_portfolio_history"},
 ]
 
@@ -912,6 +913,45 @@ def style_signed_columns(df, columns):
         return f"color:{color}; font-weight:600;"
 
     return df.style.map(_color, subset=columns)
+
+
+# ── Chart / Table Explanations (Issue #22 section L) ─────────────────────────
+def chart_caption(text: str) -> None:
+    """Deterministic 'What this shows' caption for a chart/table, always
+    correct with zero API calls -- the caller writes `text` itself from the
+    chart's own known semantics (never inferred or fabricated here). Meant
+    to be short: one or two sentences, not a paragraph."""
+    st.caption(f"{t('chart_caption_prefix')} {text}")
+
+
+def ai_interpret_button(cache_key: str, session_state, context_text: str) -> None:
+    """Optional, user-triggered 'Ask AI to interpret' enrichment for a chart
+    or table (Issue #22 section L). Renders nothing if OpenAI isn't
+    configured -- chart_caption() above always works regardless. No API
+    call happens just from rendering this button; a call only happens on
+    click, and only once per distinct (cache_key, context_text, language)
+    combination -- cached_generate() reuses the prior result on any rerun
+    that doesn't change those (e.g. switching tabs), so repeated clicks or
+    reruns with unchanged inputs never re-spend a call. The system prompt
+    restricts the model to ONLY the metrics passed in `context_text` --
+    it must never invent a number, price, or piece of advice.
+    """
+    if not _openai_service.is_configured():
+        return
+    if st.button(t("chart_ask_ai_interpret"), key=f"{cache_key}_btn"):
+        system_prompt = (
+            "You are explaining an already-computed chart or table to a "
+            "retail investor. Only reference the metrics given below -- "
+            "never invent a number, price, or piece of financial advice. "
+            "Keep the explanation to 2-4 concise sentences."
+        )
+        fp = _openai_service.fingerprint(context_text, get_language())
+        result = _openai_service.cached_generate(session_state, cache_key, fp, system_prompt, context_text, max_output_tokens=300)
+        session_state[f"{cache_key}_last_result"] = result
+
+    last_result = session_state.get(f"{cache_key}_last_result")
+    if last_result and last_result.get("text"):
+        st.info(last_result["text"])
 
 
 # ── Footer ──────────────────────────────────────────────────────────────────────

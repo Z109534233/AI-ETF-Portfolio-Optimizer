@@ -46,7 +46,7 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, error_state, kpi_card,
+    chart_card, render_footer, error_state, kpi_card, chart_caption,
     region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
 )
 from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
@@ -479,6 +479,7 @@ if workspace == "Overview":
     with chart_card(t("etf_overview_chart_title")):
         fig = price_chart(etf_prices[[_focus_ticker]])
         st.plotly_chart(fig, use_container_width=True, key="overview_price_chart")
+        chart_caption(t("etf_overview_chart_caption"))
 
     section_header(t("etf_overview_interpretation_title"))
     _render_ai_interpretation_section(_focus_ticker, _focus_entry)

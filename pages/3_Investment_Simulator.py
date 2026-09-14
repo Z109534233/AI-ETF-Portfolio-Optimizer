@@ -29,7 +29,7 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, dataframe_to_csv
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card,
-    render_footer, render_current_portfolio_handoff, error_state,
+    render_footer, render_current_portfolio_handoff, error_state, chart_caption,
 )
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, t_opt_method
@@ -611,23 +611,25 @@ with st.expander(t("sim_methodology_title"), expanded=False):
         f"- {t('sim_methodology_mc_purpose')}"
     )
 
-# ── KPI Cards ─────────────────────────────────────────────────────────────────
+# ── KPI Cards (Issue #22 section K: Principal -> Optimistic -> Median ->
+# Conservative, the primary at-a-glance row; secondary metrics grouped
+# underneath at lower visual weight) ────────────────────────────────────────
 section_header(t("sim_results_title"), t("sim_results_sub", count=f"{n_simulations:,}", years=years))
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown(metric_card_html(t("metric_median_final_value"), f"${summary['median_final']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
-with col2:
     st.markdown(metric_card_html(t("metric_total_contributed"), f"${total_contributed:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
+with col2:
+    st.markdown(metric_card_html(t("metric_optimistic_90"), f"${summary['optimistic_final']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
 with col3:
-    st.markdown(metric_card_html(t("metric_median_investment_gain"), f"${summary['median_gain']:,.0f}", color=COLORS["purple"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_median_final_value"), f"${summary['median_final']:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col4:
-    st.markdown(metric_card_html(t("metric_inflation_adjusted_value"), f"${summary['real_median_final']:,.0f}", color=COLORS["warning"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_pessimistic_10"), f"${summary['pessimistic_final']:,.0f}", color=COLORS["danger"]), unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.markdown(metric_card_html(t("metric_optimistic_90"), f"${summary['optimistic_final']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_median_investment_gain"), f"${summary['median_gain']:,.0f}", color=COLORS["purple"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html(t("metric_pessimistic_10"), f"${summary['pessimistic_final']:,.0f}", color=COLORS["danger"]), unsafe_allow_html=True)
+    st.markdown(metric_card_html(t("metric_inflation_adjusted_value"), f"${summary['real_median_final']:,.0f}", color=COLORS["warning"]), unsafe_allow_html=True)
 with col3:
     # Honest empirical-frequency framing (Issue #20 section 4A): this is the
     # observed share of SIMULATED paths that ended above contributions
@@ -643,8 +645,11 @@ st.caption(t(
 st.caption(t("sim_positive_outcome_disclaimer", total=f"{summary['n_simulations']:,}"))
 
 # ── Charts ────────────────────────────────────────────────────────────────────
+# Issue #22 section K: the "Simulation Details"/"模擬詳情" card heading was
+# pure redundant chrome above these already-self-explanatory chart tabs --
+# dropped in favor of a plain bordered container (no chart_card() title).
 section_header(t("sim_projection_charts_title"))
-with chart_card(t("sim_simulation_detail_card")):
+with st.container(border=True):
     tab1, tab2, tab3, tab4 = st.tabs([
         t("sim_tab_monte_carlo"), t("sim_tab_compound_growth"), t("sim_tab_value_distribution"), t("sim_tab_annual_table")
     ])
@@ -652,6 +657,7 @@ with chart_card(t("sim_simulation_detail_card")):
     with tab1:
         fig_mc = monte_carlo_paths_chart(paths_df, t("chart_monte_carlo_simulation") + f" — {years}")
         st.plotly_chart(fig_mc, use_container_width=True, key="sim_monte_carlo_paths")
+        chart_caption(t("sim_monte_carlo_chart_caption"))
 
     with tab2:
         # Compound growth projection (deterministic)

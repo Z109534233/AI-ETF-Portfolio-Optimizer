@@ -249,51 +249,57 @@ if st.session_state.ai_fingerprint is not None and st.session_state.ai_fingerpri
 context = result["context"]
 port_ctx = context["portfolio"]
 
-# ── Display Results ───────────────────────────────────────────────────────────
-section_header(t("ai_analysis_results_title"))
-col_left, col_right = st.columns([2, 1])
-
-with col_left:
-    with chart_card(t("ai_portfolio_analysis_card"), tag=t("ai_tag_generated") if result.get("source") == "ai" else t("ai_tag_rule_based")):
-        st.markdown(f"**{t('ai_narrative_title')}**")
-        st.markdown(result["analysis"])
-
-with col_right:
-    with chart_card(t("ai_portfolio_overview_card")):
-        fig_donut = allocation_donut_chart(port_ctx["weights"], "")
-        st.plotly_chart(fig_donut, use_container_width=True, key="ai_advisor_allocation_donut")
-
-# ── Deterministic Data (computed, not AI-generated) ─────────────────────────
-section_header(t("ai_deterministic_data_title"))
-st.caption(f"{t('ai_as_of_label')}: {context['as_of']}")
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-with kpi1:
-    st.metric(t("metric_annualized_return"), f"{port_ctx['expected_return']:.2%}" if port_ctx["expected_return"] is not None else "N/A")
-with kpi2:
-    st.metric(t("metric_annualized_volatility"), f"{port_ctx['volatility']:.2%}" if port_ctx["volatility"] is not None else "N/A")
-with kpi3:
-    st.metric(t("metric_sharpe_ratio"), f"{port_ctx['sharpe_ratio']:.2f}" if port_ctx["sharpe_ratio"] is not None else "N/A")
-with kpi4:
-    st.metric(t("metric_maximum_drawdown"), f"{port_ctx['max_drawdown']:.2%}" if port_ctx["max_drawdown"] is not None else "N/A")
+# ── Display Results (Issue #22 section H: tabs -- Summary / Risk /
+# Simulation / ML / Market -- instead of one long scroll with collapsed
+# expanders lower down) ─────────────────────────────────────────────────────
+tab_summary, tab_risk, tab_simulation, tab_ml, tab_market = st.tabs([
+    t("ai_tab_summary"), t("ai_tab_risk"), t("ai_tab_simulation"),
+    t("ai_tab_ml"), t("ai_tab_market"),
+])
 
 risk_ctx = context["risk"]
-if risk_ctx.get("available"):
-    c = risk_ctx["concentration"]
-    kpi5, kpi6 = st.columns(2)
-    with kpi5:
-        st.metric(t("opt_diag_effective_holdings"), f"{c['effective_holdings']:.1f}")
-    with kpi6:
-        vc = risk_ctx["var_cvar"]
-        st.metric(t("metric_var_95"), f"{vc['var']:.2%}" if vc.get("available") else "N/A")
 
-with st.expander(t("ai_section_risk"), expanded=False):
+with tab_summary:
+    section_header(t("ai_analysis_results_title"))
+    col_left, col_right = st.columns([2, 1])
+
+    with col_left:
+        with chart_card(t("ai_portfolio_analysis_card"), tag=t("ai_tag_generated") if result.get("source") == "ai" else t("ai_tag_rule_based")):
+            st.markdown(f"**{t('ai_narrative_title')}**")
+            st.markdown(result["analysis"])
+
+    with col_right:
+        with chart_card(t("ai_portfolio_overview_card")):
+            fig_donut = allocation_donut_chart(port_ctx["weights"], "")
+            st.plotly_chart(fig_donut, use_container_width=True, key="ai_advisor_allocation_donut")
+
+    # ── Deterministic Data (computed, not AI-generated) ──────────────────
+    section_header(t("ai_deterministic_data_title"))
+    st.caption(f"{t('ai_as_of_label')}: {context['as_of']}")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    with kpi1:
+        st.metric(t("metric_annualized_return"), f"{port_ctx['expected_return']:.2%}" if port_ctx["expected_return"] is not None else "N/A")
+    with kpi2:
+        st.metric(t("metric_annualized_volatility"), f"{port_ctx['volatility']:.2%}" if port_ctx["volatility"] is not None else "N/A")
+    with kpi3:
+        st.metric(t("metric_sharpe_ratio"), f"{port_ctx['sharpe_ratio']:.2f}" if port_ctx["sharpe_ratio"] is not None else "N/A")
+    with kpi4:
+        st.metric(t("metric_maximum_drawdown"), f"{port_ctx['max_drawdown']:.2%}" if port_ctx["max_drawdown"] is not None else "N/A")
+
+with tab_risk:
+    section_header(t("ai_section_risk"))
     if risk_ctx.get("available"):
         c = risk_ctx["concentration"]
+        kpi5, kpi6 = st.columns(2)
+        with kpi5:
+            st.metric(t("opt_diag_effective_holdings"), f"{c['effective_holdings']:.1f}")
+        with kpi6:
+            vc = risk_ctx["var_cvar"]
+            st.metric(t("metric_var_95"), f"{vc['var']:.2%}" if vc.get("available") else "N/A")
         st.markdown(t(
             "ai_risk_concentration_line", ticker=c["largest_ticker"], weight=f"{c['largest_weight']:.2%}",
             effective_holdings=f"{c['effective_holdings']:.1f}",
         ))
-        vc = risk_ctx["var_cvar"]
         if vc.get("available"):
             st.markdown(t(
                 "ai_risk_var_line", confidence=f"{vc['confidence']:.0%}", holding_period=vc["holding_period_days"],
@@ -305,7 +311,8 @@ with st.expander(t("ai_section_risk"), expanded=False):
     else:
         st.markdown(t("ai_section_unavailable", reason=risk_ctx.get("reason", "")))
 
-with st.expander(t("ai_section_simulator"), expanded=False):
+with tab_simulation:
+    section_header(t("ai_section_simulator"))
     sim_ctx = context["simulator"]
     fp = sim_ctx["future_projection"]
     if fp.get("available"):
@@ -326,7 +333,8 @@ with st.expander(t("ai_section_simulator"), expanded=False):
     else:
         st.markdown(t("ai_sim_historical_unavailable", reason=hs.get("reason", "")))
 
-with st.expander(t("ai_section_ml"), expanded=False):
+with tab_ml:
+    section_header(t("ai_section_ml"))
     ml_ctx = context["ml"]
     if ml_ctx.get("available"):
         beats = t("ai_ml_beats") if ml_ctx["beats_baseline"] else t("ai_ml_below")
@@ -339,7 +347,8 @@ with st.expander(t("ai_section_ml"), expanded=False):
     else:
         st.markdown(t("ai_section_unavailable", reason=ml_ctx.get("reason", "")))
 
-with st.expander(t("ai_section_news"), expanded=False):
+with tab_market:
+    section_header(t("ai_section_news"))
     news_ctx = context["news"]
     if news_ctx.get("available"):
         st.markdown(t("ai_news_line", count=news_ctx["headline_count"], relevant=news_ctx["relevant_holdings_count"]))

@@ -33,7 +33,7 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
-    chart_card, render_footer, error_state, style_signed_columns,
+    chart_card, render_footer, error_state, style_signed_columns, chart_caption,
     region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
     render_current_portfolio_handoff,
 )
@@ -362,6 +362,7 @@ with chart_card(t("risk_detail_card")):
             corr = correlation_matrix(etf_prices)
             fig_corr = correlation_heatmap(corr)
             st.plotly_chart(fig_corr, use_container_width=True, key="risk_correlation_heatmap")
+            chart_caption(t("risk_correlation_heatmap_caption"))
             st.caption(t("risk_correlation_vs_overlap_note"))
 
             # Holdings Overlap (M3): a DIFFERENT measure than the return

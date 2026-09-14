@@ -34,7 +34,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.data_loader import download_etf_data, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data, get_common_date_range
-from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
+from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns, get_etf
+from src.fx import convert_prices_to_base_currency
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
     compute_efficient_frontier
@@ -58,7 +59,7 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
     region_selector, region_etf_options, region_etf_multiselect,
-    kpi_card,
+    kpi_card, chart_caption, ai_interpret_button,
 )
 from src.theme import COLORS
 from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
@@ -142,6 +143,23 @@ with st.sidebar:
         value=_av, step=500.0, key="investment_amount",
     )
     st.session_state[_ak] = investment_amount
+
+    # 3b. Base Currency (Issue #22 section F -- mixed-market portfolios).
+    # Selecting ETFs across multiple markets (e.g. VOO + QQQ + 0050) means
+    # their prices are natively denominated in different currencies; this is
+    # the ONE base currency every price series is converted into (via
+    # src.fx) before returns/covariance/optimization are computed below.
+    # Single-currency portfolios that already match this choice pay no FX
+    # conversion cost at all -- see the currency-adjusted disclosure in the
+    # Methodology panel further down the page.
+    _BASE_CURRENCY_OPTIONS = ["USD", "TWD", "GBP"]
+    _bck, _bcv = _shadow_default("opt_base_currency", "USD")
+    base_currency = st.selectbox(
+        t("opt_base_currency_label"), _BASE_CURRENCY_OPTIONS,
+        index=_BASE_CURRENCY_OPTIONS.index(_bcv) if _bcv in _BASE_CURRENCY_OPTIONS else 0,
+        help=t("opt_base_currency_help"), key="opt_base_currency",
+    )
+    st.session_state[_bck] = base_currency
 
     # 4. Investment Goal -- portfolio metadata / user preference only.
     # Does NOT alter the optimizer's math -- later rounds will map it to
@@ -287,6 +305,7 @@ _setup_rows = [
     (t("opt_risk_tolerance_label"), _risk_labels.get(risk_tolerance, risk_tolerance)),
     (t("opt_investment_horizon_label"), _horizon_labels.get(investment_horizon, investment_horizon)),
     (t("opt_setup_label_amount"), f"${investment_amount:,.0f}"),
+    (t("opt_base_currency_label"), base_currency),
     (t("opt_setup_label_strategy"), _opt_method_labels.get(optimization_method, optimization_method)),
 ]
 st.markdown(
@@ -313,7 +332,7 @@ st.markdown(
 run_inputs = (
     tuple(sorted(selected_etfs)), str(start_date), str(end_date),
     optimization_method, round(min_weight, 6), round(max_weight, 6),
-    allow_short, target_return_pct,
+    allow_short, target_return_pct, base_currency,
 )
 
 if "opt_result" not in st.session_state:
@@ -374,6 +393,38 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
 
         prices_df = clean_price_data(raw_prices)
         prices_df = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
+
+        # ── Mixed-Market Currency Conversion (Issue #22 section F) ───────
+        # Convert every column to `base_currency` via real FX series BEFORE
+        # computing returns/covariance/Sharpe/optimization -- optimizing
+        # mixed-currency raw local-currency prices directly would silently
+        # blend incompatible units. Tickers not in the curated ETF database
+        # (e.g. a free-text custom US ticker) default to USD, matching this
+        # app's existing assumption everywhere else a currency isn't on
+        # record. Single-currency selections that already match
+        # base_currency skip FX entirely (src.fx never calls the network
+        # for an identity conversion).
+        _ticker_currency_map = {
+            tk: (get_etf(tk).currency if get_etf(tk) else "USD") for tk in prices_df.columns
+        }
+        _currencies_present = set(_ticker_currency_map.values())
+        fx_result = None
+        if _currencies_present - {base_currency}:
+            with st.spinner(t("opt_fx_converting")):
+                fx_result = convert_prices_to_base_currency(
+                    prices_df, _ticker_currency_map, base_currency, str(start_date), str(end_date),
+                )
+            _fx_unavailable = fx_result["unavailable_tickers"]
+            if _fx_unavailable:
+                _sep = "、" if get_language() == "zh-TW" else ", "
+                error_state(
+                    t("opt_fx_unavailable_title"),
+                    t("opt_fx_unavailable_desc", tickers=_sep.join(_fx_unavailable), base=base_currency),
+                )
+                st.stop()
+            prices_df = fx_result["converted_prices"]
+            prices_df = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
+        st.session_state.opt_fx_result = fx_result
 
         # ── Validate prices_df ──────────────────────────────────────────
         if prices_df.empty or len(prices_df.columns) < 2:
@@ -490,6 +541,8 @@ st.session_state.current_portfolio = {
     "tickers": list(weights.keys()),
     "weights": dict(weights),
     "investment_amount": investment_amount,
+    "base_currency": base_currency,
+    "currency_adjusted": bool(st.session_state.get("opt_fx_result") and st.session_state["opt_fx_result"]["currency_adjusted"]),
     "investment_goal": investment_goal,
     "risk_tolerance": risk_tolerance,
     "investment_horizon": investment_horizon,
@@ -517,6 +570,8 @@ _experiment_metadata = {
     "historical_start_date": str(start_date),
     "historical_end_date": str(end_date),
     "market": selected_region,
+    "base_currency": base_currency,
+    "currency_adjusted": bool(st.session_state.get("opt_fx_result") and st.session_state["opt_fx_result"]["currency_adjusted"]),
     "risk_free_rate": risk_free_rate,
     "min_weight": min_weight,
     "max_weight": max_weight,
@@ -573,6 +628,15 @@ with st.expander(t("opt_methodology_title"), expanded=False):
             "opt_methodology_optimizer_desc", method=t_opt_method(optimization_method),
             rf=f"{risk_free_rate:.2%}", min=f"{min_weight:.0%}", max=f"{max_weight:.0%}", short_note=_short_note,
         )
+    _fx_result_disclosure = st.session_state.get("opt_fx_result")
+    if _fx_result_disclosure:
+        _fx_currency_line = t(
+            "opt_fx_methodology_value", base=base_currency,
+            source=_fx_result_disclosure["fx_source"], method=_fx_result_disclosure["conversion_method"],
+            adjusted=(t("opt_fx_yes") if _fx_result_disclosure["currency_adjusted"] else t("opt_fx_no")),
+        )
+    else:
+        _fx_currency_line = t("opt_fx_not_needed", base=base_currency)
     st.markdown(
         f"- **{t('opt_methodology_return_label')}** — {t('opt_methodology_return_desc')}\n"
         f"- **{t('opt_methodology_covariance_label')}** — {t('opt_methodology_covariance_desc')}\n"
@@ -580,7 +644,8 @@ with st.expander(t("opt_methodology_title"), expanded=False):
         f"{t('opt_methodology_history_value', start=_hist_start, end=_hist_end, days=len(prices_df))}\n"
         f"- **{t('opt_methodology_optimizer_label')}** — {_optimizer_desc}\n"
         f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
-        f"{t('opt_methodology_backtest_desc')}"
+        f"{t('opt_methodology_backtest_desc')}\n"
+        f"- **{t('opt_fx_methodology_label')}** — {_fx_currency_line}"
     )
     _validation = result.get("validation")
     if _validation is not None:
@@ -767,6 +832,9 @@ elif opt_workspace == "Allocation":
         with chart_card(t("opt_allocation_breakdown_card"), t_opt_method(optimization_method)):
             fig_donut = allocation_donut_chart(weights, "")
             st.plotly_chart(fig_donut, use_container_width=True, key="opt_allocation_donut")
+            chart_caption(t("opt_allocation_donut_caption"))
+            _alloc_context_text = "; ".join(f"{tk}: {w:.2%}" for tk, w in sorted(weights.items(), key=lambda kv: kv[1], reverse=True))
+            ai_interpret_button("opt_allocation_ai_interpret", st.session_state, _alloc_context_text)
 
 # ══════════════════════════════════════════════════════════════════════════
 # STRATEGY LAB -- Strategy Comparison / Efficient Frontier
