@@ -46,8 +46,8 @@ TRANSLATIONS = {
         "nav_investment_simulator": "投資模擬",
         "nav_risk_analytics": "風險分析",
         "nav_machine_learning": "機器學習",
-        "nav_ai_advisor": "投資組合分析助手",
-        "nav_portfolio_history": "投資組合紀錄",
+        "nav_ai_advisor": "投資組合分析",
+        "nav_portfolio_history": "我的投資組合",
 
         # ── Hero (Home) ─────────────────────────────────────────────────
         "hero_badge_live_data": "即時市場資料",
@@ -1370,8 +1370,8 @@ TRANSLATIONS = {
         "nav_investment_simulator": "Investment Simulator",
         "nav_risk_analytics": "Risk Analytics",
         "nav_machine_learning": "Machine Learning",
-        "nav_ai_advisor": "AI Portfolio Analyst",
-        "nav_portfolio_history": "Portfolio History",
+        "nav_ai_advisor": "Portfolio Analyst",
+        "nav_portfolio_history": "My Portfolio",
 
         # ── Hero (Home) ─────────────────────────────────────────────────
         "hero_badge_live_data": "Live Market Data",

@@ -417,8 +417,8 @@ NAV_ITEMS = [
     {"page": "pages/3_Investment_Simulator.py", "label_key": "nav_investment_simulator"},
     {"page": "pages/4_Risk_Analytics.py", "label_key": "nav_risk_analytics"},
     {"page": "pages/5_Machine_Learning.py", "label_key": "nav_machine_learning"},
+    {"page": "pages/8_Market_Intelligence.py", "label_key": "nav_market_intelligence"},
     {"page": "pages/6_AI_Advisor.py", "label_key": "nav_ai_advisor"},
-    {"page": "pages/8_Market_Intelligence.py", "label_key": "nav_market_intelligence", "icon": "📰"},
     {"page": "pages/7_Portfolio_History.py", "label_key": "nav_portfolio_history"},
 ]
 
