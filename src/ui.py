@@ -1032,6 +1032,33 @@ def chart_card(title: str, subtitle: str = None, tag: str = None):
         yield container
 
 
+# ── Capability Hierarchy Grid (Home "Why Choose", Issue #33) ─────────────────
+def capability_hierarchy_grid(featured: dict, items: list) -> None:
+    """Render one visually dominant featured capability plus a borderless
+    grid of smaller supporting "detail items" -- deliberately a dedicated
+    helper instead of reusing feature_card()'s uniform outlined-card grid,
+    so pages that still rely on feature_card() are unaffected. `featured`
+    and each entry of `items` is a {"icon", "title", "desc"} dict, already
+    translated. Supporting items carry `tabindex` so the hover surface/
+    border treatment also has a matching keyboard :focus-visible state."""
+    featured_html = (
+        '<div class="capability-featured">'
+        f'<div class="capability-featured-icon">{icon_svg(featured["icon"], 30, COLORS["primary"])}</div>'
+        f'<div class="capability-featured-title">{featured["title"]}</div>'
+        f'<div class="capability-featured-desc">{featured["desc"]}</div>'
+        '</div>'
+    )
+    items_html = "".join(
+        '<div class="capability-item" tabindex="0">'
+        f'<div class="capability-item-icon">{icon_svg(it["icon"], 18, COLORS["text_secondary"])}</div>'
+        f'<div class="capability-item-title">{it["title"]}</div>'
+        f'<div class="capability-item-desc">{it["desc"]}</div>'
+        '</div>'
+        for it in items
+    )
+    st.markdown(f'<div class="capability-grid">{featured_html}{items_html}</div>', unsafe_allow_html=True)
+
+
 # ── Feature Overview Card ───────────────────────────────────────────────────────
 def feature_card(title: str, desc: str, icon: str = "activity") -> str:
     return f"""
