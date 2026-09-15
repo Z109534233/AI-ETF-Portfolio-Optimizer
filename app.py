@@ -18,7 +18,7 @@ from src.database import init_database
 from src.utils import load_css, disclaimer_box, ensure_directories
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, ticker_strip, hero_section,
-    section_header, feature_card, render_footer, persona_row, faq_accordion,
+    section_header, capability_hierarchy_grid, render_footer, persona_row, faq_accordion,
     stat_strip, tech_stack_strip, section_surface, NAV_ITEMS
 )
 from src.i18n import t, get_language
@@ -156,17 +156,19 @@ else:
         "market-data source coverage."
         )
 
-# ── Why Choose This Platform (the ONE primary card grid on Home, Issue #31
-# item 3) -- merged with the former Feature Overview section, one 8-card
-# grid, one card per module, no duplicated content. Carries the in-page
-# jump target for the hero's "Explore Features" secondary CTA. ──────────────
+# ── Why Choose This Platform (the ONE primary capability section on Home,
+# Issue #31 item 3 / Issue #33 hierarchy pass) -- one featured capability
+# (Portfolio Optimization) plus a borderless grid of seven smaller
+# supporting items, instead of eight identically-weighted outlined cards.
+# Carries the in-page jump target for the hero's "Explore Features"
+# secondary CTA. ──────────────────────────────────────────────────────────
 _why_lang = get_language()
 if _why_lang == "zh-TW":
     _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程"
-    why_choose = [
+    why_featured = {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置，是本平台的核心分析引擎"}
+    why_items = [
         {"icon": "newspaper", "title": "市場情報", "desc": "即時新聞、事件分類與市場摘要（部分摘要由 AI 輔助生成）"},
         {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析"},
-        {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置"},
         {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境"},
         {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析"},
         {"icon": "cpu", "title": "機器學習預測", "desc": "數據驅動的 ETF 漲跌方向預測模型"},
@@ -175,10 +177,10 @@ if _why_lang == "zh-TW":
     ]
 else:
     _why_title, _why_subtitle = "Why Choose This Platform", "Eight core modules spanning the full journey from analysis to decision."
-    why_choose = [
+    why_featured = {"icon": "target", "title": "Portfolio Optimization", "desc": "Five methods to find the optimal risk-adjusted mix -- the platform's core analysis engine."}
+    why_items = [
         {"icon": "newspaper", "title": "Market Intelligence", "desc": "Real-time news, event tagging, and market summaries (some summaries are AI-assisted)."},
         {"icon": "bar-chart", "title": "ETF Analysis", "desc": "Cross-market ETF price, return, and risk analysis."},
-        {"icon": "target", "title": "Portfolio Optimization", "desc": "Five methods to find the optimal risk-adjusted mix."},
         {"icon": "trending-up", "title": "Investment Simulator", "desc": "Monte Carlo projections for long-term growth."},
         {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, CVaR, Beta, and stress-test scenarios."},
         {"icon": "cpu", "title": "Machine Learning Forecast", "desc": "Data-driven ETF direction prediction models."},
@@ -186,11 +188,7 @@ else:
         {"icon": "pie-chart", "title": "Portfolio History", "desc": "Save, compare, and manage your portfolio records."},
     ]
 section_header(_why_title, _why_subtitle, anchor_id="why-choose-anchor")
-for _row_start in (0, 4):
-    _why_cols = st.columns(4)
-    for _col, _card in zip(_why_cols, why_choose[_row_start:_row_start + 4]):
-        with _col:
-            st.markdown(feature_card(_card["title"], _card["desc"], _card["icon"]), unsafe_allow_html=True)
+capability_hierarchy_grid(why_featured, why_items)
 
 # ── How It Works (horizontal step row on desktop, full width; collapses to
 # a vertical stack on mobile via the site's existing stHorizontalBlock
