@@ -3564,7 +3564,12 @@ def test_wsr_a_overview_does_not_render_everything():
     ws = next((w for w in at.segmented_control if w.key == "etf_analysis_workspace"), None)
     check("WSR-A.defaults_to_overview", ws is not None and ws.value == "Overview", ws.value if ws else None)
     all_text = "\n".join(m.value for m in at.markdown)
-    check("WSR-A.overview_snapshot_present", "ETF Intelligence Snapshot" in all_text or "Overview" in all_text)
+    # Issue #29 visual-acceptance round: the old "ETF Intelligence Snapshot"
+    # / "ETF 智慧摘要" heading above the hero was removed (the hero itself IS
+    # the summary now), so presence is instead confirmed via the hero panel
+    # markup that hero_metric_panel() always renders for the Overview
+    # workspace -- see src/ui.py::hero_metric_panel().
+    check("WSR-A.overview_snapshot_present", "hero-metric-panel-primary" in all_text or "Overview" in all_text)
     # Compare-only / Holdings-only content must NOT be present on Overview.
     check("WSR-A.no_etf_ranking_section", "ETF Ranking" not in all_text)
     check("WSR-A.no_compare_mode_section", "Compare Mode" not in all_text)

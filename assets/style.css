@@ -123,6 +123,38 @@ h1, h2, h3, h4 { color: var(--text); font-weight: 700; letter-spacing: -0.01em; 
     .results-hero-metric-value { font-size: 38px; }
 }
 
+/* Hero metric panel (Issue #29): a primary metric + optional right-side
+   badge (rating/trend + compact meta rows), aligned on one row, with an
+   optional smaller secondary-metrics row underneath -- see
+   src/ui.py::hero_metric_panel(). */
+.hero-metric-panel-primary { margin: 4px 0 6px 0; }
+.hero-metric-panel-badge {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+    padding-top: 8px;
+}
+.hero-metric-panel-badge-meta-row {
+    display: flex; gap: 8px; font-size: 12px; color: var(--text-secondary);
+}
+.hero-metric-panel-badge-meta-row span:first-child { color: var(--text-muted); }
+@media (max-width: 640px) {
+    .hero-metric-panel-badge { align-items: flex-start; padding-top: 10px; }
+}
+
+/* Insight panel (Issue #29 visual-acceptance round item 5): a lightweight
+   left accent bar + bullet list, deliberately NOT another full bordered/
+   backgrounded card -- see src/ui.py::insight_panel(). */
+.insight-panel {
+    border-left: 3px solid var(--primary);
+    padding: 2px 0 2px 14px; margin: 10px 0 16px 0;
+}
+.insight-panel-title {
+    color: var(--text); font-weight: 700; font-size: 13.5px; margin-bottom: 8px;
+}
+.insight-panel-bullet { color: var(--text-secondary); font-size: 12.5px; line-height: 1.6; }
+.insight-panel-footer {
+    color: var(--text-muted); font-size: 11.5px; margin-top: 8px; padding-top: 8px;
+}
+
 .caption-text { color: var(--text-muted); font-size: 11.5px; }
 
 /* Streamlit-native headings used as lightweight section markers */

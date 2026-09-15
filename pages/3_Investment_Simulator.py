@@ -30,7 +30,7 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html, d
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card,
     render_footer, render_current_portfolio_handoff, error_state, chart_caption,
-    ai_interpret_button, results_hero, setup_summary_bar,
+    ai_interpret_button, results_hero, results_hero_metric, setup_summary_bar,
 )
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, t_opt_method
@@ -432,20 +432,24 @@ if simulation_mode == "Historical Simulation":
         t("hist_rebalancing_monthly"),
     ], title=t("hist_backtest_setup_title"))
 
-    # ── KPI Cards ─────────────────────────────────────────────────────────
+    # ── KPI Cards (Issue #29 visual-acceptance round: Final Value -- the
+    # number that actually answers "what would my portfolio be worth" -- is
+    # promoted to the single hero metric via results_hero_metric(), the same
+    # helper Portfolio Optimizer uses for Expected Return; Total Invested /
+    # Gain-Loss / Cumulative Return become smaller secondary metrics rather
+    # than four equal-size cards) ────────────────────────────────────────
     results_hero(t("hist_results_hero_title"), t(
         "hist_results_hero_subtitle",
         start=str(hist_summary["start_date"].date()), end=str(hist_summary["end_date"].date()),
     ))
-    col1, col2, col3, col4 = st.columns(4)
+    results_hero_metric(t("hist_final_value"), f"{_currency_symbol}{hist_summary['final_value']:,.0f}", color=COLORS["success"])
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(metric_card_html(t("hist_total_invested"), f"{_currency_symbol}{hist_summary['total_invested']:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
     with col2:
-        st.markdown(metric_card_html(t("hist_final_value"), f"{_currency_symbol}{hist_summary['final_value']:,.0f}", color=COLORS["success"]), unsafe_allow_html=True)
-    with col3:
         _gain_color = COLORS["success"] if hist_summary["gain"] >= 0 else COLORS["danger"]
         st.markdown(metric_card_html(t("hist_investment_gain_loss"), f"{_currency_symbol}{hist_summary['gain']:,.0f}", color=_gain_color), unsafe_allow_html=True)
-    with col4:
+    with col3:
         st.markdown(metric_card_html(t("hist_cumulative_return"), f"{hist_summary['cumulative_return']:.2%}", color=COLORS["purple"]), unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)

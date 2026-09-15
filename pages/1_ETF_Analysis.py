@@ -47,7 +47,8 @@ from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, g
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, kpi_card, chart_caption, ai_interpret_button,
-    results_hero, region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
+    region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
+    hero_metric_panel, insight_panel,
 )
 from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
 from src.etf_signals import (
@@ -174,16 +175,28 @@ _lang = get_language()
 
 # ── Focus ETF (drives Header / KPI row / Overview / Performance / Risk /
 # Holdings / Deep Analysis; Compare uses the full multi-ETF selection) ──────
+# Issue #29 visual-acceptance round item 1: the ticker already appears once
+# in the compact header immediately below, so the switcher itself must not
+# repeat it in its closed/default state -- a plain st.selectbox always
+# shows the current selection as its own visible label, which would repeat
+# the ticker a second time right above the header. A compact top-right
+# st.popover keeps the exact same underlying selectbox (same key, same
+# session state, same AppTest `at.selectbox` surface) but only reveals the
+# current ticker once the user actually opens it.
 if "_etf_analysis_focus_shadow" not in st.session_state:
     st.session_state["_etf_analysis_focus_shadow"] = etf_prices.columns[0]
 _focus_default = st.session_state["_etf_analysis_focus_shadow"]
 if _focus_default not in etf_prices.columns:
     _focus_default = etf_prices.columns[0]
 _focus_tickers_list = etf_prices.columns.tolist()
-_focus_ticker = st.selectbox(
-    t("etf_focus_selector_label"), _focus_tickers_list, index=_focus_tickers_list.index(_focus_default),
-    key="etf_analysis_focus_ticker",
-)
+
+_, _focus_switch_col = st.columns([5, 1])
+with _focus_switch_col:
+    with st.popover(t("etf_switch_etf_button"), use_container_width=True):
+        _focus_ticker = st.selectbox(
+            t("etf_focus_selector_label"), _focus_tickers_list, index=_focus_tickers_list.index(_focus_default),
+            key="etf_analysis_focus_ticker",
+        )
 st.session_state["_etf_analysis_focus_shadow"] = _focus_ticker
 _focus_record = get_etf(_focus_ticker)
 _focus_p = etf_prices[_focus_ticker].dropna()
@@ -221,26 +234,6 @@ st.markdown(
     '</div>',
     unsafe_allow_html=True,
 )
-
-# ── Core KPI Row (focus ETF snapshot) ────────────────────────────────────────
-_k_ret = annualized_return(_focus_p)
-_k_vol = annualized_volatility(_focus_p)
-_k_sharpe = sharpe_ratio(_focus_p, risk_free_rate)
-_k_mdd = maximum_drawdown(_focus_p)
-_k_trend = trend_signal_from_return(recent_trend_return(_focus_p))
-_K_TREND_META = {"Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)")}
-_k_emoji, _k_color = _K_TREND_META[_k_trend]
-kcol1, kcol2, kcol3, kcol4, kcol5 = st.columns(5)
-with kcol1:
-    st.markdown(kpi_card(t("etf_kpi_ann_return"), f"{_k_ret:.2%}", color="var(--success)", icon="trending-up"), unsafe_allow_html=True)
-with kcol2:
-    st.markdown(kpi_card(t("etf_kpi_ann_vol"), f"{_k_vol:.2%}", color="var(--warning)", icon="activity"), unsafe_allow_html=True)
-with kcol3:
-    st.markdown(kpi_card(t("etf_kpi_sharpe"), f"{_k_sharpe:.2f}", color="var(--primary)", icon="target"), unsafe_allow_html=True)
-with kcol4:
-    st.markdown(kpi_card(t("etf_kpi_mdd"), f"{_k_mdd:.2%}", color="var(--danger)", icon="trending-down"), unsafe_allow_html=True)
-with kcol5:
-    st.markdown(kpi_card(t("etf_kpi_trend"), f'<span style="color:{_k_color};">{_k_emoji} {t_trend_signal(_k_trend)}</span>', color=_k_color), unsafe_allow_html=True)
 
 
 # ── Shared rule-based analysis helpers (no external LLM) -- EXACT same
@@ -450,8 +443,56 @@ _ws_labels = {
     "Holdings": t("etf_ws_holdings"), "Compare": t("etf_ws_compare"), "Deep Analysis": t("etf_ws_deep_analysis"),
 }
 _wsk, _wsv = _shadow_default("etf_analysis_workspace", "Overview")
+
+# Issue #29 visual-acceptance round item 2: the reference hierarchy is
+# identity header -> hero Annualized Return + rating badge -> 3 secondary
+# metrics -> workspace nav -> insight/content, i.e. Overview's hero must
+# render ABOVE the nav widget instead of inside the "if workspace ==
+# Overview" branch below it. The nav widget's OWN value can't be read until
+# after it's instantiated, so `_pending_workspace` predicts it from
+# session_state first -- Streamlit already updates a widget's session_state
+# entry for its key the instant the user interacts with it, before the
+# script reruns, so this reads the up-to-date post-click value on every
+# render except the very first (where it falls back to the shadow default).
+_pending_workspace = st.session_state.get("etf_analysis_workspace", _wsv)
+if _pending_workspace not in _WORKSPACES:
+    _pending_workspace = "Overview"
+
+
+def _render_overview_hero():
+    """Compute the focus ticker's rule-based entry and render the Overview
+    hero (Annualized Return + rating badge + 3 secondary metrics). Split out
+    so it can run once, pre-nav, for the common case where the upcoming
+    workspace is predicted correctly, with a same-function fallback call
+    post-nav for the rare case (nav deselect -> Overview fallback) where the
+    prediction above was wrong -- never a silent NameError either way."""
+    if not has_sufficient_history(_focus_p):
+        st.warning(t("etf_thin_history_warning", tickers=_focus_ticker))
+    entry = _ai_summary_entry(_focus_ticker, _lang)
+    color = _SUM_TREND_META[entry["trend"]][1]
+
+    hero_metric_panel(
+        t("etf_kpi_ann_return"), f"{entry['ret_ann']:.2%}", primary_color="var(--success)",
+        badge={
+            "label": f"{t_trend_signal(entry['trend'])} · {t('etf_score_badge_label')} {entry['score']}",
+            "color": color,
+            "meta": [(t("etf_signal_agreement_label"), f"{entry['signal_agreement']}%")],
+        },
+        secondary=[
+            (t("etf_kpi_ann_vol"), f"{entry['vol']:.2%}", "var(--warning)"),
+            (t("etf_kpi_sharpe"), f"{entry['sharpe']:.2f}", "var(--primary)"),
+            (t("etf_kpi_mdd"), f"{entry['mdd']:.2%}", "var(--danger)"),
+        ],
+    )
+    return entry, color
+
+
+_focus_entry, _ov_color = (None, None)
+if _pending_workspace == "Overview":
+    _focus_entry, _ov_color = _render_overview_hero()
+
 workspace = st.segmented_control(
-    "workspace_nav", _WORKSPACES, default=_wsv if _wsv in _WORKSPACES else "Overview",
+    "workspace_nav", _WORKSPACES, default=_pending_workspace,
     format_func=lambda w: _ws_labels.get(w, w), key="etf_analysis_workspace", label_visibility="collapsed",
 )
 if not workspace:
@@ -464,26 +505,22 @@ st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 # OVERVIEW -- "What is this ETF?"
 # ══════════════════════════════════════════════════════════════════════════
 if workspace == "Overview":
-    # Issue #24 light hierarchy pass: results_hero() is the strong,
-    # unmistakable visual break used elsewhere (see pages/2_Portfolio_
-    # Optimizer.py) for the first concrete result of a user's selection --
-    # here, that's the focus ETF's own snapshot, so it replaces the plain
-    # section_header() that used to open this workspace. The other five
-    # workspaces stay on section_header(): they're a continuous analytical
-    # explorer (Performance/Risk/Holdings/Compare/Deep Analysis), not a
-    # single "here's the answer" moment, so promoting all of them to hero
-    # weight would just make the whole page loud instead of clarifying it.
-    results_hero(t("etf_overview_snapshot_title"), subtitle=_focus_ticker)
-    # Same thin-history disclosure as the Compare workspace (Issue #20
-    # release-gate review, automated PR reviewer finding): a focus ticker
-    # under MIN_RELIABLE_HISTORY_POINTS still gets a Quant Score/Trend/
-    # Portfolio View from compute_quant_signals() -- it must not be
-    # presented at the same confidence as a fully-populated series without
-    # this warning, here in Overview exactly as in Compare.
-    if not has_sufficient_history(_focus_p):
-        st.warning(t("etf_thin_history_warning", tickers=_focus_ticker))
-    _focus_entry = _ai_summary_entry(_focus_ticker, _lang)
-    _render_ai_summary_card(_focus_ticker, _focus_entry)
+    # The hero (Annualized Return + rating badge + secondary metrics) was
+    # already rendered ABOVE the workspace nav -- see _render_overview_hero()
+    # / _pending_workspace above -- except in the rare nav-deselect fallback
+    # case, where it's computed and rendered here instead. No extra
+    # "ETF Smart Summary" heading sits above the hero: the hero itself IS
+    # the summary, and the insight block below is ONE flat panel (left
+    # accent + heading + bullets + a compact Portfolio View footer line)
+    # replacing the old nested Result -> Smart Summary -> Ticker -> Trend ->
+    # Quant Score -> Insights card stack.
+    if _focus_entry is None:
+        _focus_entry, _ov_color = _render_overview_hero()
+
+    insight_panel(
+        t("etf_quant_insights_label"), _focus_entry["insights"], accent_color=_ov_color,
+        footer=f"{t('etf_portfolio_view_label')}: {t_portfolio_view(_focus_entry['portfolio_view'])}",
+    )
 
     with chart_card(t("etf_overview_chart_title")):
         fig = price_chart(etf_prices[[_focus_ticker]])
