@@ -211,3 +211,104 @@ def test_overview_quantitative_insight_uses_fixed_information_accent(_mock_full_
         "Overview's Quantitative Insight panel must render with the fixed "
         "informational accent color, not an accent inherited from Trend Signal"
     )
+
+
+# ============================================================================
+# Issue #40: PR #40 follow-up review -- remaining i18n/style leaks flagged
+# after the Issue #39 cleanup (raw English ETF DNA labels, raw "Momentum" in
+# zh-TW, and decorative 🟢🟡🔴 trend emoji).
+# ============================================================================
+
+_TREND_EMOJI = ("\U0001F7E2", "\U0001F7E1", "\U0001F534")  # 🟢 🟡 🔴
+
+
+def _goto_compare_view(at, view):
+    nav = next(w for w in at.segmented_control if w.key == "etf_compare_view")
+    nav.set_value(view).run()
+    return at
+
+
+def _momentum_dominant_price_frame(tickers, n=300, start="2023-01-02"):
+    """The first ticker dominates every Quant Score input (annualized
+    return, Sharpe, momentum, volatility) over every other ticker, so it is
+    guaranteed to rank #1 AND to include Momentum among its top-3 "Why #1?"
+    reasons regardless of which tickers the page's sidebar defaults
+    request. Momentum(10) is unaffected by the +-eps oscillation added for
+    realistic (non-zero) daily volatility, because 10 is even: the
+    (-1)**t oscillation term cancels exactly 10 trading days apart."""
+    idx = pd.date_range(start, periods=n, freq="B")
+    t = np.arange(n)
+    data = {}
+    for i, tk in enumerate(tickers):
+        if i == 0:
+            data[tk] = 100 * np.exp(0.0012 * t) * (1 + 0.003 * (-1.0) ** t)
+        else:
+            data[tk] = 100 * np.exp(-0.0003 * t) * (1 + 0.02 * (-1.0) ** t)
+    return pd.DataFrame(data, index=idx)
+
+
+@pytest.fixture
+def _mock_momentum_dominant_download(monkeypatch):
+    import src.data_loader as data_loader_mod
+
+    def _fake_download(tickers, start_date, end_date, price_field="Close"):
+        return _momentum_dominant_price_frame(tickers)
+
+    monkeypatch.setattr(data_loader_mod, "download_etf_data", _fake_download)
+
+
+def test_zh_tw_etf_dna_dimension_labels_are_localized(_mock_full_history_download):
+    """The Correlation workspace's ETF DNA cards used to hardcode
+    ("Growth", "Risk", "Momentum", "Diversification", "Liquidity") as
+    literal English labels regardless of page language. In zh-TW they must
+    render as 成長/風險/動能/分散程度/流動性."""
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "zh-TW"
+    at.run()
+    _goto_workspace(at, "Compare")
+    _goto_compare_view(at, "Correlation")
+    assert at.exception == []
+
+    corpus = _page_corpus(at)
+    for localized in ("成長", "風險", "動能", "分散程度", "流動性"):
+        assert localized in corpus, f"Expected localized ETF DNA dimension label {localized!r} in zh-TW"
+    for leaked_value in ("Growth", "Risk", "Momentum", "Diversification", "Liquidity"):
+        assert leaked_value not in corpus, f"Raw English ETF DNA dimension label {leaked_value!r} leaked into the zh-TW page"
+
+
+def test_zh_tw_why_number_one_localizes_momentum_reason(_mock_momentum_dominant_download):
+    """The "Why #1?" panel's Momentum reason was appended as the literal,
+    language-independent string "Momentum". It must show the localized 動能
+    label (via the same t_compare_metric() helper used in Compare Mode)
+    when the page language is zh-TW."""
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "zh-TW"
+    at.run()
+    _goto_workspace(at, "Compare")
+    assert at.exception == []
+
+    corpus = _page_corpus(at)
+    assert "為什麼第一" in corpus, "Expected the Why #1? panel to render in Compare -> Rankings"
+    assert "動能" in corpus, "Expected the localized Momentum reason (動能) to appear in the Why #1? panel"
+    assert "Momentum" not in corpus, "Raw English 'Momentum' must not leak into the zh-TW page"
+
+
+def test_no_trend_status_light_emoji_anywhere_on_etf_analysis(_mock_full_history_download):
+    """The trend color (var(--success)/var(--warning)/var(--danger)) must be
+    kept, but the decorative 🟢🟡🔴 traffic-light emoji must not render on
+    the ETF Analytical Summary cards or the Rankings table -- the page
+    moved away from emoji status decoration. The 📊 page icon is unrelated
+    and untouched."""
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = _page_corpus(at)
+    for emoji in _TREND_EMOJI:
+        assert emoji not in corpus, f"Trend status-light emoji {emoji!r} must not appear on Overview"
+
+    _goto_workspace(at, "Compare")
+    assert at.exception == []
+    corpus = _page_corpus(at)
+    for emoji in _TREND_EMOJI:
+        assert emoji not in corpus, f"Trend status-light emoji {emoji!r} must not appear on the Compare/Rankings view"

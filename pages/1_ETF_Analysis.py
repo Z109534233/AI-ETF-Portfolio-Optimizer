@@ -245,8 +245,10 @@ st.markdown(
 # formulas as before this round, now wrapped as functions so each
 # workspace can call them for exactly the ticker(s) it needs instead of
 # every ticker on every rerun. ─────────────────────────────────────────────
+# Issue #40: trend color is kept, but the 🟢🟡🔴 decorative emoji is not
+# rendered anywhere -- restrained finance UI, not status-light styling.
 _SUM_TREND_META = {
-    "Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)"),
+    "Bullish": "var(--success)", "Neutral": "var(--warning)", "Bearish": "var(--danger)",
 }
 
 
@@ -286,9 +288,9 @@ def _ai_summary_insights(lang, s_ret_period, s_ret_ann, s_vol, s_sharpe, s_mdd, 
         cands.append((s_ma_long / s_price - 1, "跌破短期與長期均線，趨勢偏空" if lang == "zh-TW" else "Price is below both short- and long-term moving averages"))
 
     if s_mom > 0.05:
-        cands.append((s_mom, "Momentum 正在增強" if lang == "zh-TW" else "Momentum is strengthening"))
+        cands.append((s_mom, f"{t_compare_metric('Momentum')}正在增強" if lang == "zh-TW" else f"{t_compare_metric('Momentum')} is strengthening"))
     elif s_mom < -0.05:
-        cands.append((-s_mom, "Momentum 正在減弱" if lang == "zh-TW" else "Momentum is weakening"))
+        cands.append((-s_mom, f"{t_compare_metric('Momentum')}正在減弱" if lang == "zh-TW" else f"{t_compare_metric('Momentum')} is weakening"))
 
     cands.sort(key=lambda c: c[0], reverse=True)
     result = [c[1] for c in cands[:4]]
@@ -326,7 +328,7 @@ def _ai_summary_entry(ticker, lang):
 
 
 def _render_ai_summary_card(ticker, entry):
-    emoji, color = _SUM_TREND_META[entry["trend"]]
+    color = _SUM_TREND_META[entry["trend"]]
     insights_html = "".join(
         f'<div style="color:var(--text-secondary);font-size:12px;line-height:1.6;">• {ins}</div>'
         for ins in entry["insights"]
@@ -335,7 +337,7 @@ def _render_ai_summary_card(ticker, entry):
         '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
         'padding:16px 18px;margin:6px 0;box-shadow:var(--shadow-sm);">'
         f'<div style="color:var(--text);font-weight:800;font-size:16px;margin-bottom:4px;">{ticker}</div>'
-        f'<div style="color:{color};font-weight:700;font-size:13px;margin-bottom:10px;">{emoji} {t_trend_signal(entry["trend"])}</div>'
+        f'<div style="color:{color};font-weight:700;font-size:13px;margin-bottom:10px;">{t_trend_signal(entry["trend"])}</div>'
         f'<div style="color:var(--text-secondary);font-size:11px;margin-bottom:2px;">{t("etf_quant_score_label")}</div>'
         f'<div style="color:var(--text);font-weight:800;font-size:20px;margin-bottom:8px;">{entry["score"]}</div>'
         '<div style="display:flex;justify-content:space-between;color:var(--text-secondary);font-size:11.5px;margin-bottom:10px;">'
@@ -474,7 +476,7 @@ def _render_overview_hero():
     if not has_sufficient_history(_focus_p):
         st.warning(t("etf_thin_history_warning", tickers=_focus_ticker))
     entry = _ai_summary_entry(_focus_ticker, _lang)
-    color = _SUM_TREND_META[entry["trend"]][1]
+    color = _SUM_TREND_META[entry["trend"]]
 
     hero_metric_panel(
         t("etf_kpi_ann_return"), f"{entry['ret_ann']:.2%}", primary_color="var(--success)",
@@ -761,7 +763,7 @@ elif workspace == "Performance":
                                 "目前滾動報酬已高於長期平均，屬於突破訊號" if _breakout else "目前滾動報酬仍低於長期平均，尚未突破",
                             ]
                             insight = "趨勢與動能同步轉強，可能是相對有利的進場時機" if (_strengthening and _breakout) else "訊號尚未一致轉強，建議等待更明確的突破確認再加碼"
-                            risk = (f"10 日 Momentum {'持續增加' if _mom_up else '轉為收斂或下滑'}（{_mom_recent:+.2%}），但動能類指標容易反轉，且滾動指標本身落後於即時價格" if _mom_recent is not None else "Momentum 資料不足，且滾動指標本身落後於即時價格")
+                            risk = (f"10 日動能{'持續增加' if _mom_up else '轉為收斂或下滑'}（{_mom_recent:+.2%}），但動能類指標容易反轉，且滾動指標本身落後於即時價格" if _mom_recent is not None else "動能資料不足，且滾動指標本身落後於即時價格")
                         else:
                             kf = [
                                 "Recent rolling return is trending up, momentum is strengthening" if _strengthening else "Recent rolling return is trending down, momentum is weakening",
@@ -1170,7 +1172,7 @@ elif workspace == "Compare":
             _ranked = sorted(_ai_summary_data.items(), key=lambda kv: kv[1]["score"], reverse=True)
             _rank_row_html = []
             for _idx, (_r_ticker, _r_data) in enumerate(_ranked):
-                _r_trend_emoji, _r_trend_color = _SUM_TREND_META[_r_data["trend"]]
+                _r_trend_color = _SUM_TREND_META[_r_data["trend"]]
                 _r_risk = t_etf_risk_level(risk_level_from_vol(_r_data["vol"]))
                 _r_return_label = t_etf_return_label(expected_return_label_from_ann_ret(_r_data["ret_ann"]))
                 # Issue #39 other-detail-1: no medal emoji -- rank is a
@@ -1184,7 +1186,7 @@ elif workspace == "Compare":
                     f'<td style="padding:9px 12px;{_r_lead_style}border-bottom:1px solid var(--border);">{_idx + 1}</td>'
                     f'<td style="padding:9px 12px;{_r_lead_style}border-bottom:1px solid var(--border);">{_r_ticker}</td>'
                     f'<td style="padding:9px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{_r_data["score"]}</td>'
-                    f'<td style="padding:9px 12px;color:{_r_trend_color};font-weight:700;border-bottom:1px solid var(--border);">{_r_trend_emoji} {t_trend_signal(_r_data["trend"])}</td>'
+                    f'<td style="padding:9px 12px;color:{_r_trend_color};font-weight:700;border-bottom:1px solid var(--border);">{t_trend_signal(_r_data["trend"])}</td>'
                     f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_risk}</td>'
                     f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_return_label}</td>'
                     f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{t_portfolio_view(_r_data["portfolio_view"])}</td>'
@@ -1217,7 +1219,7 @@ elif workspace == "Compare":
                 if _top_data["sharpe"] >= max(o["sharpe"] for o in _others):
                     _why_reasons.append("Sharpe Ratio")
                 if _top_data["mom"] >= max(o["mom"] for o in _others):
-                    _why_reasons.append("Momentum")
+                    _why_reasons.append(t_compare_metric("Momentum"))
                 if _top_data["ret_ann"] >= max(o["ret_ann"] for o in _others):
                     _why_reasons.append("長期報酬" if _lang == "zh-TW" else "long-term return")
                 if _top_data["vol"] <= min(o["vol"] for o in _others):
@@ -1538,8 +1540,9 @@ elif workspace == "Compare":
             # ── ETF DNA ──────────────────────────────────────────────────
             section_header(t("etf_dna_title"))
             _DNA_DIMENSIONS = [
-                ("Growth", "var(--success)"), ("Risk", "var(--danger)"), ("Momentum", "var(--primary)"),
-                ("Diversification", "var(--purple)"), ("Liquidity", "var(--cyan)"),
+                (t("etf_dna_growth"), "var(--success)"), (t("etf_dna_risk"), "var(--danger)"),
+                (t("etf_dna_momentum"), "var(--primary)"), (t("etf_dna_diversification"), "var(--purple)"),
+                (t("etf_dna_liquidity"), "var(--cyan)"),
             ]
             _bench_returns = bench_prices.dropna().pct_change().dropna() if bench_prices is not None else None
             dna_cols = st.columns(len(etf_prices.columns))
