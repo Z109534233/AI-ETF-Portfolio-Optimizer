@@ -98,6 +98,12 @@ TRANSLATIONS = {
         "problem_q4": "我的投資在 20 年後可以成長多少？",
         "problem_q5": "我的投資組合風險是不是太高？",
         "problem_q6": "我的投資組合分散程度如何？",
+        "problem_a1": "先在「ETF 分析」比較不同 ETF 的績效、費用與風險指標，找出符合你需求的標的。",
+        "problem_a2": "在「ETF 分析」同時檢視兩者的歷史報酬、波動與相關性，再依你的風險偏好決定。",
+        "problem_a3": "「投資組合最佳化」提供五種方法，協助你找出風險調整後的最適配置。",
+        "problem_a4": "使用「投資模擬」執行蒙地卡羅模擬，觀察長期投資在不同情境下的成長範圍。",
+        "problem_a5": "「風險分析」提供 VaR、CVaR、貝塔值與壓力測試，協助你評估下檔風險。",
+        "problem_a6": "「投資組合最佳化」與「風險分析」皆提供分散程度指標，協助你檢視集中度風險。",
         "home_problem_conclusion": "本平台運用金融分析與最佳化模型，協助你回答這些問題",
 
         # ── Home Page Sections ──────────────────────────────────────────
@@ -1644,6 +1650,12 @@ TRANSLATIONS = {
         "problem_q4": "How much could my investment grow in 20 years?",
         "problem_q5": "Is my portfolio too risky?",
         "problem_q6": "How diversified is my portfolio?",
+        "problem_a1": "Start in ETF Analysis to compare performance, fees, and risk metrics across ETFs and find one that fits your goals.",
+        "problem_a2": "ETF Analysis lets you compare both side by side -- historical return, volatility, and correlation -- so you can decide based on your own risk preference.",
+        "problem_a3": "Portfolio Optimizer offers five methods to help you find a risk-adjusted allocation that fits your goals.",
+        "problem_a4": "Run Investment Simulator's Monte Carlo projections to see a range of long-term growth outcomes under different scenarios.",
+        "problem_a5": "Risk Analytics provides VaR, CVaR, Beta, and stress-test scenarios to help you assess downside risk.",
+        "problem_a6": "Both Portfolio Optimizer and Risk Analytics compute diversification metrics so you can check concentration risk.",
         "home_problem_conclusion": "This platform helps answer these questions using financial analytics and optimization models.",
 
         # ── Home Page Sections ──────────────────────────────────────────
