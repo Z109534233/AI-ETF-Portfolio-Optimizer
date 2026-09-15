@@ -19,7 +19,7 @@ from src.utils import load_css, disclaimer_box, ensure_directories
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, ticker_strip, hero_section,
     section_header, capability_hierarchy_grid, render_footer, persona_row, faq_accordion,
-    stat_strip, tech_stack_strip, section_surface, NAV_ITEMS
+    stat_strip, tech_stack_strip, section_surface, process_flow, NAV_ITEMS
 )
 from src.i18n import t, get_language
 
@@ -190,38 +190,18 @@ else:
 section_header(_why_title, _why_subtitle, anchor_id="why-choose-anchor")
 capability_hierarchy_grid(why_featured, why_items)
 
-# ── How It Works (horizontal step row on desktop, full width; collapses to
-# a vertical stack on mobile via the site's existing stHorizontalBlock
-# wrap rule in assets/style.css). Wrapped in a slightly lifted section
-# surface for background rhythm (Issue #31 item 4). ──────────────────────
-with section_surface():
-    section_header(t("home_how_it_works_title"), t("home_how_it_works_subtitle"))
-    _how_it_works_steps = (
-        ["① 選 ETF", "② 分析績效", "③ 最佳化", "④ 市場分析", "⑤ 做出決策"]
-        if get_language() == "zh-TW" else
-        ["① Select ETFs", "② Analyze", "③ Optimize", "④ Market Analysis", "⑤ Decide"]
-    )
-    _how_cols = st.columns([3, 1, 3, 1, 3, 1, 3, 1, 3])
-    _step_idx = 0
-    for _ci, _col in enumerate(_how_cols):
-        with _col:
-            if _ci % 2 == 0:
-                st.markdown(
-                    '<div style="display:flex;align-items:center;justify-content:center;height:90px;'
-                    'background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-                    'box-shadow:var(--shadow-sm);padding:8px 12px;text-align:center;">'
-                    f'<div style="color:var(--text);font-weight:700;font-size:14px;letter-spacing:-0.01em;">{_how_it_works_steps[_step_idx]}</div>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-                _step_idx += 1
-            else:
-                st.markdown(
-                    '<div style="display:flex;align-items:center;justify-content:center;height:90px;">'
-                    '<span class="how-it-works-arrow" style="color:var(--text-muted);font-size:20px;line-height:1;">&#8594;</span>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
+# ── How It Works -- a compact process strip, not a boxed-card band (Issue
+# #37): no section_surface() wrapper (that bordered/lifted-background band
+# plus five 90px boxed steps read as one oversized slab), just the title/
+# subtitle followed by process_flow()'s single-line numbered pill row so the
+# whole section stays visually subordinate to "Why Choose" above it. ────────
+section_header(t("home_how_it_works_title"), t("home_how_it_works_subtitle"))
+_how_it_works_steps = (
+    ["選 ETF", "分析績效", "最佳化", "市場分析", "做出決策"]
+    if get_language() == "zh-TW" else
+    ["Select ETFs", "Analyze", "Optimize", "Market Analysis", "Decide"]
+)
+process_flow(_how_it_works_steps)
 
 # ── Who Is This Platform For -- lightweight persona row, not full feature
 # cards (Issue #31 item 3). ──────────────────────────────────────────────────

@@ -799,22 +799,25 @@ hr { border-color: var(--border); margin: 18px 0; }
 .app-footer-sub { color: var(--text-muted); font-size: 11px; margin-top: 3px; }
 .app-footer-disclaimer { color: var(--text-muted); font-size: 10.5px; margin-top: 6px; opacity: 0.85; }
 
-/* ── Process Flow (How It Works) ──────────────────────────────────────────── */
-.process-flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 6px 0; }
+/* ── Process Flow (How It Works) -- compact pill/timeline row, deliberately
+   NOT a set of boxed cards: each step is a small inline pill (number badge +
+   short label) separated by muted arrow connectors, so the whole row stays
+   around ~40px tall on desktop instead of stacking 90px boxed cards inside a
+   bordered band (Issue #37). ──────────────────────────────────────────────── */
+.process-flow { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; justify-content: center; margin: 4px 0 2px 0; }
 .process-step {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-    padding: 16px 14px; flex: 1 1 160px; min-width: 140px; text-align: center; position: relative;
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 2px; flex: 0 0 auto; white-space: nowrap;
 }
 .process-step-number {
-    width: 30px; height: 30px; border-radius: 999px; background: var(--primary-soft); color: var(--primary);
-    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px;
-    margin: 0 auto 10px auto; border: 1px solid rgba(59,130,246,0.3);
+    width: 20px; height: 20px; border-radius: 999px; background: var(--primary-soft); color: var(--primary);
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px;
+    flex: 0 0 auto; border: 1px solid rgba(59,130,246,0.3);
 }
-.process-step-title { color: var(--text); font-weight: 700; font-size: 13.5px; }
-.process-arrow { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 18px; flex: 0 0 auto; }
+.process-step-title { color: var(--text); font-weight: 600; font-size: 13.5px; }
+.process-arrow { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 15px; flex: 0 0 auto; }
 @media (max-width: 768px) {
-    .process-flow { flex-direction: column; }
-    .process-arrow { transform: rotate(90deg); margin: -4px 0; }
+    .process-flow { flex-direction: column; align-items: flex-start; gap: 6px; margin: 4px 0; }
+    .process-arrow { transform: rotate(90deg); margin: -2px 0 -2px 9px; }
 }
 
 /* ── Question Grid (Common Investment Questions) ─────────────────────────── */
@@ -959,5 +962,4 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stV
     .page-title { font-size: 22px; }
     .section-title { font-size: 16px; }
     .kpi-card { min-height: auto; }
-    .how-it-works-arrow { display: inline-block; transform: rotate(90deg); }
 }
