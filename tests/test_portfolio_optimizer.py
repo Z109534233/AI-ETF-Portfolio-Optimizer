@@ -3589,8 +3589,15 @@ def test_wsr_b_performance_navigation_preserves_focus_etf():
 
     perf_nav = next((w for w in at.segmented_control if w.key == "etf_perf_view"), None)
     check("WSR-B.perf_subnav_found", perf_nav is not None)
-    price_nav = next((w for w in at.segmented_control if w.key == "etf_price_view"), None)
-    check("WSR-B.price_subnav_found", price_nav is not None)
+    # Issue #39 priority 1: the Price chart-type chooser (Historical /
+    # Normalized / Cumulative) used to be a THIRD nested segmented_control --
+    # tab -> tab -> tab. It is now a plain st.selectbox, so it must NOT show
+    # up as a segmented_control, and switching it must not disturb the
+    # per-page focus ETF.
+    price_seg_nav = next((w for w in at.segmented_control if w.key == "etf_price_view"), None)
+    check("WSR-B.price_subnav_is_not_a_segmented_control", price_seg_nav is None)
+    price_nav = next((w for w in at.selectbox if w.key == "etf_price_view"), None)
+    check("WSR-B.price_chart_type_selectbox_found", price_nav is not None)
     if price_nav is not None:
         price_nav.set_value("Normalized")
         at.run()
@@ -3647,7 +3654,11 @@ def test_wsr_e_compare_multi_etf_works():
     check("WSR-E.no_exception", exc is None, str(exc))
     all_text = "\n".join(m.value for m in at.markdown)
     check("WSR-E.etf_ranking_present", "ETF Ranking" in all_text, all_text[:200])
-    check("WSR-E.compare_score_present", "ETF Compare Score" in all_text)
+    # Issue #39 priority 2: the old duplicate "ETF Compare Score" table
+    # (independently-thresholded risk labels from the ETF Ranking table
+    # above it) was removed -- ETF Ranking is now the ONE canonical
+    # ranking/comparison table in this view.
+    check("WSR-E.compare_score_duplicate_removed", "ETF Compare Score" not in all_text)
     cmp_nav = next((w for w in at.segmented_control if w.key == "etf_compare_view"), None)
     check("WSR-E.compare_subnav_found", cmp_nav is not None)
     if cmp_nav is not None:

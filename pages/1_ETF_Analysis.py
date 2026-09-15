@@ -50,10 +50,15 @@ from src.ui import (
     region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
     hero_metric_panel, insight_panel,
 )
-from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
+from src.i18n import (
+    t, t_country, get_language, t_portfolio_view, t_trend_signal,
+    t_etf_risk_level, t_etf_return_label, t_etf_verdict_return,
+    t_investment_horizon, t_suitable_investor, t_compare_metric,
+)
 from src.etf_signals import (
     compute_quant_signals, trend_signal_from_return, recent_trend_return,
     generate_etf_interpretation, has_sufficient_history,
+    risk_level_from_vol, expected_return_label_from_ann_ret,
 )
 
 st.set_page_config(
@@ -517,8 +522,13 @@ if workspace == "Overview":
     if _focus_entry is None:
         _focus_entry, _ov_color = _render_overview_hero()
 
+    # Issue #39 other-detail-3: this ordinary, deterministic "Quantitative
+    # Insight" block is informational, not a warning -- it must NOT inherit
+    # _ov_color (the Trend Signal's amber/red/green), or a plain Neutral
+    # trend makes a routine explanation look like a warning. insight_panel()
+    # already defaults accent_color to var(--primary) when none is passed.
     insight_panel(
-        t("etf_quant_insights_label"), _focus_entry["insights"], accent_color=_ov_color,
+        t("etf_quant_insights_label"), _focus_entry["insights"],
         footer=f"{t('etf_portfolio_view_label')}: {t_portfolio_view(_focus_entry['portfolio_view'])}",
     )
 
@@ -544,13 +554,24 @@ elif workspace == "Performance":
     st.session_state[_pvk] = perf_view
 
     if perf_view == "Price":
+        # Issue #39 priority 1: this used to be a THIRD nested
+        # segmented_control (Historical / Normalized / Cumulative) stacked
+        # under the Workspace and Performance-subview controls above,
+        # reading as tab -> tab -> tab. A compact st.selectbox reads as a
+        # single chart-type chooser scoped to the price chart below it,
+        # not another tab row -- so it's placed in a narrow column and
+        # keeps its label visible rather than mimicking the segmented
+        # controls' collapsed-label underline style.
         _PRICE_VIEWS = ["Historical", "Normalized", "Cumulative"]
         _price_labels = {"Historical": t("etf_tab_historical"), "Normalized": t("etf_tab_normalized"), "Cumulative": t("etf_tab_cumulative")}
         _prk, _prv = _shadow_default("etf_price_view", "Historical")
-        price_view = st.segmented_control(
-            "price_nav", _PRICE_VIEWS, default=_prv if _prv in _PRICE_VIEWS else "Historical",
-            format_func=lambda w: _price_labels.get(w, w), key="etf_price_view", label_visibility="collapsed",
-        ) or "Historical"
+        _price_view_default = _prv if _prv in _PRICE_VIEWS else "Historical"
+        _price_sel_col, _ = st.columns([1, 2])
+        with _price_sel_col:
+            price_view = st.selectbox(
+                t("etf_chart_type_label"), _PRICE_VIEWS, index=_PRICE_VIEWS.index(_price_view_default),
+                format_func=lambda w: _price_labels.get(w, w), key="etf_price_view",
+            )
         st.session_state[_prk] = price_view
 
         with chart_card(t("etf_price_charts_card"), tag=f"{len(etf_prices.columns)} ETFs"):
@@ -1135,33 +1156,43 @@ elif workspace == "Compare":
                 with _sum_cols[i]:
                     _render_ai_summary_card(ticker, _ai_summary_data[ticker])
 
-            # ── ETF Ranking ──────────────────────────────────────────────
+            # ── ETF Ranking -- the ONE canonical ranking/comparison table
+            # (Issue #39 priority 2). Before this, a separate "ETF Compare
+            # Score" table below duplicated the same ETF/Score/Trend/Risk/
+            # Portfolio View fields from a SEPARATE risk-threshold formula
+            # (0.12/0.25 vs this table's 0.15/0.28), so the same ETF could
+            # show a different Risk Level in each table. Now every row's
+            # risk_level_from_vol()/expected_return_label_from_ann_ret()
+            # call reads the same _ai_summary_data entry already shown in
+            # ETF Analytical Summary above, so nothing here can disagree
+            # with itself. ───────────────────────────────────────────────
             section_header(t("etf_ranking_title"))
-            _RANK_MEDALS = ["🥇", "🥈", "🥉"]
             _ranked = sorted(_ai_summary_data.items(), key=lambda kv: kv[1]["score"], reverse=True)
             _rank_row_html = []
             for _idx, (_r_ticker, _r_data) in enumerate(_ranked):
-                _r_rank = _RANK_MEDALS[_idx] if _idx < 3 else f"#{_idx + 1}"
                 _r_trend_emoji, _r_trend_color = _SUM_TREND_META[_r_data["trend"]]
-                if _r_data["vol"] < 0.15:
-                    _r_risk = "低風險" if _lang == "zh-TW" else "Low Risk"
-                elif _r_data["vol"] < 0.28:
-                    _r_risk = "中風險" if _lang == "zh-TW" else "Medium Risk"
-                else:
-                    _r_risk = "高風險" if _lang == "zh-TW" else "High Risk"
+                _r_risk = t_etf_risk_level(risk_level_from_vol(_r_data["vol"]))
+                _r_return_label = t_etf_return_label(expected_return_label_from_ann_ret(_r_data["ret_ann"]))
+                # Issue #39 other-detail-1: no medal emoji -- rank is a
+                # plain number, the top row gets a restrained soft-primary
+                # highlight instead.
+                _r_top = _idx == 0
+                _r_row_style = "background:var(--primary-soft);" if _r_top else ""
+                _r_lead_style = "color:var(--primary);font-weight:800;" if _r_top else "color:var(--text);font-weight:800;"
                 _rank_row_html.append(
-                    '<tr>'
-                    f'<td style="padding:9px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{_r_rank}</td>'
-                    f'<td style="padding:9px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{_r_ticker}</td>'
+                    f'<tr style="{_r_row_style}">'
+                    f'<td style="padding:9px 12px;{_r_lead_style}border-bottom:1px solid var(--border);">{_idx + 1}</td>'
+                    f'<td style="padding:9px 12px;{_r_lead_style}border-bottom:1px solid var(--border);">{_r_ticker}</td>'
                     f'<td style="padding:9px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{_r_data["score"]}</td>'
                     f'<td style="padding:9px 12px;color:{_r_trend_color};font-weight:700;border-bottom:1px solid var(--border);">{_r_trend_emoji} {t_trend_signal(_r_data["trend"])}</td>'
-                    f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{t_portfolio_view(_r_data["portfolio_view"])}</td>'
                     f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_risk}</td>'
+                    f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{_r_return_label}</td>'
+                    f'<td style="padding:9px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{t_portfolio_view(_r_data["portfolio_view"])}</td>'
                     '</tr>'
                 )
             _rank_headers = [
                 t("etf_rank_col_rank"), t("etf_rank_col_etf"), t("etf_rank_col_score"),
-                t("etf_rank_col_trend"), t("etf_rank_col_view"), t("etf_rank_col_risk"),
+                t("etf_rank_col_trend"), t("etf_rank_col_risk"), t("metric_expected_return"), t("etf_rank_col_view"),
             ]
             _rank_header_html = "".join(
                 f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;'
@@ -1223,66 +1254,6 @@ elif workspace == "Compare":
                     unsafe_allow_html=True,
                 )
 
-            # ── ETF Compare Score -- reuses _ai_summary_data (the SAME
-            # canonical compute_quant_signals() result already shown above
-            # in ETF Analytical Summary / ETF Ranking) instead of an
-            # independent scoring formula, so this table can never disagree
-            # with those two on the same ticker's score/trend/view. ────────
-            section_header(t("etf_compare_score_title"))
-            _CMP_TREND_META = {"Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)")}
-            _cmp_rows = []
-            for ticker in etf_prices.columns:
-                _c_data = _ai_summary_data[ticker]
-                c_risk = "Low" if _c_data["vol"] < 0.12 else ("Medium" if _c_data["vol"] < 0.25 else "High")
-                c_ret = _c_data["ret_ann"]
-                if c_ret < 0:
-                    c_return_label = "Poor"
-                elif c_ret < 0.08:
-                    c_return_label = "Fair"
-                elif c_ret < 0.15:
-                    c_return_label = "Good"
-                elif c_ret < 0.25:
-                    c_return_label = "Very Good"
-                else:
-                    c_return_label = "Excellent"
-                _cmp_rows.append({
-                    "ticker": ticker, "score": _c_data["score"], "trend": _c_data["trend"], "risk": c_risk,
-                    "return_label": c_return_label, "portfolio_view": _c_data["portfolio_view"],
-                })
-            _cmp_rows.sort(key=lambda r: r["score"], reverse=True)
-            if _cmp_rows:
-                _cmp_headers = [
-                    t("etf_rank_col_etf"), t("etf_rank_col_score"), t("etf_rank_col_trend"),
-                    t("etf_rank_col_risk"), t("metric_expected_return"), t("etf_rank_col_view"),
-                ]
-                _cmp_header_html = "".join(
-                    f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;'
-                    f'letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{h}</th>'
-                    for h in _cmp_headers
-                )
-                _cmp_row_html = []
-                for r in _cmp_rows:
-                    emoji, color = _CMP_TREND_META[r["trend"]]
-                    _cmp_row_html.append(
-                        '<tr>'
-                        f'<td style="padding:10px 12px;color:var(--text);font-weight:800;border-bottom:1px solid var(--border);">{r["ticker"]}</td>'
-                        f'<td style="padding:10px 12px;color:var(--text);font-weight:800;font-size:15px;border-bottom:1px solid var(--border);">{r["score"]}</td>'
-                        f'<td style="padding:10px 12px;color:{color};font-weight:700;border-bottom:1px solid var(--border);">{emoji} {t_trend_signal(r["trend"])}</td>'
-                        f'<td style="padding:10px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{r["risk"]}</td>'
-                        f'<td style="padding:10px 12px;color:var(--text-secondary);border-bottom:1px solid var(--border);">{r["return_label"]}</td>'
-                        f'<td style="padding:10px 12px;color:var(--text);font-weight:700;border-bottom:1px solid var(--border);">{t_portfolio_view(r["portfolio_view"])}</td>'
-                        '</tr>'
-                    )
-                st.markdown(
-                    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-                    'padding:4px 8px;overflow-x:auto;box-shadow:var(--shadow-sm);margin-bottom:8px;">'
-                    '<table style="width:100%;border-collapse:collapse;">'
-                    f'<thead><tr>{_cmp_header_html}</tr></thead>'
-                    f'<tbody>{"".join(_cmp_row_html)}</tbody>'
-                    '</table></div>',
-                    unsafe_allow_html=True,
-                )
-
             # ── Compare Mode (head-to-head, 2 ETFs) ────────────────────────
             section_header(t("etf_compare_mode_title"))
             _vs_options = etf_prices.columns.tolist()
@@ -1327,20 +1298,23 @@ elif workspace == "Compare":
                         _winner = vs_ticker_a if _va < _vb else (vs_ticker_b if _vb < _va else None)
                     if _winner:
                         _vs_wins[_winner].append(_metric)
-                    _winner_html = f"🏆 {_winner}" if _winner else "—"
+                    # Issue #39 other-detail-2: no repeated trophy per row --
+                    # the winner cell is plain bold/success-colored ticker
+                    # text (or an em dash for a tie on that one metric).
+                    _winner_html = f'<strong style="color:var(--success);">{_winner}</strong>' if _winner else "—"
                     _vs_row_html.append(
                         '<tr>'
-                        f'<td style="padding:9px 12px;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border);">{_metric}</td>'
+                        f'<td style="padding:9px 12px;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border);">{t_compare_metric(_metric)}</td>'
                         f'<td style="padding:9px 12px;color:var(--text);border-bottom:1px solid var(--border);">{_vs_fmt[_metric](_va)}</td>'
                         f'<td style="padding:9px 12px;color:var(--text);border-bottom:1px solid var(--border);">{_vs_fmt[_metric](_vb)}</td>'
-                        f'<td style="padding:9px 12px;color:var(--primary);font-weight:700;border-bottom:1px solid var(--border);">{_winner_html}</td>'
+                        f'<td style="padding:9px 12px;border-bottom:1px solid var(--border);">{_winner_html}</td>'
                         '</tr>'
                     )
                 _vs_header_html = (
-                    '<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">Metric</th>'
+                    f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{t("etf_compare_col_metric")}</th>'
                     f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{vs_ticker_a}</th>'
                     f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{vs_ticker_b}</th>'
-                    '<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">Winner</th>'
+                    f'<th style="text-align:left;color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;padding:8px 12px;border-bottom:1px solid var(--border);">{t("etf_compare_col_winner")}</th>'
                 )
                 st.markdown(
                     '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
@@ -1358,14 +1332,30 @@ elif workspace == "Compare":
                 _vs_risk_wins_b = len([m for m in _vs_wins[vs_ticker_b] if m in _vs_risk_metrics])
                 _vs_risk_winner = None if _vs_risk_wins_a == _vs_risk_wins_b else (vs_ticker_a if _vs_risk_wins_a > _vs_risk_wins_b else vs_ticker_b)
 
-                _overall_label = "🏆 " + _vs_overall if _vs_overall else ("平手" if _lang == "zh-TW" else "Tie")
+                # Issue #39 other-detail-2: no trophy on the Overall Winner
+                # label either -- a clean, bold ticker in the success color
+                # (or a neutral "Tie" label) is enough emphasis on its own.
+                _overall_label = _vs_overall if _vs_overall else ("平手" if _lang == "zh-TW" else "Tie")
+                _overall_color = "var(--success)" if _vs_overall else "var(--text)"
                 st.markdown(
-                    '<div style="margin:4px 0 10px 0;">'
+                    '<div style="margin:4px 0 4px 0;">'
                     '<div style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">'
                     + ("整體贏家" if _lang == "zh-TW" else "Overall Winner") + '</div>'
-                    f'<div style="color:var(--text);font-weight:800;font-size:22px;">{_overall_label}</div></div>',
+                    f'<div style="color:{_overall_color};font-weight:800;font-size:22px;">{_overall_label}</div></div>',
                     unsafe_allow_html=True,
                 )
+                # One concise "N of 6 metrics" summary in place of the old
+                # per-row repeated trophy -- distinct from the Comparison
+                # Notes explanation below, which explains WHY, not just the
+                # tally.
+                if _vs_wins_a == 6 or _vs_wins_b == 6:
+                    _vs_sweep_etf = vs_ticker_a if _vs_wins_a == 6 else vs_ticker_b
+                    st.caption(t("etf_compare_summary_sweep", etf=_vs_sweep_etf, total=6))
+                else:
+                    st.caption(t(
+                        "etf_compare_summary_split",
+                        etf_a=vs_ticker_a, count_a=_vs_wins_a, etf_b=vs_ticker_b, count_b=_vs_wins_b, total=6,
+                    ))
 
                 _cn = {"Return": "報酬率", "Risk": "風險（VaR）", "Sharpe": "夏普比率",
                        "Volatility": "波動度", "Drawdown": "最大回撤", "Momentum": "動能"}
@@ -1521,16 +1511,16 @@ elif workspace == "Compare":
                     f'<div style="color:{_v_trend_color};font-weight:700;font-size:15px;">{_v_trend_display}</div></div>'
                     '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
                     + ("風險" if _lang == "zh-TW" else "Risk") + '</div>'
-                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_risk}</div></div>'
+                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{t_etf_risk_level(_v_risk)}</div></div>'
                     '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
                     + ("預期報酬" if _lang == "zh-TW" else "Expected Return") + '</div>'
-                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_exp_return}</div></div>'
+                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{t_etf_verdict_return(_v_exp_return)}</div></div>'
                     '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
                     + ("投資期間" if _lang == "zh-TW" else "Investment Horizon") + '</div>'
-                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_horizon}</div></div>'
+                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{t_investment_horizon(_v_horizon)}</div></div>'
                     '<div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;">'
                     + ("適合對象" if _lang == "zh-TW" else "Suitable For") + '</div>'
-                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{_v_suitable}</div></div>'
+                    f'<div style="color:var(--text-secondary);font-weight:700;font-size:15px;">{t_suitable_investor(_v_suitable)}</div></div>'
                     '</div></div>',
                     unsafe_allow_html=True,
                 )

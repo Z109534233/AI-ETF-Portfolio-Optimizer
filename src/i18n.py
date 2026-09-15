@@ -468,7 +468,6 @@ TRANSLATIONS = {
         "etf_comparison_notes_title": "比較說明",
         "etf_portfolio_view_summary_title": "投資組合觀點總結",
         "etf_ranking_title": "ETF 排名",
-        "etf_compare_score_title": "ETF 比較評分",
         "etf_compare_mode_title": "比較模式",
         "etf_investment_verdict_title": "投資組合觀點總結",
         "etf_dna_title": "ETF 特徵剖析",
@@ -479,6 +478,37 @@ TRANSLATIONS = {
         "etf_rank_col_view": "投資組合觀點",
         "etf_rank_col_risk": "風險等級",
         "etf_verdict_notes_title": "觀點說明",
+        "etf_chart_type_label": "圖表類型",
+        "etf_risk_low": "低風險",
+        "etf_risk_medium": "中風險",
+        "etf_risk_medium_high": "中高風險",
+        "etf_risk_high": "高風險",
+        "etf_risk_very_high": "極高風險",
+        "etf_return_poor": "偏弱",
+        "etf_return_fair": "普通",
+        "etf_return_good": "良好",
+        "etf_return_very_good": "優良",
+        "etf_return_excellent": "優異",
+        "etf_verdict_return_low": "低",
+        "etf_verdict_return_medium": "中",
+        "etf_verdict_return_high": "高",
+        "etf_verdict_return_very_high": "很高",
+        "etf_horizon_short_medium": "短至中期",
+        "etf_horizon_medium_long": "中長期",
+        "etf_horizon_long": "長期",
+        "etf_suitable_growth": "成長型投資人",
+        "etf_suitable_conservative": "保守型投資人",
+        "etf_suitable_balanced": "穩健型投資人",
+        "etf_compare_col_metric": "指標",
+        "etf_compare_col_winner": "領先者",
+        "etf_compare_metric_return": "報酬率",
+        "etf_compare_metric_risk": "風險（VaR）",
+        "etf_compare_metric_sharpe": "夏普比率",
+        "etf_compare_metric_volatility": "波動度",
+        "etf_compare_metric_drawdown": "最大回撤",
+        "etf_compare_metric_momentum": "動能",
+        "etf_compare_summary_sweep": "{etf} 在 {total} 項指標中全面領先。",
+        "etf_compare_summary_split": "{etf_a} 領先 {count_a}/{total} 項指標；{etf_b} 領先 {count_b}/{total} 項。",
         "etf_trend_bullish": "偏多",
         "etf_trend_neutral": "中性",
         "etf_trend_bearish": "偏空",
@@ -2021,7 +2051,6 @@ TRANSLATIONS = {
         "etf_comparison_notes_title": "Comparison Notes",
         "etf_portfolio_view_summary_title": "Portfolio View Summary",
         "etf_ranking_title": "ETF Ranking",
-        "etf_compare_score_title": "ETF Compare Score",
         "etf_compare_mode_title": "Compare Mode",
         "etf_investment_verdict_title": "Portfolio View Summary",
         "etf_dna_title": "ETF DNA",
@@ -2032,6 +2061,37 @@ TRANSLATIONS = {
         "etf_rank_col_view": "Portfolio View",
         "etf_rank_col_risk": "Risk Level",
         "etf_verdict_notes_title": "Notes",
+        "etf_chart_type_label": "Chart Type",
+        "etf_risk_low": "Low Risk",
+        "etf_risk_medium": "Medium Risk",
+        "etf_risk_medium_high": "Medium High Risk",
+        "etf_risk_high": "High Risk",
+        "etf_risk_very_high": "Very High Risk",
+        "etf_return_poor": "Poor",
+        "etf_return_fair": "Fair",
+        "etf_return_good": "Good",
+        "etf_return_very_good": "Very Good",
+        "etf_return_excellent": "Excellent",
+        "etf_verdict_return_low": "Low",
+        "etf_verdict_return_medium": "Medium",
+        "etf_verdict_return_high": "High",
+        "etf_verdict_return_very_high": "Very High",
+        "etf_horizon_short_medium": "Short-to-Medium Term",
+        "etf_horizon_medium_long": "Medium-to-Long Term",
+        "etf_horizon_long": "Long Term",
+        "etf_suitable_growth": "Growth Investors",
+        "etf_suitable_conservative": "Conservative Investors",
+        "etf_suitable_balanced": "Balanced Investors",
+        "etf_compare_col_metric": "Metric",
+        "etf_compare_col_winner": "Winner",
+        "etf_compare_metric_return": "Return",
+        "etf_compare_metric_risk": "Risk (VaR)",
+        "etf_compare_metric_sharpe": "Sharpe Ratio",
+        "etf_compare_metric_volatility": "Volatility",
+        "etf_compare_metric_drawdown": "Maximum Drawdown",
+        "etf_compare_metric_momentum": "Momentum",
+        "etf_compare_summary_sweep": "{etf} leads all {total} metrics.",
+        "etf_compare_summary_split": "{etf_a} leads {count_a} of {total} metrics; {etf_b} leads {count_b}.",
         "etf_trend_bullish": "Bullish",
         "etf_trend_neutral": "Neutral",
         "etf_trend_bearish": "Bearish",
@@ -3260,6 +3320,67 @@ TREND_SIGNAL_KEYS = {
     "Bearish": "etf_trend_bearish",
 }
 
+# src/etf_signals.py's risk_level_from_vol() returns the canonical
+# ("Low"/"Medium"/"High") per-ETF classification; the Investment Verdict
+# panel's own portfolio-wide bucketing additionally uses "Medium High" and
+# "Very High" -- both share this one mapping so the same English value
+# always renders the same Chinese term everywhere on ETF Analysis (Issue
+# #39: before this, "中風險" and "Medium" for the same risk bucket could
+# appear in different tables on the same page).
+ETF_RISK_LEVEL_KEYS = {
+    "Low": "etf_risk_low",
+    "Medium": "etf_risk_medium",
+    "Medium High": "etf_risk_medium_high",
+    "High": "etf_risk_high",
+    "Very High": "etf_risk_very_high",
+}
+
+# src/etf_signals.py's expected_return_label_from_ann_ret() canonical
+# per-ETF Expected Return label (distinct scale from the Investment
+# Verdict's Low/Medium/High/Very High -- see ETF_VERDICT_RETURN_KEYS).
+ETF_RETURN_LABEL_KEYS = {
+    "Poor": "etf_return_poor",
+    "Fair": "etf_return_fair",
+    "Good": "etf_return_good",
+    "Very Good": "etf_return_very_good",
+    "Excellent": "etf_return_excellent",
+}
+
+# Investment Verdict's portfolio-wide Expected Return tier (Low/Medium/
+# High/Very High) -- a different scale from ETF_RETURN_LABEL_KEYS' per-ETF
+# Poor..Excellent labels, so it gets its own mapping/helper even though
+# both are called "Expected Return".
+ETF_VERDICT_RETURN_KEYS = {
+    "Low": "etf_verdict_return_low",
+    "Medium": "etf_verdict_return_medium",
+    "High": "etf_verdict_return_high",
+    "Very High": "etf_verdict_return_very_high",
+}
+
+ETF_HORIZON_KEYS = {
+    "Short-to-Medium Term": "etf_horizon_short_medium",
+    "Medium-to-Long Term": "etf_horizon_medium_long",
+    "Long Term": "etf_horizon_long",
+}
+
+ETF_SUITABLE_INVESTOR_KEYS = {
+    "Growth Investors": "etf_suitable_growth",
+    "Conservative Investors": "etf_suitable_conservative",
+    "Balanced Investors": "etf_suitable_balanced",
+}
+
+# Compare Mode's pairwise metric names (Return/Risk/Sharpe/Volatility/
+# Drawdown/Momentum) -- previously rendered as raw English regardless of
+# language.
+ETF_COMPARE_METRIC_KEYS = {
+    "Return": "etf_compare_metric_return",
+    "Risk": "etf_compare_metric_risk",
+    "Sharpe": "etf_compare_metric_sharpe",
+    "Volatility": "etf_compare_metric_volatility",
+    "Drawdown": "etf_compare_metric_drawdown",
+    "Momentum": "etf_compare_metric_momentum",
+}
+
 # src/goal_planner.py's canonical (lowercase) target_mode / risk_tolerance /
 # status values -- translated for display only, same pattern as above.
 GOAL_TARGET_MODE_KEYS = {
@@ -3322,6 +3443,30 @@ def t_portfolio_view(value: str) -> str:
 
 def t_trend_signal(value: str) -> str:
     return _translate_option(value, TREND_SIGNAL_KEYS)
+
+
+def t_etf_risk_level(value: str) -> str:
+    return _translate_option(value, ETF_RISK_LEVEL_KEYS)
+
+
+def t_etf_return_label(value: str) -> str:
+    return _translate_option(value, ETF_RETURN_LABEL_KEYS)
+
+
+def t_etf_verdict_return(value: str) -> str:
+    return _translate_option(value, ETF_VERDICT_RETURN_KEYS)
+
+
+def t_investment_horizon(value: str) -> str:
+    return _translate_option(value, ETF_HORIZON_KEYS)
+
+
+def t_suitable_investor(value: str) -> str:
+    return _translate_option(value, ETF_SUITABLE_INVESTOR_KEYS)
+
+
+def t_compare_metric(value: str) -> str:
+    return _translate_option(value, ETF_COMPARE_METRIC_KEYS)
 
 
 def t_goal_target_mode(value: str) -> str:
