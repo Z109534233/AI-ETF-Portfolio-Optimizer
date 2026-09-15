@@ -718,6 +718,24 @@ def results_hero(title: str, subtitle: str = None) -> None:
     )
 
 
+def results_hero_metric(label: str, value: str, color: str = None) -> None:
+    """The ONE visually dominant result number (Issue #24 visual-acceptance
+    round item B1) -- rendered directly below results_hero(), large and
+    isolated, so it reads as THE answer rather than one of several
+    equal-weight KPI cards. Callers render their own smaller secondary
+    metrics (e.g. a plain st.columns(3) row of metric_card_html()) below
+    this, which are visually subordinate by simply being smaller, not by
+    any hidden state this function manages."""
+    color = color or "var(--primary)"
+    st.markdown(
+        '<div class="results-hero-metric">'
+        f'<div class="results-hero-metric-label">{label}</div>'
+        f'<div class="results-hero-metric-value" style="color:{color};">{value}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # ── KPI Cards ───────────────────────────────────────────────────────────────────
 _LABEL_ICON_MAP = [
     (("return", "growth", "gain", "報酬", "成長", "收益"), "trending-up"),
