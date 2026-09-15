@@ -182,6 +182,39 @@ def correlation_matrix(prices_df: pd.DataFrame) -> pd.DataFrame:
     return returns.corr()
 
 
+def average_pairwise_correlation(prices_df: pd.DataFrame):
+    """Average off-diagonal pairwise return correlation across every column
+    of `prices_df` (Issue #41 item E -- the Efficient Frontier's dynamic
+    diversification interpretation). Returns None when fewer than 2 columns
+    have a computable pairwise correlation (never 0.0, which would be a
+    fabricated "no correlation" claim instead of "not enough data")."""
+    corr = correlation_matrix(prices_df)
+    cols = corr.columns
+    pairs = [
+        corr.iloc[i, j]
+        for i in range(len(cols)) for j in range(i + 1, len(cols))
+        if pd.notna(corr.iloc[i, j])
+    ]
+    if not pairs:
+        return None
+    return float(sum(pairs) / len(pairs))
+
+
+def correlation_diversification_level(avg_corr: float) -> str:
+    """Bucket an average pairwise return correlation into "high"/"moderate"/
+    "low" for the Efficient Frontier's diversification interpretation
+    (Issue #41 item E): >=0.80 high (feasible risk-return set is
+    compressed, diversification benefit from reweighting alone is
+    limited), 0.40-0.79 moderate, <0.40 low (broader diversification
+    opportunity). Simple PRODUCT UI buckets, not an academic or regulatory
+    correlation standard -- same pattern as concentration_level() below."""
+    if avg_corr >= 0.80:
+        return "high"
+    if avg_corr >= 0.40:
+        return "moderate"
+    return "low"
+
+
 def covariance_matrix(prices_df: pd.DataFrame, periods_per_year: int = 252) -> pd.DataFrame:
     """Compute annualized covariance matrix from price DataFrame.
 

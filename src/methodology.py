@@ -15,6 +15,8 @@ src/portfolio_optimizer.py (a calculation module) and by every
 pages/*.py file that renders a methodology panel.
 """
 
+from datetime import date
+
 import numpy as np
 
 # ============================================================================
@@ -383,6 +385,152 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
         ),
     },
 }
+
+
+# ============================================================================
+# M5 -- ETF Analysis Methodology
+# ============================================================================
+# Describes pages/1_ETF_Analysis.py + src/etf_signals.py's
+# compute_quant_signals() + src/financial_metrics.py as actually implemented
+# for the single-ticker analytics on that page (Sharpe/Sortino, price
+# source/adjustment, and the risk-free-rate scope) -- see
+# compute_quant_signals(), compute_all_metrics(), and src/data_loader.py's
+# download_etf_data() for the code this metadata must always match.
+
+ETF_ANALYSIS_METHODOLOGY = {
+    "expected_return_and_volatility": {
+        "return_type": "simple daily percentage returns (DataFrame.pct_change)",
+        "annualization": "mean daily return * 252 trading days; volatility is the daily-return standard deviation * sqrt(252)",
+    },
+    "risk_free_rate": {
+        "nature": (
+            "a user-set assumption from this page's own sidebar slider "
+            "(default 5%), NOT an automatically fetched Treasury/FRED yield "
+            "or any other live external rate"
+        ),
+        "usage": (
+            "used directly in this page's Sharpe Ratio (the KPI row and "
+            "compute_quant_signals()'s Quant Score inputs) and in the "
+            "Sortino Ratio shown in the Compare and Deep Analysis metrics "
+            "tables (compute_all_metrics() passes the same risk_free_rate "
+            "to both sharpe_ratio() and sortino_ratio())"
+        ),
+    },
+    "price_source": {
+        "provider": "Yahoo Finance via the yfinance library (src/data_loader.py)",
+        "adjustment": (
+            "auto_adjust=True -- the downloaded Close price is already "
+            "adjusted for dividends and stock splits by yfinance itself, "
+            "this app does not re-derive its own adjustment"
+        ),
+        "gap_handling": (
+            "missing trading days are forward-filled then back-filled "
+            "(src/data_cleaner.py's clean_price_data()) after all requested "
+            "tickers are downloaded together; a ticker with zero valid data "
+            "anywhere is dropped entirely rather than filled"
+        ),
+    },
+    "limitation": (
+        "every metric on this page describes OBSERVED HISTORY over the "
+        "selected date range only -- it is not a forecast of future return, "
+        "volatility, or risk-adjusted performance"
+    ),
+}
+
+
+# ============================================================================
+# M6 -- Machine Learning Methodology
+# ============================================================================
+# Describes pages/5_Machine_Learning.py + src/machine_learning.py as
+# actually implemented -- see run_ml_pipeline(), prepare_ml_dataset(),
+# time_series_split(), and _baseline_majority_class_accuracy() for the code
+# this metadata must always match.
+
+MACHINE_LEARNING_METHODOLOGY = {
+    "models": {
+        "options": ["Logistic Regression", "Random Forest"],
+        "logistic_regression": "scikit-learn LogisticRegression on standardized features (StandardScaler fit on the training split only)",
+        "random_forest": "scikit-learn RandomForestClassifier (100 trees, max_depth=5, min_samples_leaf=10)",
+    },
+    "target": {
+        "definition": "binary: 1 if the simple return over the next `lookahead` trading day(s) is positive, else 0",
+        "lookahead": "user/page-configured number of trading days (this page fixes it at 1 -- next-day direction)",
+    },
+    "features": {
+        "source": "technical indicators derived only from this ticker's own price (and, if given, volume) history -- src/technical_indicators.py's create_ml_features()",
+        "types": "lagged returns, SMA/EMA ratios, RSI, MACD, momentum, rolling volatility, Bollinger Band position",
+        "absent_inputs": (
+            "no fundamental data (earnings, valuation ratios), no "
+            "macroeconomic series, and no news/sentiment data are used as "
+            "features -- price/volume-derived technical indicators only"
+        ),
+    },
+    "split": {
+        "method": "chronological time-series split (time_series_split()) -- the first (1 - test_size) fraction of rows trains the model, the remaining rows are held out as the test set",
+        "shuffling": "none -- rows are never shuffled or randomly assigned across train/test, which would leak future information into training",
+    },
+    "baseline": {
+        "definition": "always predict whichever class (up or down) was more frequent in the TRAINING set only, then score that constant prediction on the same held-out test set (_baseline_majority_class_accuracy())",
+        "purpose": "the minimum bar a model must clear to be providing any real directional information beyond the test period's own class balance",
+    },
+    "metrics": {
+        "reported": ["Accuracy", "Precision", "Recall", "F1 Score", "ROC AUC (when both classes are present in the test set)", "Confusion Matrix"],
+        "computed_on": "the held-out test set only -- the model never sees this data during training",
+    },
+    "absent_from_pipeline": {
+        "hyperparameter_tuning": "none -- fixed hyperparameters are used for both model types, no grid/random search or cross-validation is performed",
+        "cross_validation": "none -- a single chronological train/test split, not k-fold or walk-forward cross-validation",
+        "transaction_costs": "not modeled -- no bid-ask spread, commission, or market-impact cost is subtracted from any reported metric",
+    },
+    "live_trading_validity": (
+        "this pipeline evaluates one model on one historical held-out "
+        "window for one ticker -- it is not evidence of live-trading "
+        "validity, and results on a different ticker, date range, or "
+        "future period may differ substantially"
+    ),
+}
+
+
+def validate_ml_split(train_start: str, train_end: str, test_start: str, test_end: str) -> dict:
+    """Factual check that the train/test windows are chronological and
+    non-overlapping (M6 acceptance criteria): train_start <= train_end,
+    test_start <= test_end, and train_end < test_start. This validates the
+    EVALUATION SETUP only -- it says nothing about whether the model itself
+    performs well, and must never be rendered in a way that implies that.
+
+    Returns {"is_valid": bool, "issues": [str, ...]} -- never raises; an
+    unparseable date string simply fails the check with an explicit issue.
+    """
+    issues = []
+    try:
+        t_start = date.fromisoformat(str(train_start))
+        t_end = date.fromisoformat(str(train_end))
+        te_start = date.fromisoformat(str(test_start))
+        te_end = date.fromisoformat(str(test_end))
+    except (TypeError, ValueError):
+        return {"is_valid": False, "issues": ["train/test dates could not be parsed"]}
+
+    if t_start > t_end:
+        issues.append("train_start is after train_end")
+    if te_start > te_end:
+        issues.append("test_start is after test_end")
+    if t_end >= te_start:
+        issues.append("train and test periods overlap or are not chronological")
+
+    return {"is_valid": len(issues) == 0, "issues": issues}
+
+
+def validate_etf_analysis_window(observations: int, min_observations: int = 20) -> dict:
+    """Factual check that the focus ticker's usable historical window (M5)
+    has enough observations for the displayed annualized metrics to be
+    numerically stable. Returns {"is_valid": bool, "issues": [str, ...]}."""
+    issues = []
+    if observations < min_observations:
+        issues.append(
+            f"only {observations} usable observation(s) are available; at "
+            f"least {min_observations} are recommended for stable annualized metrics"
+        )
+    return {"is_valid": len(issues) == 0, "issues": issues}
 
 
 def validate_optimization_result(weights: dict, mean_returns, cov_matrix,

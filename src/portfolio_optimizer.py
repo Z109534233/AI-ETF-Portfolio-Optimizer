@@ -541,3 +541,33 @@ def backtest_portfolio(prices_df: pd.DataFrame, weights: dict,
         "Cumulative Return": (1 + port_returns).cumprod() - 1
     })
     return result
+
+
+REFERENCE_STRATEGY_METHODS = ("Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility")
+
+
+def build_backtest_reference_plan(current_method: str,
+                                   reference_methods=REFERENCE_STRATEGY_METHODS) -> list:
+    """Dedup plan for pages/2_Portfolio_Optimizer.py's Backtest & Risk
+    Historical Performance / Drawdown Analysis charts (Issue #41 item D).
+
+    Before this, Backtest & Risk always plotted the current strategy AND a
+    separate hardcoded equal-weight baseline -- if the current strategy WAS
+    Equal Weight, the chart silently became "Equal Weight vs Equal Weight",
+    conveying zero information. Pure, Streamlit-free planning logic (no
+    price data, no charting) so it can be unit-tested directly without
+    spinning up an AppTest session:
+
+    - If `current_method` is one of `reference_methods`, returns exactly
+      `len(reference_methods)` entries -- one per reference method, each
+      appearing exactly once, with the current one flagged.
+    - Otherwise (e.g. Target Return / Risk Parity, which aren't parameter-
+      free reference strategies), returns the current method PLUS every
+      reference method: `len(reference_methods) + 1` unique entries.
+
+    Returns a list of (method, is_current) tuples. `method` never repeats
+    across the returned list.
+    """
+    if current_method in reference_methods:
+        return [(m, m == current_method) for m in reference_methods]
+    return [(current_method, True)] + [(m, False) for m in reference_methods]

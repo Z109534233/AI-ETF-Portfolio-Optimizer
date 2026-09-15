@@ -15,7 +15,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.data_loader import download_etf_data, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
-from src.machine_learning import run_ml_pipeline, DISCLAIMER
+from src.machine_learning import (
+    run_ml_pipeline, DISCLAIMER, roc_auc_interpretation_level, confusion_matrix_skew_direction,
+)
 from src.charts import (
     feature_importance_chart, confusion_matrix_chart, apply_dark_theme, CHART_COLORS
 )
@@ -26,6 +28,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_model_type, t_country, MODEL_TYPE_KEYS
+from src.methodology import validate_ml_split
 
 st.set_page_config(
     page_title="Machine Learning | AI ETF Portfolio Optimizer",
@@ -218,18 +221,30 @@ else:
     st.caption(f"⚠️ {t('ml_does_not_beat_baseline', diff=f'{abs(_baseline_diff_pp):.1f}')}")
 st.caption(t("ml_baseline_help"))
 
-# ── Honest performance interpretation (Issue #20 section 6B): a model can
-# beat the majority-class baseline on accuracy while its ROC-AUC sits at
-# essentially chance level (~0.5), meaning it has little to no genuine
-# ranking/discriminatory power on this test window -- accuracy alone can
-# hide that. Surfaced only when ROC-AUC is actually available (binary
-# classifiers with both classes present in y_test).
+# ── Honest performance interpretation (Issue #20 section 6B, extended by
+# Issue #41 item H): a model can beat the majority-class baseline on
+# accuracy while its ROC-AUC sits at or below chance level (~0.5 or lower),
+# meaning it has little to no genuine ranking/discriminatory power on this
+# test window -- accuracy alone can hide that. Every ROC-AUC value gets an
+# interpretation now (previously only the narrow ±0.05-around-0.5 band did,
+# so a result like 0.4356 received none at all). Surfaced only when
+# ROC-AUC is actually available (binary classifiers with both classes
+# present in y_test).
 _roc_auc_val = metrics.get("ROC AUC")
-if isinstance(_roc_auc_val, (int, float)) and abs(_roc_auc_val - 0.5) <= 0.05:
-    st.warning(t(
-        "ml_weak_discriminatory_power",
-        diff=f"{abs(_baseline_diff_pp):.1f}", roc_auc=f"{_roc_auc_val:.3f}",
-    ))
+if isinstance(_roc_auc_val, (int, float)):
+    _roc_level = roc_auc_interpretation_level(_roc_auc_val)
+    if _roc_level == "below_chance":
+        st.warning(t("ml_below_chance_discriminatory_power", roc_auc=f"{_roc_auc_val:.3f}"))
+    elif _roc_level == "weak":
+        st.warning(t(
+            "ml_weak_discriminatory_power",
+            diff=f"{abs(_baseline_diff_pp):.1f}", roc_auc=f"{_roc_auc_val:.3f}",
+        ))
+    else:
+        st.info(t(
+            "ml_moderate_discriminatory_power",
+            diff=f"{abs(_baseline_diff_pp):.1f}", roc_auc=f"{_roc_auc_val:.3f}",
+        ))
 
 # ── Target / data-window disclosure (M5): the target definition and the
 # actual out-of-sample test date range were previously never shown -- only
@@ -241,6 +256,38 @@ with st.expander(t("ml_target_definition_label"), expanded=False):
                 f"{t('ml_target_definition_value', lookahead=result['lookahead_periods'])}")
     st.markdown(f"- **{t('ml_data_window_label')}** — "
                 f"{t('ml_data_window_value', train_start=result['train_start'], train_end=result['train_end'], train=result['train_size'], test_start=result['test_start'], test_end=result['test_end'], test=result['test_size'])}")
+
+# ── Methodology & Assumptions (M6) ──────────────────────────────────────────
+# Collapsed, always-visible disclosure of the ACTUAL model/split/evaluation
+# methodology for this page -- see src/methodology.py's
+# MACHINE_LEARNING_METHODOLOGY, the single source of truth this panel and
+# tests/test_methodology_m6.py both read from. Every runtime value (model
+# name, lookahead, train/test date ranges/sizes, baseline accuracy) is read
+# straight off the already-computed `result`/`metrics` above, never
+# recomputed or guessed. The validation line below checks ONLY that the
+# train/test windows are chronological and non-overlapping -- it is never
+# used to imply the MODEL performs well.
+with st.expander(t("ml_methodology_title"), expanded=False):
+    st.caption(t("ml_methodology_subtitle"))
+    _ml_baseline_pct = f"{result['baseline_accuracy']:.2%}"
+    st.markdown(
+        f"- **{t('ml_methodology_model_label')}** — {t_model_type(model_name)}\n"
+        f"- **{t('ml_target_definition_label')}** — {t('ml_target_definition_value', lookahead=result['lookahead_periods'])}\n"
+        f"- **{t('ml_methodology_features_label')}** — {t('ml_methodology_features_value')}\n"
+        f"- **{t('ml_methodology_split_label')}** — "
+        f"{t('ml_data_window_value', train_start=result['train_start'], train_end=result['train_end'], train=result['train_size'], test_start=result['test_start'], test_end=result['test_end'], test=result['test_size'])}\n"
+        f"- **{t('ml_methodology_baseline_label')}** — {t('ml_methodology_baseline_value', baseline=_ml_baseline_pct)}\n"
+        f"- **{t('ml_methodology_metrics_label')}** — {t('ml_methodology_metrics_value')}\n"
+        f"- **{t('ml_methodology_absent_label')}** — {t('ml_methodology_absent_value')}\n"
+        f"- **{t('ml_methodology_live_trading_label')}** — {t('ml_methodology_live_trading_value')}"
+    )
+    _ml_split_validation = validate_ml_split(
+        result["train_start"], result["train_end"], result["test_start"], result["test_end"],
+    )
+    if _ml_split_validation["is_valid"]:
+        st.success(t("ml_methodology_validation_pass"))
+    else:
+        st.warning(t("ml_methodology_validation_fail", issues="; ".join(_ml_split_validation["issues"])))
 
 # ── Charts ────────────────────────────────────────────────────────────────────
 section_header(t("ml_diagnostics_title"))
@@ -294,6 +341,33 @@ with chart_card(t("ml_model_detail_card")):
 
         st.markdown(f"**{t('ml_confusion_matrix_interpretation')}**")
         st.markdown(t("ml_confusion_matrix_table"))
+
+        # ── Dynamic base-rate interpretation (Issue #41 item I): derived
+        # every time from the ACTUAL current confusion matrix (_tn/_fp/_fn/
+        # _tp above) -- never hardcoded counts. A model whose predictions
+        # skew heavily toward one class can post a raw accuracy that looks
+        # better than its real directional skill, simply because it mostly
+        # predicted whichever class happened to be more common in this test
+        # window -- this makes that risk visible using measured ("may")
+        # language rather than causal certainty.
+        _cm_predicted_up = _fp + _tp
+        _cm_predicted_down = _tn + _fn
+        _cm_actual_up = _fn + _tp
+        _cm_actual_down = _tn + _fp
+        _cm_total = _tn + _fp + _fn + _tp
+        st.markdown(t(
+            "ml_confusion_matrix_dynamic_summary", total=_cm_total,
+            predicted_up=_cm_predicted_up, predicted_down=_cm_predicted_down,
+            actual_up=_cm_actual_up, actual_down=_cm_actual_down,
+        ))
+        _cm_skew = confusion_matrix_skew_direction(_cm_predicted_up, _cm_total)
+        if _cm_skew is not None:
+            _cm_skew_direction = t("ml_direction_up") if _cm_skew == "up" else t("ml_direction_down")
+            _cm_skew_pct = (_cm_predicted_up / _cm_total) if _cm_skew == "up" else (1 - _cm_predicted_up / _cm_total)
+            st.caption(t(
+                "ml_confusion_matrix_skew_warning", direction=_cm_skew_direction, pct=f"{_cm_skew_pct:.0%}",
+                accuracy=f"{metrics['Accuracy']:.2%}", baseline=f"{result['baseline_accuracy']:.2%}",
+            ))
 
     with tab3:
         # Actual vs predicted direction

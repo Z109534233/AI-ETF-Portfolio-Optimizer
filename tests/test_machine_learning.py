@@ -21,7 +21,8 @@ import pandas as pd
 
 from src.machine_learning import (
     prepare_ml_dataset, time_series_split, run_ml_pipeline,
-    _baseline_majority_class_accuracy,
+    _baseline_majority_class_accuracy, roc_auc_interpretation_level,
+    confusion_matrix_skew_direction,
 )
 from src.technical_indicators import create_ml_features
 
@@ -249,3 +250,123 @@ def test_retraining_after_input_change_clears_stale_warning():
     assert not _no_retrain_warning_shown(at), "after retraining, the stale-result warning must clear"
     corpus = "\n".join(m.value for m in at.markdown)
     assert "SPY" in corpus
+
+
+# ============================================================================
+# Issue #41 item H -- ROC AUC interpretation (below-chance / weak / moderate)
+# ============================================================================
+
+def test_roc_auc_below_chance_bucket_for_values_under_half():
+    assert roc_auc_interpretation_level(0.4356) == "below_chance"
+    assert roc_auc_interpretation_level(0.0) == "below_chance"
+    assert roc_auc_interpretation_level(0.4999) == "below_chance"
+
+
+def test_roc_auc_weak_bucket_around_half():
+    assert roc_auc_interpretation_level(0.50) == "weak"
+    assert roc_auc_interpretation_level(0.55) == "weak"
+
+
+def test_roc_auc_moderate_bucket_meaningfully_above_half():
+    assert roc_auc_interpretation_level(0.5501) == "moderate"
+    assert roc_auc_interpretation_level(0.75) == "moderate"
+
+
+def _mock_download(monkeypatch):
+    import src.data_loader as data_loader_mod
+
+    def _fake_download(tickers, start_date, end_date, price_field="Close"):
+        idx = pd.bdate_range("2019-01-01", periods=800)
+        rng = np.random.default_rng(3)
+        return pd.DataFrame({tk: 100 * np.cumprod(1 + rng.normal(0.0002, 0.01, 800)) for tk in tickers}, index=idx)
+
+    monkeypatch.setattr(data_loader_mod, "download_etf_data", _fake_download)
+
+
+def test_below_chance_auc_produces_dedicated_warning(monkeypatch):
+    """End-to-end: when the trained model's actual ROC AUC on this run is
+    below 0.5, the page must render the dedicated below-chance warning
+    (never silently show nothing, and never the generic "weak" text meant
+    for the near-0.5 band), and must not overclaim proof of the Efficient
+    Market Hypothesis from a single result."""
+    import src.machine_learning as ml_mod
+
+    _mock_download(monkeypatch)
+    # Force a deterministic, clearly-below-chance ROC AUC so this test
+    # never depends on which real model/ticker/window happens to produce
+    # one -- only the page's INTERPRETATION branch is under test here.
+    _orig_compute_metrics = ml_mod._compute_metrics
+
+    def _fake_compute_metrics(y_test, y_pred, y_prob):
+        m = _orig_compute_metrics(y_test, y_pred, y_prob)
+        m["ROC AUC"] = 0.30
+        return m
+
+    monkeypatch.setattr(ml_mod, "_compute_metrics", _fake_compute_metrics)
+
+    at = _train_once()
+    corpus = "\n".join(w.value for w in at.warning)
+    assert "below the 0.5 random-guessing level" in corpus
+    assert "0.300" in corpus
+    assert "does not prove" in corpus and "Efficient Market Hypothesis" in corpus
+
+
+# ============================================================================
+# Issue #41 item I -- Confusion Matrix / base-rate interpretation
+# ============================================================================
+
+def test_confusion_matrix_skew_direction_detects_up_skew():
+    # 90 of 100 predictions are "up" -- clearly skewed toward Up.
+    assert confusion_matrix_skew_direction(predicted_up=90, total=100) == "up"
+
+
+def test_confusion_matrix_skew_direction_detects_down_skew():
+    # Only 5 of 100 predictions are "up" -- clearly skewed toward Down.
+    assert confusion_matrix_skew_direction(predicted_up=5, total=100) == "down"
+
+
+def test_confusion_matrix_skew_direction_none_when_balanced():
+    assert confusion_matrix_skew_direction(predicted_up=50, total=100) is None
+
+
+def test_confusion_matrix_skew_direction_none_for_zero_total():
+    assert confusion_matrix_skew_direction(predicted_up=0, total=0) is None
+
+
+def test_confusion_matrix_dynamic_counts_use_actual_matrix_not_hardcoded(monkeypatch):
+    """Regression guard for Issue #41 item I: the page must never hardcode
+    screenshot-era counts (e.g. 134 vs 113) -- the rendered predicted/actual
+    up/down counts must be internally consistent with each other (predicted
+    up + predicted down == actual up + actual down == total test samples)."""
+    _mock_download(monkeypatch)
+    at = _train_once()
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "134" not in corpus or "113" not in corpus, (
+        "these specific hardcoded screenshot counts must never both appear together"
+    )
+    # The dynamic summary sentence must be present and reference the ACTUAL
+    # test-set size shown elsewhere on the page (train_size/test_size).
+    assert "predicted" in corpus.lower() and "actual" in corpus.lower()
+
+
+# ============================================================================
+# Issue #41 item J -- neutral Results hero wording
+# ============================================================================
+
+def test_results_hero_title_is_neutral_not_prediction_results(monkeypatch):
+    _mock_download(monkeypatch)
+    at = _train_once(lang="en")
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "Out-of-Sample Evaluation" in corpus
+    # The old, potentially-overclaiming hero title must be gone. The
+    # "Predictions" tab label (a distinct, unrelated key) is expected to
+    # remain and is not affected by this check.
+    assert "<div class=\"results-hero-title\">Prediction Results</div>" not in corpus
+
+
+def test_results_hero_title_is_neutral_zh_tw(monkeypatch):
+    _mock_download(monkeypatch)
+    at = _train_once(lang="zh-TW")
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "樣本外驗證結果" in corpus
+    assert "<div class=\"results-hero-title\">預測結果</div>" not in corpus

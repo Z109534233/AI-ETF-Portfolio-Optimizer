@@ -4090,6 +4090,196 @@ def test_owr_n_i18n_all_workspaces():
             check(f"OWR-N.{lang}.no_raw_keys_{label}", len(leaked) == 0, str(leaked))
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Issue #41 -- Cross-page reviewer-readiness pass
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── item C: five methods vs. three-strategy comparison scope ────────────
+def test_rr_c1_optimizer_has_exactly_five_implemented_methods():
+    from src.i18n import OPTIMIZATION_METHOD_KEYS
+    check(
+        "RR-C1.exactly_five_methods",
+        set(OPTIMIZATION_METHOD_KEYS.keys()) == {
+            "Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility",
+            "Target Return", "Risk Parity",
+        },
+        str(OPTIMIZATION_METHOD_KEYS.keys()),
+    )
+
+
+def test_rr_c2_home_copy_still_says_five_methods():
+    from src.i18n import TRANSLATIONS
+    check("RR-C2.zh_tw_says_five", "五種方法" in TRANSLATIONS["zh-TW"]["problem_a3"], TRANSLATIONS["zh-TW"]["problem_a3"])
+    check("RR-C2.en_says_five", "five methods" in TRANSLATIONS["en"]["problem_a3"], TRANSLATIONS["en"]["problem_a3"])
+
+
+def test_rr_c3_strategy_comparison_states_three_reference_strategy_scope():
+    at = _setup_ef_page(lang="en", workspace="Allocation", sub_view="Comparison", sub_key="opt_alloc_view")
+    exc = at.exception[0] if at.exception else None
+    check("RR-C3.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    check("RR-C3.states_three_reference_strategies", "three parameter-free reference strategies" in corpus, "")
+    check("RR-C3.mentions_five_total_methods", "five methods in total" in corpus, "")
+    check("RR-C3.target_return_explained", "Target Return depends on a user-specified target" in corpus, "")
+    check("RR-C3.risk_parity_still_available", "Risk Parity remains available" in corpus, "")
+    # The comparison cards/table themselves must show exactly the 3
+    # reference strategies, never all 5 (Target Return / Risk Parity must
+    # never appear as comparison CARDS, only as the scope-note prose above).
+    _card_count = corpus.count('font-weight:800;font-size:14px;margin-bottom:6px;">')
+    check("RR-C3.exactly_three_comparison_cards", _card_count == 3, f"found {_card_count} cards")
+
+
+# ── item D: backtest self-comparison dedup ───────────────────────────────
+def test_rr_d1_backtest_plan_dedups_when_current_is_a_reference_method():
+    from src.portfolio_optimizer import build_backtest_reference_plan, REFERENCE_STRATEGY_METHODS
+    for method in REFERENCE_STRATEGY_METHODS:
+        plan = build_backtest_reference_plan(method)
+        methods = [m for m, _ in plan]
+        check(f"RR-D1.{method}.exactly_three_unique", len(methods) == len(set(methods)) == 3, str(plan))
+        check(f"RR-D1.{method}.exactly_one_current", sum(1 for _, is_cur in plan if is_cur) == 1, str(plan))
+        current_entry = next(m for m, is_cur in plan if is_cur)
+        check(f"RR-D1.{method}.current_is_selected_method", current_entry == method, str(plan))
+
+
+def test_rr_d2_backtest_plan_shows_four_unique_lines_for_target_return_and_risk_parity():
+    from src.portfolio_optimizer import build_backtest_reference_plan
+    for method in ("Target Return", "Risk Parity"):
+        plan = build_backtest_reference_plan(method)
+        methods = [m for m, _ in plan]
+        check(f"RR-D2.{method}.four_unique_lines", len(methods) == len(set(methods)) == 4, str(plan))
+        check(f"RR-D2.{method}.current_is_first_and_flagged", plan[0] == (method, True), str(plan))
+        check(f"RR-D2.{method}.references_not_flagged_current",
+              all(not is_cur for m, is_cur in plan[1:]), str(plan))
+
+
+def test_rr_d3_backtest_historical_and_drawdown_render_without_exception_for_equal_weight():
+    at = _setup_ef_page(method="Equal Weight", lang="en",
+                         workspace="Backtest & Risk", sub_view="Historical", sub_key="opt_backtest_view")
+    exc = at.exception[0] if at.exception else None
+    check("RR-D3.historical_no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown) + "\n" + "\n".join(c.value for c in at.caption)
+    check("RR-D3.mentions_reference_strategies_not_just_equal_weight_baseline",
+          "Maximum Sharpe Ratio" in corpus and "Minimum Volatility" in corpus, "")
+
+    _opt_switch_workspace(at, "Backtest & Risk", "Drawdown", "opt_backtest_view")
+    exc2 = at.exception[0] if at.exception else None
+    check("RR-D3.drawdown_no_exception", exc2 is None, str(exc2))
+
+
+# ── item E: dynamic Efficient Frontier correlation interpretation ───────
+def _make_prices(seed, tickers, n=300, corr_strength=0.0):
+    """Deterministic price fixture with a controllable common-factor
+    strength: corr_strength=1.0 -> every ticker is (almost) the same series
+    (high pairwise correlation); corr_strength=0.0 -> fully independent
+    idiosyncratic noise per ticker (low pairwise correlation)."""
+    rng = np.random.default_rng(seed)
+    dates = pd.bdate_range("2023-01-01", periods=n)
+    common = rng.normal(0, 0.01, n)
+    data = {}
+    for tk in tickers:
+        idio = rng.normal(0, 0.01, n)
+        daily_ret = corr_strength * common + (1 - corr_strength) * idio
+        data[tk] = 100 * np.cumprod(1 + daily_ret)
+    return pd.DataFrame(data, index=dates)
+
+
+def test_rr_e1_high_correlation_prices_classify_as_high():
+    from src.financial_metrics import average_pairwise_correlation, correlation_diversification_level
+    prices = _make_prices(1, ["AAA", "BBB", "CCC"], corr_strength=0.98)
+    avg = average_pairwise_correlation(prices)
+    check("RR-E1.avg_correlation_is_high", avg is not None and avg >= 0.80, str(avg))
+    check("RR-E1.classified_high", correlation_diversification_level(avg) == "high", str(avg))
+
+
+def test_rr_e2_low_correlation_prices_classify_as_low():
+    from src.financial_metrics import average_pairwise_correlation, correlation_diversification_level
+    prices = _make_prices(2, ["AAA", "BBB", "CCC"], corr_strength=0.0)
+    avg = average_pairwise_correlation(prices)
+    check("RR-E2.avg_correlation_is_low", avg is not None and avg < 0.40, str(avg))
+    check("RR-E2.classified_low", correlation_diversification_level(avg) == "low", str(avg))
+
+
+def test_rr_e3_moderate_correlation_prices_classify_as_moderate():
+    from src.financial_metrics import average_pairwise_correlation, correlation_diversification_level
+    prices = _make_prices(3, ["AAA", "BBB", "CCC"], corr_strength=0.6)
+    avg = average_pairwise_correlation(prices)
+    check("RR-E3.avg_correlation_is_moderate", avg is not None and 0.40 <= avg < 0.80, str(avg))
+    check("RR-E3.classified_moderate", correlation_diversification_level(avg) == "moderate", str(avg))
+
+
+def test_rr_e4_frontier_interpretation_never_hardcodes_a_correlation_value():
+    """The Frontier view's correlation insight must be computed from the
+    ACTUAL current selection, not a fixed VOO/VTI/SPY assumption -- assert
+    the rendered average matches average_pairwise_correlation() on the
+    SAME prices_df the page actually used."""
+    from src.financial_metrics import average_pairwise_correlation
+    at = _setup_ef_page(lang="en", workspace="Allocation", sub_view="Frontier", sub_key="opt_alloc_view")
+    exc = at.exception[0] if at.exception else None
+    check("RR-E4.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    prices_df = at.session_state["prices_df"]
+    expected_avg = average_pairwise_correlation(prices_df)
+    corpus = "\n".join(m.value for m in at.markdown)
+    check("RR-E4.correlation_insight_present", "Correlation & Diversification Insight" in corpus, "")
+    check("RR-E4.rendered_avg_matches_actual_data", f"{expected_avg:.2f}" in corpus,
+          f"expected {expected_avg:.2f} in corpus")
+
+
+# ── item F: compact setup context pills (opt-in variant) ────────────────
+def test_rr_f1_setup_summary_pills_renders_pill_markup_not_muted_bar():
+    from src.ui import setup_summary_pills
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    script = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "from src.ui import setup_summary_pills\n"
+        "setup_summary_pills(['1 Market', '5 ETFs', 'USD', 'Equal Weight'], title='Current Setup')\n"
+    ) % REPO_ROOT
+    at = AppTest.from_string(script, default_timeout=60)
+    at.run()
+    exc = at.exception[0] if at.exception else None
+    check("RR-F1.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown)
+    check("RR-F1.uses_pill_class", 'class="setup-summary-pill"' in corpus, corpus)
+    check("RR-F1.not_muted_bar_class", 'class="setup-summary-bar"' not in corpus, corpus)
+    check("RR-F1.all_parts_present",
+          all(p in corpus for p in ("1 Market", "5 ETFs", "USD", "Equal Weight")), corpus)
+
+
+def test_rr_f2_optimizer_page_uses_pills_variant():
+    at = _setup_ef_page(lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("RR-F2.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown)
+    check("RR-F2.pills_row_present", 'class="setup-summary-pills-row"' in corpus, "")
+
+
+# ── item G: explicit risk-free-rate methodology bullet ───────────────────
+def test_rr_g1_methodology_states_current_rfr_and_scope():
+    at = _setup_ef_page(lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("RR-G1.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    corpus = "\n".join(m.value for m in at.markdown)
+    check("RR-G1.shows_current_rfr_5pct", "5.00%" in corpus, "")
+    check("RR-G1.states_not_synced_to_treasury", "does not automatically sync a live Treasury yield" in corpus, "")
+    check("RR-G1.scopes_to_sharpe_and_max_sharpe_objective",
+          "Maximum Sharpe Ratio method's optimization objective" in corpus, "")
+    check("RR-G1.does_not_imply_effect_on_other_objectives",
+          "Equal Weight, Minimum Volatility, Risk Parity, and Target Return does not use this assumption" in corpus, "")
+
+
 def _run(fn):
     """Call a test_* function, catching AssertionError so main() can
     still aggregate a full RESULTS report across all checks instead of
@@ -4270,6 +4460,20 @@ def main():
     _run(test_owr_l_workspace_switch_preserves_sidebar_inputs)
     _run(test_owr_m_language_switch_preserves_workspace_and_portfolio)
     _run(test_owr_n_i18n_all_workspaces)
+
+    _run(test_rr_c1_optimizer_has_exactly_five_implemented_methods)
+    _run(test_rr_c2_home_copy_still_says_five_methods)
+    _run(test_rr_c3_strategy_comparison_states_three_reference_strategy_scope)
+    _run(test_rr_d1_backtest_plan_dedups_when_current_is_a_reference_method)
+    _run(test_rr_d2_backtest_plan_shows_four_unique_lines_for_target_return_and_risk_parity)
+    _run(test_rr_d3_backtest_historical_and_drawdown_render_without_exception_for_equal_weight)
+    _run(test_rr_e1_high_correlation_prices_classify_as_high)
+    _run(test_rr_e2_low_correlation_prices_classify_as_low)
+    _run(test_rr_e3_moderate_correlation_prices_classify_as_moderate)
+    _run(test_rr_e4_frontier_interpretation_never_hardcodes_a_correlation_value)
+    _run(test_rr_f1_setup_summary_pills_renders_pill_markup_not_muted_bar)
+    _run(test_rr_f2_optimizer_page_uses_pills_variant)
+    _run(test_rr_g1_methodology_states_current_rfr_and_scope)
 
     n_fail = sum(1 for _, status, _ in RESULTS if status == "FAIL")
     print(f"\n{len(RESULTS) - n_fail}/{len(RESULTS)} checks passed")
