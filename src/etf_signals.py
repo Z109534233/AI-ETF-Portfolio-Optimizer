@@ -41,6 +41,10 @@ from src.openai_service import cached_generate, generate_text, fingerprint as _f
 
 TREND_BULLISH, TREND_NEUTRAL, TREND_BEARISH = "Bullish", "Neutral", "Bearish"
 VIEW_OVERWEIGHT, VIEW_NEUTRAL, VIEW_UNDERWEIGHT = "Overweight", "Neutral", "Underweight"
+RISK_LOW, RISK_MEDIUM, RISK_HIGH = "Low", "Medium", "High"
+RETURN_POOR, RETURN_FAIR, RETURN_GOOD, RETURN_VERY_GOOD, RETURN_EXCELLENT = (
+    "Poor", "Fair", "Good", "Very Good", "Excellent",
+)
 
 # Below this many valid price points, the 20/50-day moving averages behind
 # the sign-agreement calc are still NaN (or nearly so) and annualized_return/
@@ -101,6 +105,34 @@ def portfolio_view_from_score(score: float) -> str:
     if score <= 35:
         return VIEW_UNDERWEIGHT
     return VIEW_NEUTRAL
+
+
+def risk_level_from_vol(vol: float) -> str:
+    """The ONE per-ETF Risk Level classification used everywhere ETF
+    Analysis shows a per-ticker risk bucket (Issue #39: before this, the
+    Rankings table and the now-removed "ETF Compare Score" table each
+    independently thresholded annualized volatility -- 0.15/0.28 vs
+    0.12/0.25 -- so the same ETF could show a different Risk Level in each
+    table). Preserves the original Rankings thresholds."""
+    if vol < 0.15:
+        return RISK_LOW
+    if vol < 0.28:
+        return RISK_MEDIUM
+    return RISK_HIGH
+
+
+def expected_return_label_from_ann_ret(ann_ret: float) -> str:
+    """Per-ETF Expected Return label shown alongside risk_level_from_vol()
+    in the same canonical table."""
+    if ann_ret < 0:
+        return RETURN_POOR
+    if ann_ret < 0.08:
+        return RETURN_FAIR
+    if ann_ret < 0.15:
+        return RETURN_GOOD
+    if ann_ret < 0.25:
+        return RETURN_VERY_GOOD
+    return RETURN_EXCELLENT
 
 
 def compute_quant_signals(p: pd.Series, risk_free_rate: float) -> dict:
