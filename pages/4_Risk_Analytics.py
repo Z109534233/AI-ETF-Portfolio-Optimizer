@@ -34,8 +34,8 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html, g
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, style_signed_columns, chart_caption,
-    region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
-    render_current_portfolio_handoff,
+    ai_interpret_button, region_selector, region_etf_options, region_etf_multiselect,
+    region_benchmark_selector, render_current_portfolio_handoff, results_hero,
 )
 from src.theme import COLORS
 from src.i18n import t, t_country
@@ -47,6 +47,7 @@ st.set_page_config(
 )
 
 load_css()
+
 
 page_header(t("risk_title"), t("risk_subtitle"))
 
@@ -149,6 +150,15 @@ returns_df = etf_prices.pct_change().dropna()
 port_returns = (returns_df * weights_arr).sum(axis=1)
 port_prices = (1 + port_returns).cumprod() * 100
 
+# ── Results begin here: elevated hero for the user's current selection
+# (setup vs. results hierarchy pass) -- everything above this point (the
+# sidebar) is input/setup; everything from here down is the computed
+# result for that setup. ─────────────────────────────────────────────────
+results_hero(
+    t("risk_hero_title"),
+    t("risk_hero_subtitle", n=len(etf_prices.columns), start=str(start_date), end=str(end_date)),
+)
+
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
 section_header(t("risk_portfolio_metrics_title"))
 
@@ -167,30 +177,44 @@ var95 = var_cvar_result["var"] if var_cvar_result["available"] else None
 cvar95 = var_cvar_result["cvar"] if var_cvar_result["available"] else None
 dd_dev = downside_deviation(port_prices, risk_free_rate)
 
+# Primary row: only the most decision-useful risk metrics at a glance
+# (volatility, max drawdown, Sharpe, VaR) -- everything else (return,
+# Sortino, Calmar, CVaR) moves into "More risk metrics" below instead of
+# competing for equal visual weight with these four.
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown(metric_card_html(t("metric_annualized_return"), f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
     st.markdown(metric_card_html(t("metric_annualized_volatility"), f"{ann_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
 with col2:
-    st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
-    st.markdown(metric_card_html(t("metric_sortino_ratio"), f"{so_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
-with col3:
     st.markdown(metric_card_html(t("metric_maximum_drawdown"), f"{mdd:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
-    st.markdown(metric_card_html(t("metric_calmar_ratio"), f"{cal:.2f}", color=COLORS["warning"]), unsafe_allow_html=True)
+with col3:
+    st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sr:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
 with col4:
     if var_cvar_result["available"]:
         st.markdown(metric_card_html(t("metric_var_95"), f"{var95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
-        st.markdown(metric_card_html(t("metric_cvar_95"), f"{cvar95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
     else:
         st.markdown(metric_card_html(t("metric_var_95"), t("risk_var_unavailable"), color=COLORS["text_muted"]), unsafe_allow_html=True)
-        st.markdown(metric_card_html(t("metric_cvar_95"), t("risk_var_unavailable"), color=COLORS["text_muted"]), unsafe_allow_html=True)
+chart_caption(t("risk_kpi_row_caption"))
 if not var_cvar_result["available"]:
     st.caption(t("risk_var_unavailable_reason", reason=var_cvar_result["reason"]))
 else:
     # VaR interpretation tooltip/caption (Issue #20 section 5A): a VaR
     # figure is a loss-THRESHOLD estimate at the stated confidence level,
     # never a maximum-loss guarantee -- losses can and do exceed it.
-    st.caption(f"ℹ️ {t('risk_var_interpretation_caption')}")
+    st.caption(t("risk_var_interpretation_caption"))
+
+with st.expander(t("risk_more_metrics_title"), expanded=False):
+    mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+    with mcol1:
+        st.markdown(metric_card_html(t("metric_annualized_return"), f"{ann_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
+    with mcol2:
+        st.markdown(metric_card_html(t("metric_sortino_ratio"), f"{so_r:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
+    with mcol3:
+        st.markdown(metric_card_html(t("metric_calmar_ratio"), f"{cal:.2f}", color=COLORS["warning"]), unsafe_allow_html=True)
+    with mcol4:
+        if var_cvar_result["available"]:
+            st.markdown(metric_card_html(t("metric_cvar_95"), f"{cvar95:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
+        else:
+            st.markdown(metric_card_html(t("metric_cvar_95"), t("risk_var_unavailable"), color=COLORS["text_muted"]), unsafe_allow_html=True)
 
 # ── Methodology & Assumptions (M3) ──────────────────────────────────────
 # Compact disclosure of the ACTUAL risk methodology -- see
@@ -294,6 +318,7 @@ with chart_card(t("risk_detail_card")):
     with tab1:
         fig_dd = drawdown_chart(etf_prices)
         st.plotly_chart(fig_dd, use_container_width=True, key="risk_drawdown_all")
+        chart_caption(t("risk_caption_drawdown_all"))
 
         # Portfolio drawdown
         dd_series = drawdown_series(port_prices) * 100
@@ -306,6 +331,12 @@ with chart_card(t("risk_detail_card")):
         ))
         fig_port_dd.update_layout(title=t("chart_portfolio_drawdown_pct"), xaxis_title=t("chart_date"), yaxis_title=t("chart_drawdown_pct"))
         st.plotly_chart(apply_dark_theme(fig_port_dd), use_container_width=True, key="risk_drawdown_portfolio")
+        chart_caption(t("risk_caption_drawdown_portfolio"))
+        _dd_context = (
+            f"Portfolio maximum drawdown over the shown period: {dd_series.min():.2f}%; "
+            f"current drawdown from the most recent peak: {dd_series.iloc[-1]:.2f}%."
+        )
+        ai_interpret_button("risk_drawdown_portfolio_ai_interpret", st.session_state, _dd_context)
 
     with tab2:
         col_sel = st.selectbox(t("risk_select_rolling_etf"), etf_prices.columns.tolist(), key="risk_rolling")
@@ -314,6 +345,7 @@ with chart_card(t("risk_detail_card")):
         if len(p) > window:
             fig_roll = rolling_metrics_chart(p, window)
             st.plotly_chart(fig_roll, use_container_width=True, key="risk_rolling_metrics")
+            chart_caption(t("risk_caption_rolling_metrics"))
 
         # Rolling beta
         if bench_prices is not None and len(bench_prices) > window:
@@ -336,10 +368,18 @@ with chart_card(t("risk_detail_card")):
                 fig_beta.update_layout(title=t("chart_rolling_beta_window", benchmark=benchmark, window=window),
                                         xaxis_title=t("chart_date"), yaxis_title=t("chart_beta"))
                 st.plotly_chart(apply_dark_theme(fig_beta), use_container_width=True, key="risk_rolling_beta")
+                chart_caption(t("risk_caption_rolling_beta"))
+                _beta_context = (
+                    f"Rolling {window}-day beta of {col_sel} vs {benchmark}: "
+                    f"latest {rolling_beta.iloc[-1]:.2f}, average {rolling_beta.mean():.2f}, "
+                    f"range {rolling_beta.min():.2f} to {rolling_beta.max():.2f}."
+                )
+                ai_interpret_button("risk_rolling_beta_ai_interpret", st.session_state, _beta_context)
 
     with tab3:
         fig_dist = return_distribution_chart(etf_prices)
         st.plotly_chart(fig_dist, use_container_width=True, key="risk_return_distribution_all")
+        chart_caption(t("risk_caption_return_distribution_all"))
 
         # Portfolio return distribution
         fig_port_dist = go.Figure()
@@ -356,6 +396,7 @@ with chart_card(t("risk_detail_card")):
         fig_port_dist.update_layout(title=t("chart_portfolio_daily_return_dist"),
                                      xaxis_title=t("chart_daily_return_pct"), yaxis_title=t("chart_frequency"))
         st.plotly_chart(apply_dark_theme(fig_port_dist), use_container_width=True, key="risk_return_distribution_portfolio")
+        chart_caption(t("risk_caption_return_distribution_portfolio"))
 
     with tab4:
         if len(etf_prices.columns) >= 2:
@@ -364,6 +405,12 @@ with chart_card(t("risk_detail_card")):
             st.plotly_chart(fig_corr, use_container_width=True, key="risk_correlation_heatmap")
             chart_caption(t("risk_correlation_heatmap_caption"))
             st.caption(t("risk_correlation_vs_overlap_note"))
+            _corr_pairs = []
+            _corr_cols = list(corr.columns)
+            for _i in range(len(_corr_cols)):
+                for _j in range(_i + 1, len(_corr_cols)):
+                    _corr_pairs.append(f"{_corr_cols[_i]}-{_corr_cols[_j]}: {corr.iloc[_i, _j]:.2f}")
+            ai_interpret_button("risk_correlation_ai_interpret", st.session_state, "; ".join(_corr_pairs))
 
             # Holdings Overlap (M3): a DIFFERENT measure than the return
             # correlation above -- see RISK_METHODOLOGY["correlation_vs_overlap"].
@@ -393,6 +440,7 @@ with chart_card(t("risk_detail_card")):
                         pd.DataFrame(overlap_rows).set_index(t("risk_col_pair")),
                         use_container_width=True,
                     )
+                    chart_caption(t("risk_caption_holdings_overlap"))
         else:
             st.info(t("risk_select_2_correlation"))
 
@@ -416,6 +464,11 @@ with chart_card(t("risk_detail_card")):
                 fig_rc.update_layout(title=t("chart_risk_contribution_by_etf"),
                                       xaxis_title=t("chart_etf"), yaxis_title=t("chart_risk_contribution_pct"))
                 st.plotly_chart(apply_dark_theme(fig_rc), use_container_width=True, key="risk_contribution_bar")
+                chart_caption(t("risk_caption_contribution_bar"))
+                _rc_context = "; ".join(
+                    f"{tk}: {pct:.1%}" for tk, pct in zip(etf_prices.columns, risk_contrib_pct)
+                )
+                ai_interpret_button("risk_contribution_ai_interpret", st.session_state, _rc_context)
 
 # ── Portfolio Concentration (M3) ─────────────────────────────────────────
 # Deliberately SEPARATE from this page's own ad-hoc weight sliders above
@@ -495,6 +548,7 @@ with chart_card(t("risk_stress_test_impact_card")):
         style_signed_columns(stress_df, [impact_col, dollar_impact_col]),
         use_container_width=True,
     )
+    chart_caption(t("risk_caption_stress_test_table"))
     for _scenario in STRESS_SCENARIOS.values():
         st.caption(f"**{t(_scenario['i18n_key'])}** ({t(_PROVENANCE_LABEL_KEY[_scenario['provenance']])}) — {t(_scenario['note_i18n_key'])}")
 

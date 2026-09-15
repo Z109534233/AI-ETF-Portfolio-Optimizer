@@ -258,7 +258,7 @@ def test_h_backtest_uses_selected_weights():
     check("H.minvol_weights_non_uniform_for_this_fixture", not is_uniform, str(w))
 
 
-# ── Test I: global market state survives running optimization ──────────
+# ── Test I: multi-country selection survives running optimization ───────
 def test_i_global_market_state():
     import streamlit as st
     from streamlit.testing.v1 import AppTest
@@ -270,11 +270,11 @@ def test_i_global_market_state():
     at.run()
 
     region_w = None
-    for w in at.selectbox:
-        if w.key == "selected_region":
+    for w in at.multiselect:
+        if w.key == "selected_regions":
             region_w = w
             break
-    region_w.set_value("Taiwan")
+    region_w.set_value(["Taiwan"])
     at.run()
 
     ms = None
@@ -296,13 +296,13 @@ def test_i_global_market_state():
         at.run()
 
     region_after = None
-    for w in at.selectbox:
-        if w.key == "selected_region":
+    for w in at.multiselect:
+        if w.key == "selected_regions":
             region_after = w
             break
     exc = at.exception[0] if at.exception else None
     check("I.no_exception", exc is None, str(exc))
-    check("I.market_still_taiwan", region_after is not None and region_after.value == "Taiwan",
+    check("I.market_still_taiwan", region_after is not None and region_after.value == ["Taiwan"],
           str(region_after.value if region_after else None))
 
 
@@ -536,9 +536,10 @@ def test_sc_h_switch_strategy():
         run_btn.click()
         at.run()
 
-    # Strategy Comparison only renders once Strategy Lab (default
-    # sub-view: Comparison) is the active workspace.
-    _opt_switch_workspace(at, "Strategy Lab")
+    # Strategy Comparison only renders once the Allocation workspace's
+    # "Comparison" sub-view (folded in from the former top-level "Strategy
+    # Lab" workspace -- Issue #24 visual-acceptance round item B3) is active.
+    _opt_switch_workspace(at, "Allocation", "Comparison", "opt_alloc_view")
 
     exc = at.exception[0] if at.exception else None
     check("SC-H.no_exception", exc is None, str(exc))
@@ -574,7 +575,7 @@ def test_sc_i_i18n():
         if run_btn:
             run_btn.click()
             at.run()
-        _opt_switch_workspace(at, "Strategy Lab")
+        _opt_switch_workspace(at, "Allocation", "Comparison", "opt_alloc_view")
         exc = at.exception[0] if at.exception else None
         check(f"SC-I.{lang}.no_exception", exc is None, str(exc))
         if exc:
@@ -653,8 +654,10 @@ def _setup_ef_page(method=None, lang="en", tickers=None, workspace=None, sub_vie
     Portfolio Optimizer Full Workspace UI Redesign: Strategy Comparison /
     Efficient Frontier / the detailed Portfolio Diagnosis view no longer
     render on page load -- pass `workspace` (and `sub_view`/`sub_key` for
-    Strategy Lab / Backtest & Risk's internal sub-navigation) to navigate
-    there before returning. Defaults to None (stays on the default
+    Allocation's "Comparison"/"Frontier" sub-views -- folded in from the
+    former top-level "Strategy Lab" workspace, Issue #24 visual-acceptance
+    round item B3 -- or Backtest & Risk's internal sub-navigation) to
+    navigate there before returning. Defaults to None (stays on the default
     "Overview" workspace) for callers that only need at.session_state
     (e.g. opt_result), not rendered page content.
     """
@@ -902,7 +905,7 @@ def test_ef_g_no_duplicate_legend_labels():
 # ── EF-H: zh-TW render contains no raw opt_* keys ────────────────────────
 def test_ef_h_zh_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
-    at = _setup_ef_page(lang="zh-TW", workspace="Strategy Lab", sub_view="Frontier", sub_key="opt_stratlab_view")
+    at = _setup_ef_page(lang="zh-TW", workspace="Allocation", sub_view="Frontier", sub_key="opt_alloc_view")
     exc = at.exception[0] if at.exception else None
     check("EF-H.no_exception", exc is None, str(exc))
     if exc:
@@ -917,7 +920,7 @@ def test_ef_h_zh_no_raw_keys():
 # ── EF-I: English render contains no raw opt_* keys ──────────────────────
 def test_ef_i_en_no_raw_keys():
     forbidden = ("opt_", "OPT_", "_label", "_title", "_subtitle", "_desc", "_badge", "_col_")
-    at = _setup_ef_page(lang="en", workspace="Strategy Lab", sub_view="Frontier", sub_key="opt_stratlab_view")
+    at = _setup_ef_page(lang="en", workspace="Allocation", sub_view="Frontier", sub_key="opt_alloc_view")
     exc = at.exception[0] if at.exception else None
     check("EF-I.no_exception", exc is None, str(exc))
     if exc:
@@ -944,7 +947,7 @@ def test_ef_j_switch_strategy_no_side_effects():
             return None
 
     def snapshot(a):
-        keys = ["selected_region", "investment_goal", "risk_tolerance", "investment_horizon"]
+        keys = ["selected_regions", "investment_goal", "risk_tolerance", "investment_horizon"]
         snap = {k: _sget(a, k) for k in keys}
         ms = next((w for w in a.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
         snap["etfs"] = sorted(ms.value) if ms else None
@@ -1079,6 +1082,14 @@ def test_pd_f_switch_strategy_updates_diagnosis():
                 w.set_value(method)
                 at.run()
                 break
+        # Issue #24 item 5: changing the method alone no longer auto-runs a
+        # new optimization -- "Build Optimized Portfolio" is the one
+        # explicit trigger. Click it to actually produce this method's
+        # result before checking the diagnosis reflects it.
+        run_btn = _find_run_button(at)
+        if run_btn:
+            run_btn.click()
+            at.run()
         exc = at.exception[0] if at.exception else None
         check(f"PD-F.{method}.no_exception", exc is None, str(exc))
         if exc:
@@ -1095,6 +1106,308 @@ def test_pd_f_switch_strategy_updates_diagnosis():
               f"expected {expected_effective!r} in corpus")
         check(f"PD-F.{method}.active_etfs_shown", expected_active in corpus,
               f"expected {expected_active!r} in corpus")
+
+
+# ── RUN-A: fresh first render must do zero price downloads / FX / optimizer
+# work -- "Build Optimized Portfolio" is the ONE explicit trigger, even on a
+# brand-new session where opt_result starts out None (Issue #24 item 5
+# follow-up: `if run_btn or st.session_state.opt_result is None:` used to
+# also fire on first load). Instruments download_etf_data() with a real
+# call counter rather than only inspecting session_state afterwards, since
+# a counter is the only way to prove the download path itself never ran.
+def test_run_a_no_download_before_explicit_build_click():
+    import src.data_loader as data_loader_mod
+    import streamlit as st
+
+    st.page_link = lambda *a, **k: None
+
+    call_count = {"n": 0}
+    original = data_loader_mod.download_etf_data
+
+    def _counting_download(tickers, start_date, end_date, price_field="Close"):
+        call_count["n"] += 1
+        return original(tickers, start_date, end_date, price_field)
+
+    data_loader_mod.download_etf_data = _counting_download
+    try:
+        at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at.session_state["language"] = "en"
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-A.no_exception_on_initial_render", exc is None, str(exc))
+        if exc:
+            return
+
+        check("RUN-A.zero_downloads_on_initial_render", call_count["n"] == 0, call_count["n"])
+        check("RUN-A.no_result_on_initial_render", at.session_state["opt_result"] is None,
+              at.session_state["opt_result"])
+        check("RUN-A.no_current_portfolio_on_initial_render",
+              "current_portfolio" not in at.session_state, "current_portfolio unexpectedly present")
+        info_corpus = "\n".join(i.value for i in at.info)
+        check("RUN-A.build_empty_state_shown", "Build Optimized Portfolio" in info_corpus, info_corpus)
+
+        # Changing a sidebar input on this still-unbuilt page must likewise
+        # never trigger a download on its own.
+        ms = None
+        for w in at.multiselect:
+            if w.key and w.key.startswith("selected_etfs_"):
+                ms = w
+                break
+        check("RUN-A.etf_multiselect_present", ms is not None)
+        if ms is None:
+            return
+        available = [tk for tk in _EF_TEST_TICKERS if tk in ms.options]
+        if available:
+            ms.set_value(available)
+            at.run()
+        check("RUN-A.still_zero_downloads_after_widget_change", call_count["n"] == 0, call_count["n"])
+        check("RUN-A.still_no_result_after_widget_change", at.session_state["opt_result"] is None,
+              at.session_state["opt_result"])
+
+        run_btn = _find_run_button(at)
+        check("RUN-A.run_button_present", run_btn is not None)
+        if run_btn is None:
+            return
+        run_btn.click()
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-A.no_exception_after_build_click", exc is None, str(exc))
+        if exc:
+            return
+
+        check("RUN-A.exactly_one_download_after_build_click", call_count["n"] == 1, call_count["n"])
+        check("RUN-A.result_present_after_build_click", at.session_state["opt_result"] is not None,
+              at.session_state["opt_result"])
+    finally:
+        data_loader_mod.download_etf_data = original
+
+
+# ── RUN-B: changing ONLY the risk-free rate after a successful build must
+# invalidate the result (stale-input warning) and NOT silently re-run the
+# optimizer -- risk_free_rate feeds the displayed Sharpe ratio (and Max-
+# Sharpe optimization itself) but was previously missing from `run_inputs`,
+# so the page kept showing a Sharpe ratio computed under the OLD rate as if
+# it reflected the new one. Mirrors RUN-A's instrumentation approach (a real
+# call counter on download_etf_data) so "no auto-run" is proven, not just
+# inferred from session_state.
+def test_run_b_risk_free_rate_change_triggers_stale_warning_not_autorun():
+    import src.data_loader as data_loader_mod
+    import streamlit as st
+
+    st.page_link = lambda *a, **k: None
+
+    call_count = {"n": 0}
+    original = data_loader_mod.download_etf_data
+
+    def _counting_download(tickers, start_date, end_date, price_field="Close"):
+        call_count["n"] += 1
+        return original(tickers, start_date, end_date, price_field)
+
+    data_loader_mod.download_etf_data = _counting_download
+    try:
+        at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")
+        exc = at.exception[0] if at.exception else None
+        check("RUN-B.no_exception_after_initial_build", exc is None, str(exc))
+        if exc:
+            return
+        check("RUN-B.result_present_after_initial_build", at.session_state["opt_result"] is not None,
+              at.session_state["opt_result"])
+        downloads_after_build = call_count["n"]
+        check("RUN-B.at_least_one_download_after_initial_build", downloads_after_build >= 1,
+              downloads_after_build)
+        result_before = dict(at.session_state["opt_result"])
+
+        rf_w = next((w for w in at.slider if w.key == "opt_risk_free_rate_slider"), None)
+        check("RUN-B.risk_free_slider_found", rf_w is not None)
+        if rf_w is None:
+            return
+        new_value = rf_w.value + 2.0 if rf_w.value < 8.0 else rf_w.value - 2.0
+        rf_w.set_value(new_value)
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-B.no_exception_after_rate_change", exc is None, str(exc))
+        if exc:
+            return
+
+        # No auto-run: the download path must not fire again just because
+        # the risk-free rate slider moved.
+        check("RUN-B.no_new_download_after_rate_change", call_count["n"] == downloads_after_build,
+              call_count["n"])
+        # The previously-built result must still be sitting in session_state
+        # (stale, not cleared and not silently replaced).
+        check("RUN-B.result_unchanged_after_rate_change",
+              at.session_state["opt_result"]["weights"] == result_before["weights"] and
+              at.session_state["opt_result"]["sharpe_ratio"] == result_before["sharpe_ratio"],
+              at.session_state["opt_result"])
+        warnings_text = "\n".join(w.value for w in at.warning)
+        check("RUN-B.stale_input_warning_shown", "Build Optimized Portfolio" in warnings_text, warnings_text)
+
+        # Clicking Build again must pick up the NEW risk-free rate.
+        run_btn = _find_run_button(at)
+        check("RUN-B.run_button_present", run_btn is not None)
+        if run_btn is None:
+            return
+        run_btn.click()
+        at.run()
+        exc = at.exception[0] if at.exception else None
+        check("RUN-B.no_exception_after_rebuild", exc is None, str(exc))
+        if exc:
+            return
+        check("RUN-B.download_fired_on_explicit_rebuild", call_count["n"] == downloads_after_build + 1,
+              call_count["n"])
+        warnings_text_after = "\n".join(w.value for w in at.warning)
+        check("RUN-B.stale_warning_cleared_after_rebuild",
+              "Build Optimized Portfolio" not in warnings_text_after, warnings_text_after)
+    finally:
+        data_loader_mod.download_etf_data = original
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Visual-Acceptance Round (Issue #24 follow-up): single hero metric,
+# methodology collapsed by default, 4 top-level workspaces (Strategy Lab
+# folded into Allocation), CTA hierarchy, settings moved out of the sidebar.
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── VAA-A: exactly 4 top-level workspaces, no top-level "Strategy Lab" ──────
+def test_vaa_a_exactly_four_top_level_workspaces():
+    at = _setup_ef_page(method="Equal Weight", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("VAA-A.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    ws = next((w for w in at.segmented_control if w.key == "opt_workspace"), None)
+    check("VAA-A.workspace_control_found", ws is not None)
+    if ws is None:
+        return
+    check("VAA-A.exactly_four_workspaces", len(ws.options) == 4, ws.options)
+    check("VAA-A.no_strategy_lab_option", "Strategy Lab" not in ws.options, ws.options)
+    # .options reflects the format_func-rendered DISPLAY labels, not the
+    # internal English state values (the internal "Save & Actions" value
+    # displays as "Save & Export" -- see opt_ws_save_actions in src/i18n.py).
+    check("VAA-A.expected_workspace_set",
+          list(ws.options) == ["Overview", "Allocation", "Backtest & Risk", "Save & Export"], ws.options)
+    # The folded-in sub-views must still be reachable, just one level deeper.
+    alloc_sub = next((w for w in at.segmented_control if w.key == "opt_alloc_view"), None)
+    check("VAA-A.no_alloc_subnav_before_allocation_active", alloc_sub is None)
+    _opt_switch_workspace(at, "Allocation")
+    alloc_sub = next((w for w in at.segmented_control if w.key == "opt_alloc_view"), None)
+    check("VAA-A.alloc_subnav_present_once_allocation_active", alloc_sub is not None)
+    if alloc_sub is not None:
+        check("VAA-A.alloc_subnav_has_three_views",
+              list(alloc_sub.options) == ["Weights", "Strategy Comparison", "Efficient Frontier"],
+              alloc_sub.options)
+
+
+# ── VAA-B: methodology expander AND the new settings panel start in the
+# right collapsed/expanded state ─────────────────────────────────────────────
+def test_vaa_b_methodology_expander_collapsed_settings_panel_state():
+    import streamlit as st
+    st.page_link = lambda *a, **k: None
+
+    # Fresh, never-built session: the settings panel (Edit Settings) must be
+    # OPEN by default so a first-time user immediately sees the form + Build
+    # button, since it's no longer in the always-visible sidebar.
+    at_fresh = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+    at_fresh.session_state["language"] = "en"
+    at_fresh.run()
+    # AppTest's Expander test wrapper doesn't surface a `key` attribute (only
+    # `label`/`icon`/`proto`), so every expander lookup in this test matches
+    # by its (English, lang="en") visible label instead.
+    settings_exp_fresh = next((e for e in at_fresh.expander if e.label == "Edit Settings"), None)
+    check("VAA-B.settings_panel_found_fresh", settings_exp_fresh is not None)
+    if settings_exp_fresh is not None:
+        check("VAA-B.settings_panel_expanded_on_fresh_session",
+              bool(settings_exp_fresh.proto.expanded), settings_exp_fresh.proto.expanded)
+
+    # After a successful build: methodology stays collapsed (always has),
+    # and the settings panel default collapses too.
+    at_built = _setup_ef_page(method="Equal Weight", lang="en")
+    exc = at_built.exception[0] if at_built.exception else None
+    check("VAA-B.no_exception_after_build", exc is None, str(exc))
+    if exc:
+        return
+    # The settings panel's `expanded=(opt_result is None)` default is
+    # computed near the TOP of the script, before the "if run_btn:" block
+    # (further down) actually sets opt_result -- so the collapse takes
+    # effect starting from the NEXT render after a build, not the build's
+    # own render. One extra no-op rerun (no widget changed, so run_btn is
+    # False and nothing re-executes the optimizer) makes that next render.
+    at_built.run()
+    exc = at_built.exception[0] if at_built.exception else None
+    check("VAA-B.no_exception_after_extra_rerun", exc is None, str(exc))
+    if exc:
+        return
+    methodology_exp = next((e for e in at_built.expander if e.label == "Methodology & Assumptions"), None)
+    check("VAA-B.methodology_expander_found", methodology_exp is not None)
+    if methodology_exp is not None:
+        check("VAA-B.methodology_collapsed_by_default",
+              not methodology_exp.proto.expanded, methodology_exp.proto.expanded)
+    settings_exp_built = next((e for e in at_built.expander if e.label == "Edit Settings"), None)
+    check("VAA-B.settings_panel_found_after_build", settings_exp_built is not None)
+    if settings_exp_built is not None:
+        check("VAA-B.settings_panel_collapsed_after_build",
+              not settings_exp_built.proto.expanded, settings_exp_built.proto.expanded)
+
+
+# ── VAA-C: Expected Return is the ONE hero metric; Volatility/Sharpe/
+# Diversification are smaller secondary metrics, never a 4th/5th equal card ──
+def test_vaa_c_single_hero_metric_and_secondary_row():
+    at = _setup_ef_page(method="Maximum Sharpe Ratio", lang="en")
+    exc = at.exception[0] if at.exception else None
+    check("VAA-C.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    result = at.session_state["opt_result"]
+    exp_ret_pct = f"{result['expected_return']:.2%}"
+
+    # Matches the rendered opening tag specifically (not a bare substring --
+    # assets/style.css's own CSS rule for this class would otherwise also
+    # match, since load_css() injects the whole stylesheet as one markdown
+    # block).
+    hero_metric_blocks = [m for m in at.markdown if '<div class="results-hero-metric-value"' in m.value]
+    check("VAA-C.exactly_one_hero_metric_block", len(hero_metric_blocks) == 1, len(hero_metric_blocks))
+    if hero_metric_blocks:
+        check("VAA-C.hero_metric_shows_expected_return", exp_ret_pct in hero_metric_blocks[0].value,
+              hero_metric_blocks[0].value)
+
+    # kpi_card()'s template (src/ui.py, reused by metric_card_html()) always
+    # emits the literal class name "kpi-card". The default "Overview"
+    # workspace ALSO renders 5 Portfolio Diagnosis kpi-cards, so this counts
+    # occurrences of each METRIC LABEL among kpi-card blocks specifically,
+    # rather than asserting a page-wide total (which Overview's diagnosis
+    # section would otherwise inflate).
+    kpi_card_blocks = [m.value for m in at.markdown if 'class="kpi-card"' in m.value]
+    for metric_label in ("Expected Volatility", "Sharpe Ratio", "Diversification Ratio"):
+        matches = [b for b in kpi_card_blocks if metric_label in b]
+        check(f"VAA-C.secondary_metric_present_once:{metric_label}", len(matches) == 1, len(matches))
+    # Expected Return and Method must NOT appear as their own kpi-card
+    # (Issue #24 visual-acceptance round item B1: Return is the hero metric
+    # above, not a 4th equal-weight card; Method isn't repeated at all).
+    return_cards = [b for b in kpi_card_blocks if "Expected Annual Return" in b]
+    method_cards = [b for b in kpi_card_blocks if b.strip().startswith('<div class="kpi-card">') and ">Method<" in b]
+    check("VAA-C.no_expected_return_kpi_card", len(return_cards) == 0, len(return_cards))
+    check("VAA-C.no_method_kpi_card", len(method_cards) == 0, len(method_cards))
+
+
+# ── VAA-D: Save & Actions -- exactly one dominant primary CTA ("Simulate
+# this portfolio"), the other two next-step actions are secondary/outline ──
+def test_vaa_d_cta_hierarchy_simulate_is_sole_primary():
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Save & Actions")
+    exc = at.exception[0] if at.exception else None
+    check("VAA-D.no_exception", exc is None, str(exc))
+    if exc:
+        return
+    sim_btn = next((b for b in at.button if b.key == "opt_next_run_sim"), None)
+    risk_btn = next((b for b in at.button if b.key == "opt_next_analyze_risk"), None)
+    save_btn = next((b for b in at.button if b.key == "opt_next_quick_save"), None)
+    check("VAA-D.all_three_buttons_found", all([sim_btn, risk_btn, save_btn]),
+          (sim_btn, risk_btn, save_btn))
+    if not all([sim_btn, risk_btn, save_btn]):
+        return
+    check("VAA-D.simulate_is_primary", sim_btn.proto.type == "primary", sim_btn.proto.type)
+    check("VAA-D.analyze_risk_is_secondary", risk_btn.proto.type == "secondary", risk_btn.proto.type)
+    check("VAA-D.save_portfolio_is_secondary", save_btn.proto.type == "secondary", save_btn.proto.type)
+    check("VAA-D.simulate_label_matches_spec", sim_btn.label == "Simulate this portfolio", sim_btn.label)
 
 
 # ── PD-G: zh-TW renders the diagnosis section with no raw translation keys ──
@@ -1448,8 +1761,8 @@ def test_ph_g_language_switch_preserves_portfolio():
 # ── PH-H: global market/ETF state unchanged through the handoff ─────────
 def test_ph_h_market_state_unchanged_through_handoff():
     at = _setup_ef_page(method="Minimum Volatility", lang="en")
-    region_w = next((w for w in at.selectbox if w.key == "selected_region"), None)
-    region_w.set_value("Taiwan")
+    region_w = next((w for w in at.multiselect if w.key == "selected_regions"), None)
+    region_w.set_value(["Taiwan"])
     at.run()
     run_btn = _find_run_button(at)
     if run_btn:
@@ -2355,7 +2668,11 @@ def test_twu_regression_multiselect_survives_unrelated_rerun():
 
 # ── Test 17 (cross-page consistency): a Taiwan ETF outside the old
 # hardcoded list is recognized identically in ETF Analysis and Portfolio
-# Optimizer, and remains compatible with the shared global market state ──
+# Optimizer. Portfolio Optimizer's country/ETF picker is intentionally its
+# OWN independent multi-select state (Issue #24 item 1) -- it no longer
+# shares selected_region/selected_etfs_shadow with ETF Analysis, so this
+# confirms the new ticker is recognized there too via its OWN Taiwan
+# selection, not via the (now removed, for this page) state sharing. ────
 def test_twu_cross_page_consistency():
     import streamlit as st
     from streamlit.testing.v1 import AppTest
@@ -2375,29 +2692,22 @@ def test_twu_cross_page_consistency():
     exc = etf_at.exception[0] if etf_at.exception else None
     check("TWU-cross.etf_analysis_accepts_new_ticker", exc is None, str(exc))
 
-    # Different AppTest instances do NOT share session_state (unlike two
-    # pages in the same real browser session via st.switch_page) -- seed
-    # the receiving page's session_state with exactly what the shared
-    # global-market-state mechanism (src/ui.py's region_selector() /
-    # region_etf_multiselect()) would have carried over for real.
-    def sget(a, k):
-        try:
-            return a.session_state[k]
-        except Exception:
-            return None
-
     opt_at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     opt_at.session_state["language"] = "en"
-    opt_at.session_state["selected_region"] = sget(etf_at, "selected_region")
-    opt_at.session_state["_selected_region_shadow"] = sget(etf_at, "_selected_region_shadow")
-    opt_at.session_state["_selected_etfs_shadow"] = sget(etf_at, "_selected_etfs_shadow")
     opt_at.run()
-    region_w2 = next((w for w in opt_at.selectbox if w.key == "selected_region"), None)
-    check("TWU-cross.optimizer_sees_shared_region_taiwan",
-          region_w2 is not None and region_w2.value == "Taiwan", region_w2.value if region_w2 else None)
+    region_w2 = next((w for w in opt_at.multiselect if w.key == "selected_regions"), None)
+    region_w2.set_value(["Taiwan"])
+    opt_at.run()
+    # ms2.options is the FORMATTED "TICKER — Name" display list (per
+    # format_func), not raw tickers -- match on the leading ticker token.
     ms2 = next((w for w in opt_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
-    check("TWU-cross.optimizer_shares_new_ticker_selection",
-          ms2 is not None and new_ticker in ms2.value, ms2.value if ms2 else None)
+    _opt2_by_ticker = {opt.split(" — ")[0]: opt for opt in ms2.options} if ms2 else {}
+    check("TWU-cross.optimizer_offers_new_ticker",
+          new_ticker in _opt2_by_ticker, list(_opt2_by_ticker.keys()))
+    if new_ticker in _opt2_by_ticker:
+        other = next((tk for tk in _opt2_by_ticker if tk != new_ticker), None)
+        ms2.set_value([_opt2_by_ticker[new_ticker]] + ([_opt2_by_ticker[other]] if other else []))
+        opt_at.run()
     exc2 = opt_at.exception[0] if opt_at.exception else None
     check("TWU-cross.optimizer_no_exception", exc2 is None, str(exc2))
 
@@ -3037,17 +3347,13 @@ def test_geu_d_uk_universe_not_old_curated_list():
           len(uk - _OLD_UK_CURATED_TICKERS) >= 10, len(uk - _OLD_UK_CURATED_TICKERS))
 
 
-# ── Test E: a newly-selected (bulk-only) ETF persists across compatible views ──
+# ── Test E: a newly-selected (bulk-only) ETF is offered consistently on
+# both ETF Analysis and Portfolio Optimizer's own (independent, Issue #24
+# item 1) multi-country picker ────────────────────────────────────────────
 def test_geu_e_new_etf_selection_persists_across_views():
     import streamlit as st
     from streamlit.testing.v1 import AppTest
     st.page_link = lambda *a, **k: None
-
-    def sget(state, key, default=None):
-        try:
-            return state[key]
-        except Exception:
-            return default
 
     etf_at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     etf_at.session_state["language"] = "en"
@@ -3065,20 +3371,20 @@ def test_geu_e_new_etf_selection_persists_across_views():
         return
     ms.set_value(["00400A"])
     etf_at.run()
+    exc = etf_at.exception[0] if etf_at.exception else None
+    check("GEU-E.etf_analysis_accepts_bulk_ticker", exc is None, str(exc))
 
-    # A second, independent AppTest instance simulates st.switch_page's
-    # session_state carryover (two separate AppTest instances do NOT share
-    # session_state automatically -- see test_twu_cross_page_consistency's
-    # docstring precedent -- so it's seeded explicitly here).
     opt_at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     opt_at.session_state["language"] = "en"
-    opt_at.session_state["selected_region"] = sget(etf_at.session_state, "selected_region")
-    opt_at.session_state["_selected_region_shadow"] = sget(etf_at.session_state, "_selected_region_shadow")
-    opt_at.session_state["_selected_etfs_shadow"] = sget(etf_at.session_state, "_selected_etfs_shadow")
     opt_at.run()
+    opt_region_w = next((w for w in opt_at.multiselect if w.key == "selected_regions"), None)
+    opt_region_w.set_value(["Taiwan"])
+    opt_at.run()
+    # opt_ms.options is the FORMATTED "TICKER — Name" display list, not raw
+    # tickers -- match on the leading ticker token (see TWU-cross above).
     opt_ms = next((w for w in opt_at.multiselect if w.key and w.key.startswith("selected_etfs_")), None)
-    check("GEU-E.new_ticker_persists_into_optimizer_page",
-          opt_ms is not None and "00400A" in opt_ms.value, opt_ms.value if opt_ms else None)
+    _opt_tickers = [opt.split(" — ")[0] for opt in opt_ms.options] if opt_ms else []
+    check("GEU-E.new_ticker_offered_on_optimizer_page", "00400A" in _opt_tickers, _opt_tickers)
 
 
 # ── Test F: provider (Yahoo) failure never deletes a bulk-imported ETF ──────
@@ -3483,10 +3789,11 @@ def test_owr_a_overview_lazy_rendering():
     # backtest convention regardless of which workspace is active.
     check("OWR-A.no_backtest_card", t("opt_backtest_card") not in all_text and t("opt_backtest_title") not in all_text)
     check("OWR-A.no_allocation_table_card", "Allocation Table" not in all_text)
-    # Strategy Lab / Backtest & Risk's own sub-nav widgets must not even
-    # exist in the tree yet (not just be visually hidden).
-    check("OWR-A.no_stratlab_subnav_widget",
-          next((w for w in at.segmented_control if w.key == "opt_stratlab_view"), None) is None)
+    # Allocation's ("Weights"/"Comparison"/"Frontier") / Backtest & Risk's
+    # own sub-nav widgets must not even exist in the tree yet (not just be
+    # visually hidden).
+    check("OWR-A.no_alloc_subnav_widget",
+          next((w for w in at.segmented_control if w.key == "opt_alloc_view"), None) is None)
     check("OWR-A.no_backtest_subnav_widget",
           next((w for w in at.segmented_control if w.key == "opt_backtest_view"), None) is None)
 
@@ -3510,9 +3817,10 @@ def test_owr_b_allocation_shows_canonical_weights():
         check(f"OWR-B.allocation_table_shows_{tk}", tk in all_text, all_text[:200])
 
 
-# ── Test C: Strategy Comparison works (Strategy Lab, default sub-view) ──────
+# ── Test C: Strategy Comparison works (Allocation -> Comparison sub-view) ───
 def test_owr_c_strategy_comparison_works():
-    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Strategy Lab")
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Allocation",
+                         sub_view="Comparison", sub_key="opt_alloc_view")
     exc = at.exception[0] if at.exception else None
     check("OWR-C.no_exception", exc is None, str(exc))
     if exc:
@@ -3523,10 +3831,10 @@ def test_owr_c_strategy_comparison_works():
           all(name in all_text for name in ("Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility")))
 
 
-# ── Test D: Efficient Frontier works (Strategy Lab -> Frontier sub-view) ────
+# ── Test D: Efficient Frontier works (Allocation -> Frontier sub-view) ──────
 def test_owr_d_efficient_frontier_works():
-    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Strategy Lab",
-                         sub_view="Frontier", sub_key="opt_stratlab_view")
+    at = _setup_ef_page(method="Equal Weight", lang="en", workspace="Allocation",
+                         sub_view="Frontier", sub_key="opt_alloc_view")
     exc = at.exception[0] if at.exception else None
     check("OWR-D.no_exception", exc is None, str(exc))
     if exc:
@@ -3536,10 +3844,12 @@ def test_owr_d_efficient_frontier_works():
     check("OWR-D.how_to_read_panel_present", "How to Read" in all_text or "如何閱讀" in all_text)
 
 
-# ── Test E: switching Strategy Lab's internal sub-view doesn't reset the
-# built portfolio (opt_result stays the SAME strategy/weights) ──────────────
+# ── Test E: switching Allocation's internal Comparison/Frontier sub-view
+# doesn't reset the built portfolio (opt_result stays the SAME
+# strategy/weights) ──────────────────────────────────────────────────────────
 def test_owr_e_stratlab_subview_switch_preserves_portfolio():
-    at = _setup_ef_page(method="Minimum Volatility", lang="en", workspace="Strategy Lab")
+    at = _setup_ef_page(method="Minimum Volatility", lang="en", workspace="Allocation",
+                         sub_view="Comparison", sub_key="opt_alloc_view")
     try:
         weights_before = dict(at.session_state["opt_result"]["weights"])
     except Exception:
@@ -3547,7 +3857,7 @@ def test_owr_e_stratlab_subview_switch_preserves_portfolio():
     check("OWR-E.opt_result_present", weights_before is not None)
     if not weights_before:
         return
-    sub = next(w for w in at.segmented_control if w.key == "opt_stratlab_view")
+    sub = next(w for w in at.segmented_control if w.key == "opt_alloc_view")
     sub.set_value("Frontier")
     at.run()
     exc = at.exception[0] if at.exception else None
@@ -3686,7 +3996,7 @@ def test_owr_l_workspace_switch_preserves_sidebar_inputs():
         return
     amt_w.set_value(54321.0)
     at.run()
-    for ws in ("Allocation", "Strategy Lab", "Backtest & Risk", "Save & Actions", "Overview"):
+    for ws in ("Allocation", "Backtest & Risk", "Save & Actions", "Overview"):
         exc = None
         try:
             _opt_switch_workspace(at, ws)
@@ -3741,8 +4051,8 @@ def test_owr_n_i18n_all_workspaces():
         if exc:
             continue
         targets = [
-            ("Allocation", None, None), ("Strategy Lab", "Comparison", "opt_stratlab_view"),
-            ("Strategy Lab", "Frontier", "opt_stratlab_view"), ("Backtest & Risk", "Historical", "opt_backtest_view"),
+            ("Allocation", "Weights", "opt_alloc_view"), ("Allocation", "Comparison", "opt_alloc_view"),
+            ("Allocation", "Frontier", "opt_alloc_view"), ("Backtest & Risk", "Historical", "opt_backtest_view"),
             ("Backtest & Risk", "Drawdown", "opt_backtest_view"), ("Backtest & Risk", "Diagnosis", "opt_backtest_view"),
             ("Save & Actions", None, None), ("Overview", None, None),
         ]
@@ -3823,6 +4133,13 @@ def main():
     _run(test_pd_d_effective_holdings_formula)
     _run(test_pd_e_no_side_effects_on_rerender)
     _run(test_pd_f_switch_strategy_updates_diagnosis)
+    _run(test_run_a_no_download_before_explicit_build_click)
+    _run(test_run_b_risk_free_rate_change_triggers_stale_warning_not_autorun)
+
+    _run(test_vaa_a_exactly_four_top_level_workspaces)
+    _run(test_vaa_b_methodology_expander_collapsed_settings_panel_state)
+    _run(test_vaa_c_single_hero_metric_and_secondary_row)
+    _run(test_vaa_d_cta_hierarchy_simulate_is_sole_primary)
     _run(test_pd_g_zh_no_raw_keys)
     _run(test_pd_h_en_no_raw_keys)
     _run(test_pd_i_tooltips_present)

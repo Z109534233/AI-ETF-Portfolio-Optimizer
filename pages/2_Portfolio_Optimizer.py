@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.data_loader import download_etf_data, DEFAULT_ETFS
 from src.data_cleaner import clean_price_data, get_common_date_range
-from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns, get_etf
+from src.etf_database import to_yahoo_symbol, rename_yahoo_columns, get_etf
 from src.fx import convert_prices_to_base_currency
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
@@ -58,8 +58,9 @@ from src.utils import (
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
-    region_selector, region_etf_options, region_etf_multiselect,
+    region_multiselect, region_etf_options_multi, multi_region_etf_multiselect,
     kpi_card, chart_caption, ai_interpret_button,
+    setup_summary_bar, results_hero, results_hero_metric,
 )
 from src.theme import COLORS
 from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
@@ -104,22 +105,39 @@ def _shadow_default(name: str, default):
 
 with st.sidebar:
     render_sidebar_nav()
+    render_sidebar_footer()
 
-    # ── Build Your Portfolio ─────────────────────────────────────────────
+# ── Build Your Portfolio (Issue #24 visual-acceptance round item B5) ────────
+# Moved OUT of the persistent navigation sidebar (which now holds only
+# language/nav/footer, above) into a secondary configuration surface on the
+# main page -- the sidebar is no longer a mix of "global app navigation" and
+# "this one page's long input form". Expanded by default on a fresh session
+# (nothing built yet, so the user needs the form immediately visible) and
+# collapsed by default once a portfolio already exists (the compact setup
+# line + results below take over instead). Note: st.expander's `expanded=`
+# is only a per-render default, not a persisted widget value (confirmed:
+# st.expander does not populate st.session_state even when given a `key`),
+# so a user who manually re-opens this panel after a build may see it
+# snap back to this computed default on an unrelated rerun -- a known,
+# accepted Streamlit limitation, not a bug in this page's own state logic.
+with st.expander(t("opt_edit_settings_title"), expanded=(st.session_state.get("opt_result") is None)):
     st.markdown(f"### {t('opt_build_portfolio_title')}")
 
-    # 1. Market -- shared global state (src/ui.py), same canonical
-    # st.session_state["selected_region"] used by ETF Analysis, Risk
-    # Analytics, Machine Learning, and AI Advisor. Picking a market here
-    # updates those pages too, and vice versa.
-    selected_region, ALL_REGIONS_LABEL = region_selector()
-    etf_options = region_etf_options(selected_region, ALL_REGIONS_LABEL)
+    # 1. Countries -- Portfolio Optimizer's OWN true multi-select (Issue
+    # #24 item 1), independent of the single-select "selected_region"
+    # global state shared by ETF Analysis / Risk Analytics / Machine
+    # Learning / AI Advisor. The user picks exactly the 1-3 markets they
+    # want (e.g. Taiwan + United States) -- there is no "All Regions"
+    # shortcut here.
+    selected_regions = region_multiselect()
+    etf_options = region_etf_options_multi(selected_regions)
 
-    # 2. ETF Selection -- shared global state, same as above. Invalid
-    # tickers from a since-changed market are dropped automatically since
-    # region_etf_multiselect() filters against the current `etf_options`.
-    selected_etfs = region_etf_multiselect(
-        selected_region, etf_options, t("field_select_etfs"),
+    # 2. ETF Selection -- the union of ETFs from ONLY the selected
+    # countries. Removing a country automatically prunes any ETF that
+    # belonged exclusively to it (see multi_region_etf_multiselect()'s
+    # docstring) while keeping every other already-selected ETF intact.
+    selected_etfs = multi_region_etf_multiselect(
+        selected_regions, etf_options, t("field_select_etfs"),
         help_text=t("opt_select_etfs_help"), n_default=5,
     )
     with st.expander(t("field_add_custom_etf"), expanded=False):
@@ -282,9 +300,11 @@ with st.sidebar:
     run_btn = st.button(t("btn_run_optimization"), type="primary", use_container_width=True,
                         key="opt_run_optimization_btn")
 
-    render_sidebar_footer()
-
 # ── Validation ────────────────────────────────────────────────────────────────
+if len(selected_regions) < 1:
+    st.warning(t("msg_select_one_country"))
+    st.stop()
+
 if len(selected_etfs) < 2:
     st.warning(t("msg_select_two_etfs"))
     st.stop()
@@ -293,46 +313,37 @@ if start_date >= end_date:
     st.error(t("msg_start_before_end"))
     st.stop()
 
-# ── Compact Page Header: Portfolio Setup Summary ────────────────────────────
-# Compact confirmation of "what portfolio am I currently building", shown
-# before any optimization results -- not a results section, just an echo of
-# the current inputs above. NOT a large hero section (PRODUCT SPEC section 2).
-_market_display = t_country(selected_region) if selected_region != ALL_REGIONS_LABEL else selected_region
-_setup_rows = [
-    (t("opt_setup_label_market"), _market_display),
-    (t("opt_setup_label_etfs"), " · ".join(selected_etfs)),
-    (t("opt_investment_goal_label"), _goal_labels.get(investment_goal, investment_goal)),
-    (t("opt_risk_tolerance_label"), _risk_labels.get(risk_tolerance, risk_tolerance)),
-    (t("opt_investment_horizon_label"), _horizon_labels.get(investment_horizon, investment_horizon)),
-    (t("opt_setup_label_amount"), f"${investment_amount:,.0f}"),
-    (t("opt_base_currency_label"), base_currency),
-    (t("opt_setup_label_strategy"), _opt_method_labels.get(optimization_method, optimization_method)),
-]
-st.markdown(
-    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);'
-    'padding:12px 16px;margin:6px 0 16px 0;box-shadow:var(--shadow-sm);">'
-    f'<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">{t("opt_setup_summary_title")}</div>'
-    '<div style="display:flex;flex-wrap:wrap;gap:20px;">'
-    + "".join(
-        '<div><div style="color:var(--text-muted);font-size:10px;margin-bottom:2px;">'
-        f'{label}</div><div style="color:var(--text);font-weight:700;font-size:13px;">{value}</div></div>'
-        for label, value in _setup_rows
-    )
-    + '</div></div>',
-    unsafe_allow_html=True,
-)
+# ── Compact "Current Setup" Summary (Issue #24 item 2) ──────────────────────
+# Replaces the old wide, equally-weighted horizontal strip (every setting
+# shown at the same visual weight as the eventual results) with a single
+# muted line -- setup stays visually secondary; results_hero() further down
+# is where the eye is meant to land once a portfolio has been built.
+_market_word = t("opt_setup_unit_market") if len(selected_regions) == 1 else t("opt_setup_unit_markets")
+_etf_word = t("opt_setup_unit_etf") if len(selected_etfs) == 1 else t("opt_setup_unit_etfs")
+setup_summary_bar([
+    f"{len(selected_regions)} {_market_word}",
+    f"{len(selected_etfs)} {_etf_word}",
+    base_currency,
+    _opt_method_labels.get(optimization_method, optimization_method),
+])
 
 # ── State Management ──────────────────────────────────────────────────────────
 # `run_inputs` fingerprints everything the optimization result depends on.
-# Without this, changing the ETF selection, date range, or optimization
-# method WITHOUT re-clicking "Run Optimization" would silently keep
-# showing stale results computed from a previous, different selection.
-# UNCHANGED this round (PRODUCT SPEC section 14: the Build button remains
-# the explicit trigger; workspace navigation never re-runs this).
+# It is used AFTER a result exists, to detect that the sidebar has since
+# diverged from whatever produced it (Issue #24 item 5: the "Build Optimized
+# Portfolio" button is the ONE explicit trigger, on every render -- including
+# the very first one in a fresh session. A fresh session's opt_result is
+# None, but that alone must never kick off a download/FX/optimization pass;
+# only `run_btn` (checked just below) does. Changing the country/ETF
+# selection, date range, or optimization method after a build must
+# invalidate the stale result with a visible warning, never silently kick
+# off a fresh optimization on its own). Mirrors the same fingerprint-then-
+# compare pattern already used by Investment Simulator's Historical
+# Simulation (`_hist_fingerprint` / `sim_hist_inputs_changed_rerun`).
 run_inputs = (
-    tuple(sorted(selected_etfs)), str(start_date), str(end_date),
+    tuple(sorted(selected_etfs)), tuple(sorted(selected_regions)), str(start_date), str(end_date),
     optimization_method, round(min_weight, 6), round(max_weight, 6),
-    allow_short, target_return_pct, base_currency,
+    allow_short, target_return_pct, base_currency, round(risk_free_rate, 6),
 )
 
 if "opt_result" not in st.session_state:
@@ -342,9 +353,7 @@ if "prices_df" not in st.session_state:
 if "opt_run_inputs" not in st.session_state:
     st.session_state.opt_run_inputs = None
 
-inputs_changed = run_inputs != st.session_state.opt_run_inputs
-
-if run_btn or inputs_changed or st.session_state.opt_result is None:
+if run_btn:
     with st.spinner(t("msg_running_optimization")):
         # Map display tickers to their actual Yahoo Finance-fetchable symbols
         # (e.g. "0050" -> "0050.TW"); tickers not in the ETF database pass
@@ -501,12 +510,24 @@ if run_btn or inputs_changed or st.session_state.opt_result is None:
         # underlying portfolio genuinely does.
         st.session_state.opt_portfolio_id = uuid.uuid4().hex[:12]
         st.session_state.opt_generated_at = datetime.now(timezone.utc).isoformat()
+        # A fresh successful build means opt_result is now set, so the
+        # settings panel's `expanded=(opt_result is None)` default above
+        # will collapse it on the next render -- nothing further to do here.
 
 result = st.session_state.opt_result
 prices_df = st.session_state.prices_df
 
 if result is None or prices_df is None or prices_df.empty:
     st.info(t("msg_configure_and_run", action=t("btn_run_optimization")))
+    st.stop()
+
+# Stale-result guard (Issue #24 item 5): the sidebar has changed since this
+# result was computed. Never silently recompute here -- only the "Build
+# Optimized Portfolio" button (checked above) is allowed to trigger a new
+# optimization -- so this warns and stops instead of rendering a result
+# that no longer matches the currently-selected inputs.
+if st.session_state.opt_run_inputs != run_inputs:
+    st.warning(t("opt_inputs_changed_rerun", action=t("btn_run_optimization")))
     st.stop()
 
 weights = result["weights"]
@@ -537,7 +558,14 @@ _cp_max_drawdown = maximum_drawdown(backtest_df["Portfolio Value"]) if not backt
 st.session_state.current_portfolio = {
     "portfolio_id": st.session_state.get("opt_portfolio_id"),
     "strategy": optimization_method,
-    "market": selected_region,
+    # "market": kept as a single string for backward compatibility with
+    # every existing consumer of saved portfolio/history metadata (AI
+    # Advisor caching, Investment Simulator, Portfolio History display,
+    # tests) -- a "+"-joined display string for a multi-country portfolio.
+    # "markets" (Issue #24 item 1) is the new canonical list, always safe
+    # to use for anything that needs the real selected-country set.
+    "market": " + ".join(selected_regions),
+    "markets": list(selected_regions),
     "tickers": list(weights.keys()),
     "weights": dict(weights),
     "investment_amount": investment_amount,
@@ -569,7 +597,8 @@ _experiment_metadata = {
     "schema_version": 1,
     "historical_start_date": str(start_date),
     "historical_end_date": str(end_date),
-    "market": selected_region,
+    "market": " + ".join(selected_regions),
+    "markets": list(selected_regions),
     "base_currency": base_currency,
     "currency_adjusted": bool(st.session_state.get("opt_fx_result") and st.session_state["opt_fx_result"]["currency_adjusted"]),
     "risk_free_rate": risk_free_rate,
@@ -585,19 +614,39 @@ _experiment_metadata = {
     "app_version": APP_VERSION,
 }
 
-# ── Core Result KPI Row (always visible, near the top -- PRODUCT SPEC
-# section 3) ─────────────────────────────────────────────────────────────────
-kcol1, kcol2, kcol3, kcol4, kcol5 = st.columns(5)
-with kcol1:
-    st.markdown(metric_card_html(t("metric_expected_annual_return"), f"{exp_ret:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
-with kcol2:
+# ── Results Hero (Issue #24 item 3, sharpened in the visual-acceptance
+# round item B1) ─────────────────────────────────────────────────────────────
+# The FIRST thing visible after a successful build -- a strong, elevated,
+# colored header whose subtitle is a compact, dynamically-built one-liner
+# of exactly what was built (tickers · markets · horizon · amount), so a
+# first-time user can immediately tell "this is the answer" AND what it's
+# an answer to, without re-reading the (now collapsed) settings panel above.
+_hero_tickers_line = " · ".join(list(weights.keys()))
+_hero_regions_line = ", ".join(t_country(r) for r in selected_regions)
+_hero_horizon_line = _horizon_labels.get(investment_horizon, investment_horizon)
+_hero_amount_line = f"${investment_amount:,.0f} {base_currency}"
+results_hero(
+    t("opt_results_hero_title"),
+    f"{_hero_tickers_line} · {_hero_regions_line} · {_hero_horizon_line} · {_hero_amount_line}",
+)
+
+# ── ONE hero metric + a smaller secondary row (Issue #24 visual-acceptance
+# round item B1) ─────────────────────────────────────────────────────────────
+# Expected Return is THE single visual protagonist of the results area --
+# large, isolated typography, nothing else competing with it. Volatility /
+# Sharpe / Diversification Ratio are real, decision-useful numbers too, but
+# deliberately smaller and grouped in one plain row below -- never a 4th/5th
+# equal-weight KPI card. "Method" isn't repeated here at all: it's already
+# visible in the compact setup line above and the one-liner just above this.
+results_hero_metric(t("metric_expected_annual_return"), f"{exp_ret:.2%}", color=COLORS["success"])
+scol1, scol2, scol3 = st.columns(3)
+with scol1:
     st.markdown(metric_card_html(t("metric_expected_volatility"), f"{exp_vol:.2%}", color=COLORS["danger"]), unsafe_allow_html=True)
-with kcol3:
+with scol2:
     st.markdown(metric_card_html(t("metric_sharpe_ratio"), f"{sharpe:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
-with kcol4:
+with scol3:
     st.markdown(metric_card_html(t("metric_diversification_ratio"), f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
-with kcol5:
-    st.markdown(metric_card_html(t("metric_method"), t_opt_method(optimization_method), color=COLORS["warning"]), unsafe_allow_html=True)
+chart_caption(t("opt_kpi_row_caption"))
 
 # ── Methodology & Assumptions (M1) ──────────────────────────────────────────
 # Compact, always-visible (independent of which workspace is open) disclosure
@@ -764,11 +813,17 @@ def _render_holdings_overlap_check(active_tickers: list) -> None:
 # ETF Universe round) to corrupt AppTest's widget-state reconciliation
 # between reruns, so every segmented_control on this page follows this
 # precomputed-dict pattern.
-_OPT_WORKSPACES = ["Overview", "Allocation", "Strategy Lab", "Backtest & Risk", "Save & Actions"]
+# Reduced from 5 to 4 top-level workspaces (Issue #24 visual-acceptance
+# round item B3): "Strategy Lab" is no longer a top-level tab -- its two
+# views (Strategy Comparison / Efficient Frontier) now live INSIDE the
+# Allocation workspace as a secondary sub-nav, alongside the allocation
+# table/donut as a third "Weights" sub-view (see the Allocation branch
+# below), since all three are fundamentally about "what should the
+# portfolio's weights be", not a separate top-level concern.
+_OPT_WORKSPACES = ["Overview", "Allocation", "Backtest & Risk", "Save & Actions"]
 _opt_ws_labels = {
     "Overview": t("opt_ws_overview"), "Allocation": t("opt_ws_allocation"),
-    "Strategy Lab": t("opt_ws_strategy_lab"), "Backtest & Risk": t("opt_ws_backtest_risk"),
-    "Save & Actions": t("opt_ws_save_actions"),
+    "Backtest & Risk": t("opt_ws_backtest_risk"), "Save & Actions": t("opt_ws_save_actions"),
 }
 # Shadow-state protected (same _shadow_default() pattern as every other
 # sidebar control on this page): without it, a language switch that also
@@ -816,215 +871,245 @@ if opt_workspace == "Overview":
     st.caption(t("opt_overview_allocation_preview_note"))
 
 # ══════════════════════════════════════════════════════════════════════════
-# ALLOCATION -- full allocation table + breakdown
+# ALLOCATION -- Weights (table + breakdown) / Compare Strategies / Efficient
+# Frontier, as three sub-views of ONE top-level workspace (Issue #24
+# visual-acceptance round item B3: "Strategy Lab" is no longer its own
+# top-level tab -- folded in here since all three are fundamentally about
+# "what should the portfolio's weights be").
 # ══════════════════════════════════════════════════════════════════════════
 elif opt_workspace == "Allocation":
-    section_header(t("opt_allocation_title"))
-    col_left, col_right = st.columns([1, 1])
-
-    with col_left:
-        with chart_card(t("opt_allocation_table_card"), t("opt_allocation_table_holdings", count=len(weights))):
-            alloc_df = weights_to_dataframe(weights, investment_amount)
-            st.dataframe(alloc_df[["Ticker", "Weight", "Allocation ($)"]].style.hide(axis="index"),
-                         use_container_width=True)
-
-    with col_right:
-        with chart_card(t("opt_allocation_breakdown_card"), t_opt_method(optimization_method)):
-            fig_donut = allocation_donut_chart(weights, "")
-            st.plotly_chart(fig_donut, use_container_width=True, key="opt_allocation_donut")
-            chart_caption(t("opt_allocation_donut_caption"))
-            _alloc_context_text = "; ".join(f"{tk}: {w:.2%}" for tk, w in sorted(weights.items(), key=lambda kv: kv[1], reverse=True))
-            ai_interpret_button("opt_allocation_ai_interpret", st.session_state, _alloc_context_text)
-
-# ══════════════════════════════════════════════════════════════════════════
-# STRATEGY LAB -- Strategy Comparison / Efficient Frontier
-# ══════════════════════════════════════════════════════════════════════════
-elif opt_workspace == "Strategy Lab":
-    _STRATLAB_VIEWS = ["Comparison", "Frontier"]
-    _stratlab_labels = {"Comparison": t("opt_stratlab_nav_comparison"), "Frontier": t("opt_stratlab_nav_frontier")}
-    _slk, _slv = _shadow_default("opt_stratlab_view", "Comparison")
-    stratlab_view = st.segmented_control(
-        "stratlab_nav", _STRATLAB_VIEWS, default=_slv if _slv in _STRATLAB_VIEWS else "Comparison",
-        format_func=lambda w: _stratlab_labels.get(w, w), key="opt_stratlab_view", label_visibility="collapsed",
-    ) or "Comparison"
-    st.session_state[_slk] = stratlab_view
-
-    # Strategy Comparison's 3 extra optimizer solves + 3 extra backtests
-    # (Round 2B-1) are computed ONLY when Strategy Lab is the active
-    # workspace -- Overview/Allocation/Backtest & Risk/Save & Actions never
-    # trigger this. Shared by BOTH Strategy Lab sub-views (the Frontier
-    # view needs these same results for its strategy markers), so it's
-    # computed once here rather than duplicated per sub-view.
-    #
-    # Informational decision-support only -- this section NEVER writes to
-    # st.session_state.opt_result / opt_run_inputs / prices_df, so it
-    # cannot alter the user's actual selected strategy. Reuses the SAME
-    # run_optimization() already verified in Round 2A (no duplicated
-    # optimization math) on the SAME already-loaded `prices_df` (no
-    # re-download, no extra network requests).
-    _COMPARISON_METHODS = ["Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility"]
-    _CONCENTRATION_THRESHOLD = 0.50
-    _CARD_DESC_KEYS = {
-        "Equal Weight": "opt_card_desc_equal_weight",
-        "Maximum Sharpe Ratio": "opt_card_desc_max_sharpe",
-        "Minimum Volatility": "opt_card_desc_min_vol",
+    _ALLOC_VIEWS = ["Weights", "Comparison", "Frontier"]
+    _alloc_labels = {
+        "Weights": t("opt_stratlab_nav_weights"), "Comparison": t("opt_stratlab_nav_comparison"),
+        "Frontier": t("opt_stratlab_nav_frontier"),
     }
-    _comparison_results = {}
-    for _cm in _COMPARISON_METHODS:
-        _cr = run_optimization(
-            prices_df=prices_df, method=_cm, risk_free_rate=risk_free_rate,
-            min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
-        )
-        _cw = _cr["weights"]
-        _largest_ticker = max(_cw, key=_cw.get) if _cw else None
-        _largest_weight = _cw.get(_largest_ticker, 0.0) if _largest_ticker else 0.0
-        _cbt = backtest_portfolio(prices_df, _cw, investment_amount)
-        _cmdd = maximum_drawdown(_cbt["Portfolio Value"]) if not _cbt.empty else None
-        _comparison_results[_cm] = {
-            "weights": _cw, "expected_return": _cr["expected_return"],
-            "expected_volatility": _cr["expected_volatility"], "sharpe_ratio": _cr["sharpe_ratio"],
-            "largest_ticker": _largest_ticker, "largest_weight": _largest_weight, "max_drawdown": _cmdd,
+    _avk, _avv = _shadow_default("opt_alloc_view", "Weights")
+    alloc_view = st.segmented_control(
+        "alloc_nav", _ALLOC_VIEWS, default=_avv if _avv in _ALLOC_VIEWS else "Weights",
+        format_func=lambda w: _alloc_labels.get(w, w), key="opt_alloc_view", label_visibility="collapsed",
+    ) or "Weights"
+    st.session_state[_avk] = alloc_view
+
+    if alloc_view == "Weights":
+        section_header(t("opt_allocation_title"))
+        col_left, col_right = st.columns([1, 1])
+
+        with col_left:
+            with chart_card(t("opt_allocation_table_card"), t("opt_allocation_table_holdings", count=len(weights))):
+                alloc_df = weights_to_dataframe(weights, investment_amount)
+                st.dataframe(alloc_df[["Ticker", "Weight", "Allocation ($)"]].style.hide(axis="index"),
+                             use_container_width=True)
+                chart_caption(t("opt_allocation_table_caption"))
+
+        with col_right:
+            with chart_card(t("opt_allocation_breakdown_card"), t_opt_method(optimization_method)):
+                fig_donut = allocation_donut_chart(weights, "")
+                st.plotly_chart(fig_donut, use_container_width=True, key="opt_allocation_donut")
+                chart_caption(t("opt_allocation_donut_caption"))
+                _alloc_context_text = "; ".join(f"{tk}: {w:.2%}" for tk, w in sorted(weights.items(), key=lambda kv: kv[1], reverse=True))
+                ai_interpret_button("opt_allocation_ai_interpret", st.session_state, _alloc_context_text)
+
+    else:
+        # Strategy Comparison's 3 extra optimizer solves + 3 extra backtests
+        # (Round 2B-1) are computed ONLY when the Comparison/Frontier
+        # sub-view is active -- Weights (and every other top-level
+        # workspace) never triggers this. Shared by BOTH sub-views (the
+        # Frontier view needs these same results for its strategy markers),
+        # so it's computed once here rather than duplicated per sub-view.
+        #
+        # Informational decision-support only -- this section NEVER writes to
+        # st.session_state.opt_result / opt_run_inputs / prices_df, so it
+        # cannot alter the user's actual selected strategy. Reuses the SAME
+        # run_optimization() already verified in Round 2A (no duplicated
+        # optimization math) on the SAME already-loaded `prices_df` (no
+        # re-download, no extra network requests).
+        _COMPARISON_METHODS = ["Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility"]
+        _CONCENTRATION_THRESHOLD = 0.50
+        _CARD_DESC_KEYS = {
+            "Equal Weight": "opt_card_desc_equal_weight",
+            "Maximum Sharpe Ratio": "opt_card_desc_max_sharpe",
+            "Minimum Volatility": "opt_card_desc_min_vol",
         }
-    # Winners are derived from the ACTUAL calculated values above -- never
-    # assumed or hard-coded.
-    _best_sharpe_method = max(_comparison_results, key=lambda m: _comparison_results[m]["sharpe_ratio"])
-    _lowest_vol_method = min(_comparison_results, key=lambda m: _comparison_results[m]["expected_volatility"])
-
-    if stratlab_view == "Comparison":
-        section_header(t("opt_strategy_comparison_title"), t("opt_strategy_comparison_subtitle"))
-
-        _comp_cols = st.columns(3)
-        for _idx, _cm in enumerate(_COMPARISON_METHODS):
-            _cdata = _comparison_results[_cm]
-            _is_current = (_cm == optimization_method)
-            _badges = []
-            if _cm == _best_sharpe_method:
-                _badges.append(t("opt_badge_best_sharpe"))
-            if _cm == _lowest_vol_method:
-                _badges.append(t("opt_badge_lowest_risk"))
-            if _cm == "Equal Weight":
-                _badges.append(t("opt_badge_balanced"))
-            if _cdata["largest_weight"] > _CONCENTRATION_THRESHOLD:
-                _badges.append(t("opt_badge_higher_concentration"))
-            _badge_html = "".join(
-                '<span style="display:inline-block;background:var(--surface-2);color:var(--text-secondary);'
-                f'font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;margin:2px 4px 0 0;">{b}</span>'
-                for b in _badges
-            )
-            _border = "border:1.5px solid var(--primary);" if _is_current else "border:1px solid var(--border);"
-            _current_tag = (
-                '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;'
-                f'letter-spacing:0.05em;margin-bottom:4px;">{t("opt_current_strategy_label")}</div>'
-            ) if _is_current else ""
-
-            with _comp_cols[_idx]:
-                st.markdown(
-                    f'<div style="background:var(--surface);{_border}border-radius:var(--radius-lg);'
-                    'padding:14px 16px;margin:4px 0;min-height:196px;">'
-                    f'{_current_tag}'
-                    f'<div style="color:var(--text);font-weight:800;font-size:14px;margin-bottom:6px;">{_opt_method_labels[_cm]}</div>'
-                    f'<div style="color:var(--text-secondary);font-size:11.5px;line-height:1.5;margin-bottom:8px;">{t(_CARD_DESC_KEYS[_cm])}</div>'
-                    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:3px;">'
-                    f'<span>{t("metric_expected_annual_return")}</span><span style="color:var(--text);font-weight:700;">{_cdata["expected_return"]:.2%}</span></div>'
-                    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:3px;">'
-                    f'<span>{t("metric_sharpe_ratio")}</span><span style="color:var(--text);font-weight:700;">{_cdata["sharpe_ratio"]:.2f}</span></div>'
-                    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">'
-                    f'<span>{t("opt_col_largest_position")}</span><span style="color:var(--text);font-weight:700;">{_cdata["largest_ticker"]} {_cdata["largest_weight"]:.2%}</span></div>'
-                    f'<div>{_badge_html}</div></div>',
-                    unsafe_allow_html=True,
-                )
-
-        with chart_card(t("opt_comparison_table_card")):
-            _table_rows = []
-            for _cm in _COMPARISON_METHODS:
-                _cdata = _comparison_results[_cm]
-                _strategy_display = _opt_method_labels[_cm] + (" ★" if _cm == optimization_method else "")
-                _row = {
-                    t("opt_col_strategy"): _strategy_display,
-                    t("metric_expected_annual_return"): f"{_cdata['expected_return']:.2%}",
-                    t("metric_expected_volatility"): f"{_cdata['expected_volatility']:.2%}",
-                    t("metric_sharpe_ratio"): f"{_cdata['sharpe_ratio']:.2f}",
-                    t("opt_col_largest_position"): f"{_cdata['largest_ticker']} {_cdata['largest_weight']:.2%}",
-                }
-                if _cdata["max_drawdown"] is not None:
-                    _row[t("metric_maximum_drawdown")] = f"{_cdata['max_drawdown']:.2%}"
-                _table_rows.append(_row)
-            _comparison_df = pd.DataFrame(_table_rows)
-            st.dataframe(_comparison_df.style.hide(axis="index"), use_container_width=True)
-            st.caption(f"★ {t('opt_current_strategy_label')}: {t_opt_method(optimization_method)}")
-
-    else:  # Frontier
-        section_header(t("opt_efficient_frontier_title"), t("opt_efficient_frontier_sub", count=f"{n_simulations:,}"))
-        n_tickers = len(prices_df.columns)
-
-        with st.spinner(t("msg_running_optimization")):
-            returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
-            mean_returns = returns_df.mean().values
-            cov_df = covariance_matrix(prices_df)
-            cov = cov_df.values.copy()
-
-            if cov.shape != (n_tickers, n_tickers):
-                error_state(
-                    t("msg_no_price_data_title"),
-                    f"Internal error: covariance matrix shape {cov.shape} does not "
-                    f"match {n_tickers} selected ETFs. Please re-run the optimization."
-                )
-                st.stop()
-
-            if not np.isfinite(cov).all():
-                diag_nan = ~np.isfinite(np.diag(cov))
-                if diag_nan.any():
-                    bad_tickers = [prices_df.columns[i] for i in range(n_tickers) if diag_nan[i]]
-                    error_state(
-                        t("msg_no_price_data_title"),
-                        f"No valid price data for: {', '.join(bad_tickers)}. "
-                        "Remove these tickers or widen the date range, then re-run "
-                        "the optimization."
-                    )
-                else:
-                    error_state(
-                        t("msg_no_price_data_title"),
-                        "Some selected ETFs have no overlapping trading dates with "
-                        "each other. Widen the date range or choose ETFs with more "
-                        "shared trading history."
-                    )
-                st.stop()
-
-            cov += np.eye(n_tickers) * 1e-8
-            mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
-
-            # ~40 points, within the 30-60 range called for, kept cheap
-            # since each point is one small SLSQP solve on already-loaded
-            # data (no re-download) -- but still only computed when this
-            # specific sub-view is active (PRODUCT SPEC section 15).
-            _EF_FRONTIER_POINTS = 40
-            frontier_df = compute_efficient_frontier(
-                mean_returns, cov, n_points=_EF_FRONTIER_POINTS,
+        _comparison_results = {}
+        for _cm in _COMPARISON_METHODS:
+            _cr = run_optimization(
+                prices_df=prices_df, method=_cm, risk_free_rate=risk_free_rate,
                 min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
             )
+            _cw = _cr["weights"]
+            _largest_ticker = max(_cw, key=_cw.get) if _cw else None
+            _largest_weight = _cw.get(_largest_ticker, 0.0) if _largest_ticker else 0.0
+            _cbt = backtest_portfolio(prices_df, _cw, investment_amount)
+            _cmdd = maximum_drawdown(_cbt["Portfolio Value"]) if not _cbt.empty else None
+            _comparison_results[_cm] = {
+                "weights": _cw, "expected_return": _cr["expected_return"],
+                "expected_volatility": _cr["expected_volatility"], "sharpe_ratio": _cr["sharpe_ratio"],
+                "largest_ticker": _largest_ticker, "largest_weight": _largest_weight, "max_drawdown": _cmdd,
+            }
+        # Winners are derived from the ACTUAL calculated values above -- never
+        # assumed or hard-coded.
+        _best_sharpe_method = max(_comparison_results, key=lambda m: _comparison_results[m]["sharpe_ratio"])
+        _lowest_vol_method = min(_comparison_results, key=lambda m: _comparison_results[m]["expected_volatility"])
 
-        with chart_card(t("opt_efficient_frontier_card")):
-            fig_ef = efficient_frontier_chart(
-                mc_df=mc_df, frontier_df=frontier_df, strategy_results=_comparison_results,
-                strategy_labels=_opt_method_labels, current_method=optimization_method,
-            )
-            st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
-            if frontier_df is None or len(frontier_df) < 2:
-                st.info(t("opt_frontier_insufficient_points"))
+        if alloc_view == "Comparison":
+            section_header(t("opt_strategy_comparison_title"), t("opt_strategy_comparison_subtitle"))
 
-        with chart_card(t("opt_how_to_read_title")):
-            st.markdown(
-                '<div style="display:flex;flex-wrap:wrap;gap:6px 28px;font-size:12px;'
-                'color:var(--text-secondary);margin-bottom:6px;">'
-                f'<div><b style="color:var(--text);">{t("opt_how_to_read_left_label")}</b> — {t("opt_how_to_read_left_desc")}</div>'
-                f'<div><b style="color:var(--text);">{t("opt_how_to_read_up_label")}</b> — {t("opt_how_to_read_up_desc")}</div>'
-                f'<div><b style="color:var(--text);">{t_opt_method("Maximum Sharpe Ratio")}</b> — {t("opt_how_to_read_max_sharpe_desc")}</div>'
-                f'<div><b style="color:var(--text);">{t_opt_method("Minimum Volatility")}</b> — {t("opt_how_to_read_min_vol_desc")}</div>'
-                f'<div><b style="color:var(--text);">{t_opt_method("Equal Weight")}</b> — {t("opt_how_to_read_equal_weight_desc")}</div>'
-                '</div>'
-                f'<div style="font-size:11px;color:var(--text-muted);">{t("opt_how_to_read_disclaimer")}</div>',
-                unsafe_allow_html=True,
-            )
+            _comp_cols = st.columns(3)
+            for _idx, _cm in enumerate(_COMPARISON_METHODS):
+                _cdata = _comparison_results[_cm]
+                _is_current = (_cm == optimization_method)
+                _badges = []
+                if _cm == _best_sharpe_method:
+                    _badges.append(t("opt_badge_best_sharpe"))
+                if _cm == _lowest_vol_method:
+                    _badges.append(t("opt_badge_lowest_risk"))
+                if _cm == "Equal Weight":
+                    _badges.append(t("opt_badge_balanced"))
+                if _cdata["largest_weight"] > _CONCENTRATION_THRESHOLD:
+                    _badges.append(t("opt_badge_higher_concentration"))
+                _badge_html = "".join(
+                    '<span style="display:inline-block;background:var(--surface-2);color:var(--text-secondary);'
+                    f'font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;margin:2px 4px 0 0;">{b}</span>'
+                    for b in _badges
+                )
+                _border = "border:1.5px solid var(--primary);" if _is_current else "border:1px solid var(--border);"
+                _current_tag = (
+                    '<div style="color:var(--primary);font-size:10px;font-weight:700;text-transform:uppercase;'
+                    f'letter-spacing:0.05em;margin-bottom:4px;">{t("opt_current_strategy_label")}</div>'
+                ) if _is_current else ""
+
+                with _comp_cols[_idx]:
+                    st.markdown(
+                        f'<div style="background:var(--surface);{_border}border-radius:var(--radius-lg);'
+                        'padding:14px 16px;margin:4px 0;min-height:196px;">'
+                        f'{_current_tag}'
+                        f'<div style="color:var(--text);font-weight:800;font-size:14px;margin-bottom:6px;">{_opt_method_labels[_cm]}</div>'
+                        f'<div style="color:var(--text-secondary);font-size:11.5px;line-height:1.5;margin-bottom:8px;">{t(_CARD_DESC_KEYS[_cm])}</div>'
+                        '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:3px;">'
+                        f'<span>{t("metric_expected_annual_return")}</span><span style="color:var(--text);font-weight:700;">{_cdata["expected_return"]:.2%}</span></div>'
+                        '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:3px;">'
+                        f'<span>{t("metric_sharpe_ratio")}</span><span style="color:var(--text);font-weight:700;">{_cdata["sharpe_ratio"]:.2f}</span></div>'
+                        '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">'
+                        f'<span>{t("opt_col_largest_position")}</span><span style="color:var(--text);font-weight:700;">{_cdata["largest_ticker"]} {_cdata["largest_weight"]:.2%}</span></div>'
+                        f'<div>{_badge_html}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+
+            with chart_card(t("opt_comparison_table_card")):
+                _table_rows = []
+                for _cm in _COMPARISON_METHODS:
+                    _cdata = _comparison_results[_cm]
+                    _strategy_display = _opt_method_labels[_cm] + (" ★" if _cm == optimization_method else "")
+                    _row = {
+                        t("opt_col_strategy"): _strategy_display,
+                        t("metric_expected_annual_return"): f"{_cdata['expected_return']:.2%}",
+                        t("metric_expected_volatility"): f"{_cdata['expected_volatility']:.2%}",
+                        t("metric_sharpe_ratio"): f"{_cdata['sharpe_ratio']:.2f}",
+                        t("opt_col_largest_position"): f"{_cdata['largest_ticker']} {_cdata['largest_weight']:.2%}",
+                    }
+                    if _cdata["max_drawdown"] is not None:
+                        _row[t("metric_maximum_drawdown")] = f"{_cdata['max_drawdown']:.2%}"
+                    _table_rows.append(_row)
+                _comparison_df = pd.DataFrame(_table_rows)
+                st.dataframe(_comparison_df.style.hide(axis="index"), use_container_width=True)
+                st.caption(f"★ {t('opt_current_strategy_label')}: {t_opt_method(optimization_method)}")
+                chart_caption(t("opt_comparison_table_caption"))
+                _comparison_context_text = "; ".join(
+                    f"{_opt_method_labels[_cm]}: {t('metric_expected_annual_return')} "
+                    f"{_comparison_results[_cm]['expected_return']:.2%}, "
+                    f"{t('metric_sharpe_ratio')} {_comparison_results[_cm]['sharpe_ratio']:.2f}, "
+                    f"{t('opt_col_largest_position')} {_comparison_results[_cm]['largest_ticker']} "
+                    f"{_comparison_results[_cm]['largest_weight']:.2%}"
+                    for _cm in _COMPARISON_METHODS
+                )
+                ai_interpret_button("opt_comparison_ai_interpret", st.session_state, _comparison_context_text)
+
+        else:  # Frontier
+            section_header(t("opt_efficient_frontier_title"), t("opt_efficient_frontier_sub", count=f"{n_simulations:,}"))
+            n_tickers = len(prices_df.columns)
+
+            with st.spinner(t("msg_running_optimization")):
+                returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
+                mean_returns = returns_df.mean().values
+                cov_df = covariance_matrix(prices_df)
+                cov = cov_df.values.copy()
+
+                if cov.shape != (n_tickers, n_tickers):
+                    error_state(
+                        t("msg_no_price_data_title"),
+                        f"Internal error: covariance matrix shape {cov.shape} does not "
+                        f"match {n_tickers} selected ETFs. Please re-run the optimization."
+                    )
+                    st.stop()
+
+                if not np.isfinite(cov).all():
+                    diag_nan = ~np.isfinite(np.diag(cov))
+                    if diag_nan.any():
+                        bad_tickers = [prices_df.columns[i] for i in range(n_tickers) if diag_nan[i]]
+                        error_state(
+                            t("msg_no_price_data_title"),
+                            f"No valid price data for: {', '.join(bad_tickers)}. "
+                            "Remove these tickers or widen the date range, then re-run "
+                            "the optimization."
+                        )
+                    else:
+                        error_state(
+                            t("msg_no_price_data_title"),
+                            "Some selected ETFs have no overlapping trading dates with "
+                            "each other. Widen the date range or choose ETFs with more "
+                            "shared trading history."
+                        )
+                    st.stop()
+
+                cov += np.eye(n_tickers) * 1e-8
+                mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
+
+                # ~40 points, within the 30-60 range called for, kept cheap
+                # since each point is one small SLSQP solve on already-loaded
+                # data (no re-download) -- but still only computed when this
+                # specific sub-view is active (PRODUCT SPEC section 15).
+                _EF_FRONTIER_POINTS = 40
+                frontier_df = compute_efficient_frontier(
+                    mean_returns, cov, n_points=_EF_FRONTIER_POINTS,
+                    min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
+                )
+
+            with chart_card(t("opt_efficient_frontier_card")):
+                fig_ef = efficient_frontier_chart(
+                    mc_df=mc_df, frontier_df=frontier_df, strategy_results=_comparison_results,
+                    strategy_labels=_opt_method_labels, current_method=optimization_method,
+                )
+                st.plotly_chart(fig_ef, use_container_width=True, key="opt_efficient_frontier")
+                if frontier_df is None or len(frontier_df) < 2:
+                    st.info(t("opt_frontier_insufficient_points"))
+                chart_caption(t("opt_efficient_frontier_caption"))
+                _ef_context_text = (
+                    f"{t('opt_current_strategy_label')}: {t_opt_method(optimization_method)}, "
+                    f"{t('metric_expected_annual_return')} {exp_ret:.2%}, "
+                    f"{t('metric_expected_volatility')} {exp_vol:.2%}, "
+                    f"{t('metric_sharpe_ratio')} {sharpe:.2f}; " +
+                    "; ".join(
+                        f"{_opt_method_labels[_cm]}: {t('metric_expected_annual_return')} "
+                        f"{_comparison_results[_cm]['expected_return']:.2%}, "
+                        f"{t('metric_expected_volatility')} {_comparison_results[_cm]['expected_volatility']:.2%}"
+                        for _cm in _COMPARISON_METHODS
+                    )
+                )
+                ai_interpret_button("opt_frontier_ai_interpret", st.session_state, _ef_context_text)
+
+            with chart_card(t("opt_how_to_read_title")):
+                st.markdown(
+                    '<div style="display:flex;flex-wrap:wrap;gap:6px 28px;font-size:12px;'
+                    'color:var(--text-secondary);margin-bottom:6px;">'
+                    f'<div><b style="color:var(--text);">{t("opt_how_to_read_left_label")}</b> — {t("opt_how_to_read_left_desc")}</div>'
+                    f'<div><b style="color:var(--text);">{t("opt_how_to_read_up_label")}</b> — {t("opt_how_to_read_up_desc")}</div>'
+                    f'<div><b style="color:var(--text);">{t_opt_method("Maximum Sharpe Ratio")}</b> — {t("opt_how_to_read_max_sharpe_desc")}</div>'
+                    f'<div><b style="color:var(--text);">{t_opt_method("Minimum Volatility")}</b> — {t("opt_how_to_read_min_vol_desc")}</div>'
+                    f'<div><b style="color:var(--text);">{t_opt_method("Equal Weight")}</b> — {t("opt_how_to_read_equal_weight_desc")}</div>'
+                    '</div>'
+                    f'<div style="font-size:11px;color:var(--text-muted);">{t("opt_how_to_read_disclaimer")}</div>',
+                    unsafe_allow_html=True,
+                )
 
 # ══════════════════════════════════════════════════════════════════════════
 # BACKTEST & RISK -- Historical Performance / Drawdown Analysis / Portfolio
@@ -1070,6 +1155,7 @@ elif opt_workspace == "Backtest & Risk":
                                           xaxis_title=t("chart_date"), yaxis_title=t("chart_portfolio_value_usd"),
                                           height=420)
                     st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True, key="opt_backtest_growth")
+                    chart_caption(t("opt_backtest_chart_caption"))
 
                 bt_metrics = {
                     t("metric_total_return"): f"{backtest_df['Cumulative Return'].iloc[-1]:.2%}",
@@ -1084,6 +1170,8 @@ elif opt_workspace == "Backtest & Risk":
                 for i, (k, v) in enumerate(bt_metrics.items()):
                     with cols[i]:
                         st.metric(k, v)
+                _backtest_context_text = "; ".join(f"{k}: {v}" for k, v in bt_metrics.items())
+                ai_interpret_button("opt_backtest_ai_interpret", st.session_state, _backtest_context_text)
 
         else:  # Drawdown
             section_header(t("opt_drawdown_comparison_card"))
@@ -1102,15 +1190,21 @@ elif opt_workspace == "Backtest & Risk":
                     fig_dd.update_layout(title=t("chart_drawdown_comparison_pct"), xaxis_title=t("chart_date"),
                                           yaxis_title=t("chart_drawdown_pct"), height=420)
                     st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True, key="opt_backtest_drawdown")
+                    chart_caption(t("opt_drawdown_chart_caption"))
 
                 _dd_mcol1, _dd_mcol2 = st.columns(2)
+                _dd_current = maximum_drawdown(backtest_df['Portfolio Value'])
                 with _dd_mcol1:
                     st.metric(f"{t_opt_method(optimization_method)} {t('metric_maximum_drawdown')}",
-                               f"{maximum_drawdown(backtest_df['Portfolio Value']):.2%}")
+                               f"{_dd_current:.2%}")
+                _dd_context_text = f"{t_opt_method(optimization_method)} {t('metric_maximum_drawdown')}: {_dd_current:.2%}"
                 with _dd_mcol2:
                     if not equal_backtest_df.empty:
+                        _dd_equal = maximum_drawdown(equal_backtest_df['Portfolio Value'])
                         st.metric(f"{t('chart_equal_weight')} {t('metric_maximum_drawdown')}",
-                                   f"{maximum_drawdown(equal_backtest_df['Portfolio Value']):.2%}")
+                                   f"{_dd_equal:.2%}")
+                        _dd_context_text += f"; {t('chart_equal_weight')} {t('metric_maximum_drawdown')}: {_dd_equal:.2%}"
+                ai_interpret_button("opt_drawdown_ai_interpret", st.session_state, _dd_context_text)
 
     else:  # Diagnosis (detailed view)
         section_header(t("opt_diagnosis_title"), t("opt_diagnosis_subtitle"))
@@ -1142,15 +1236,20 @@ else:  # opt_workspace == "Save & Actions"
     # selected_region, and selected_etfs_<region> -- across the page
     # switch automatically, since it's the same session.
     section_header(t("opt_next_steps_title"))
+    # CTA hierarchy (Issue #24 visual-acceptance round item B4): exactly ONE
+    # visually dominant solid primary action -- "Simulate this portfolio" --
+    # the other two are explicitly secondary/outline (type="secondary",
+    # matching this design system's existing outline button style in
+    # assets/style.css) so they never compete with it for attention.
     ns_col1, ns_col2, ns_col3 = st.columns(3)
     with ns_col1:
-        if st.button(t("opt_next_steps_run_simulation"), use_container_width=True, key="opt_next_run_sim"):
+        if st.button(t("opt_next_steps_run_simulation"), use_container_width=True, type="primary", key="opt_next_run_sim"):
             st.switch_page("pages/3_Investment_Simulator.py")
     with ns_col2:
-        if st.button(t("opt_next_steps_analyze_risk"), use_container_width=True, key="opt_next_analyze_risk"):
+        if st.button(t("opt_next_steps_analyze_risk"), use_container_width=True, type="secondary", key="opt_next_analyze_risk"):
             st.switch_page("pages/4_Risk_Analytics.py")
     with ns_col3:
-        if st.button(t("btn_save_portfolio"), use_container_width=True, key="opt_next_quick_save"):
+        if st.button(t("btn_save_portfolio"), use_container_width=True, type="secondary", key="opt_next_quick_save"):
             # One-click save with an auto-generated name (canonical English
             # strategy value). The named/annotated Save & Export form below
             # remains for users who want to customize the name or add notes.

@@ -31,6 +31,7 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, empty_state, error_state, status_card,
+    chart_caption, ai_interpret_button,
 )
 from src.i18n import t, t_opt_method, t_country, t_goal_target_mode, t_goal_risk, t_goal_status
 from src.auth import get_current_user_id, is_authenticated, render_auth_status
@@ -239,6 +240,7 @@ def _render_portfolio_history_tab():
         if _has_corrupt_record:
             st.caption(t("hist_corrupt_record_notice"))
         st.dataframe(summary_df.set_index("ID"), use_container_width=True)
+        chart_caption(t("hist_summary_table_caption"))
 
         # ── Download History ──────────────────────────────────────────────────────
         csv = summary_df.to_csv(index=True).encode("utf-8")
@@ -314,6 +316,7 @@ def _render_portfolio_history_tab():
                         _holdings_label = f"{_holdings_label} ({t('hist_active_holdings_only', count=_hidden_count)})"
                     st.markdown(f"**{_holdings_label}**")
                     st.dataframe(holdings_df.set_index(t("hist_col_ticker")), use_container_width=True)
+                    chart_caption(t("hist_holdings_table_caption"))
                     if _hidden_count:
                         with st.expander(t("hist_show_all_holdings")):
                             _raw_df = pd.DataFrame([
@@ -321,6 +324,7 @@ def _render_portfolio_history_tab():
                                 for tk, w in sorted(_all_holdings.items(), key=lambda x: x[1], reverse=True)
                             ])
                             st.dataframe(_raw_df.set_index(t("hist_col_ticker")), use_container_width=True)
+                            chart_caption(t("hist_all_holdings_table_caption"))
 
                 # Experiment metadata (Issue #20 section 9C) -- shown for every
                 # portfolio; legacy saves (before this feature existed) simply
@@ -357,9 +361,27 @@ def _render_portfolio_history_tab():
 
         with col_right:
             if selected_portfolio["holdings"]:
-                with chart_card(t("hist_allocation_breakdown_card")):
+                _detail_method_label = (
+                    t_opt_method(selected_portfolio["optimization_method"])
+                    if selected_portfolio["optimization_method"] else None
+                )
+                with chart_card(t("hist_allocation_breakdown_card"), _detail_method_label):
                     fig = allocation_donut_chart(selected_portfolio["holdings"], "")
                     st.plotly_chart(fig, use_container_width=True, key=f"history_detail_donut_{selected_portfolio['id']}")
+                    chart_caption(t("hist_detail_donut_caption"))
+                    _detail_context_text = (
+                        f"Portfolio: {selected_portfolio['name']}. "
+                        f"Expected annual return: {_safe_pct(selected_portfolio['expected_return'])}, "
+                        f"Expected volatility: {_safe_pct(selected_portfolio['expected_volatility'])}, "
+                        f"Sharpe ratio: {_safe_num(selected_portfolio['sharpe_ratio'], ',.2f')}. "
+                        "Holdings by weight: " + "; ".join(
+                            f"{tk} {w:.2%}" for tk, w in _active_holdings(selected_portfolio["holdings"]).items()
+                        )
+                    )
+                    ai_interpret_button(
+                        f"hist_detail_ai_interpret_{selected_portfolio['id']}",
+                        st.session_state, _detail_context_text,
+                    )
 
     # ── Compare Two Portfolios ────────────────────────────────────────────────────
     section_header(t("hist_compare_title"))
@@ -413,19 +435,40 @@ def _render_portfolio_history_tab():
             compare_df = pd.DataFrame(compare_data).set_index(metric_col)
             with chart_card(t("hist_comparison_table_card")):
                 st.dataframe(compare_df, use_container_width=True)
+                chart_caption(t("hist_comparison_table_caption"))
+                _diag_a_str = f"{diag_a['effective_holdings']:.2f}" if diag_a else "—"
+                _diag_b_str = f"{diag_b['effective_holdings']:.2f}" if diag_b else "—"
+                _compare_context_text = (
+                    f"{port_a['name']}: return {_safe_pct(port_a['expected_return'])}, "
+                    f"volatility {_safe_pct(port_a['expected_volatility'])}, "
+                    f"Sharpe {_safe_num(port_a['sharpe_ratio'], ',.2f')}, "
+                    f"holdings {len(port_a['holdings'])}, effective holdings {_diag_a_str}. "
+                    f"{port_b['name']}: return {_safe_pct(port_b['expected_return'])}, "
+                    f"volatility {_safe_pct(port_b['expected_volatility'])}, "
+                    f"Sharpe {_safe_num(port_b['sharpe_ratio'], ',.2f')}, "
+                    f"holdings {len(port_b['holdings'])}, effective holdings {_diag_b_str}."
+                )
+                ai_interpret_button(
+                    f"hist_compare_ai_interpret_{port_a['id']}_{port_b['id']}",
+                    st.session_state, _compare_context_text,
+                )
 
             # Side-by-side donut charts
             col_a, col_b = st.columns(2)
             with col_a:
                 if port_a["holdings"]:
-                    with chart_card(port_a["name"]):
+                    _a_method_label = t_opt_method(port_a["optimization_method"]) if port_a["optimization_method"] else None
+                    with chart_card(port_a["name"], _a_method_label):
                         fig_a = allocation_donut_chart(port_a["holdings"], "")
                         st.plotly_chart(fig_a, use_container_width=True, key=f"history_compare_donut_a_{port_a['id']}")
+                        chart_caption(t("hist_compare_donut_caption"))
             with col_b:
                 if port_b["holdings"]:
-                    with chart_card(port_b["name"]):
+                    _b_method_label = t_opt_method(port_b["optimization_method"]) if port_b["optimization_method"] else None
+                    with chart_card(port_b["name"], _b_method_label):
                         fig_b = allocation_donut_chart(port_b["holdings"], "")
                         st.plotly_chart(fig_b, use_container_width=True, key=f"history_compare_donut_b_{port_b['id']}")
+                        chart_caption(t("hist_compare_donut_caption"))
 
             # Allocation comparison bar chart
             with chart_card(t("hist_allocation_comparison_card")):
@@ -447,6 +490,7 @@ def _render_portfolio_history_tab():
                                        xaxis_title=t("chart_etf"), yaxis_title=t("chart_weight"), barmode="group")
                 st.plotly_chart(apply_dark_theme(fig_bar), use_container_width=True,
                                  key=f"history_compare_bar_{port_a['id']}_{port_b['id']}")
+                chart_caption(t("hist_allocation_bar_caption"))
     else:
         st.info(t("hist_compare_need_two"))
 
@@ -647,7 +691,15 @@ with tab_holdings:
                 t("ch_col_unrealized_pl"): _pl_str,
             })
         st.dataframe(pd.DataFrame(ch_table_rows), use_container_width=True, hide_index=True)
+        chart_caption(t("ch_holdings_table_caption"))
         st.caption(t("ch_price_note"))
+        _ch_context_text = "; ".join(
+            f"{row[t('ch_col_ticker')]}: qty {row[t('ch_col_quantity')]}, "
+            f"avg cost {row[t('ch_col_avg_cost')]}, price {row[t('ch_col_market_price')]}, "
+            f"market value {row[t('ch_col_market_value')]}, unrealized P/L {row[t('ch_col_unrealized_pl')]}"
+            for row in ch_table_rows
+        )
+        ai_interpret_button(f"ch_holdings_ai_interpret_{current_user_id}", st.session_state, _ch_context_text)
 
         ch_del_map = {_h["id"]: f"{_h['ticker']} ({_h['quantity']:g} @ {_h['average_cost']:g})" for _h in holdings_rows}
         ch_del_id = st.selectbox(t("ch_remove_button"), options=list(ch_del_map.keys()), format_func=lambda x: ch_del_map[x], key="ch_remove_select")
@@ -699,6 +751,7 @@ with tab_watchlist:
                 t("wl_col_added"): _w["created_at"] or "—",
             })
         st.dataframe(pd.DataFrame(wl_table_rows), use_container_width=True, hide_index=True)
+        chart_caption(t("wl_table_caption"))
 
         wl_del_map = {_w["id"]: _w["ticker"] for _w in watchlist_rows}
         wl_del_id = st.selectbox(t("wl_remove_button"), options=list(wl_del_map.keys()), format_func=lambda x: wl_del_map[x], key="wl_remove_select")

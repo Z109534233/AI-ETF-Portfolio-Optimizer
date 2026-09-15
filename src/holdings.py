@@ -3,31 +3,44 @@ ETF Holdings & Exposure -- Central Holdings Data Service (Round 1: single-ETF).
 
 Architecture:
 
-    Yahoo Finance quoteSummary "topHoldings" module   (source adapter)
-                    v
-    _normalize_yahoo_holdings()                        (normalized records)
-                    v
-    _cached_fetch_raw()  [@st.cache_data]               (cached snapshot)
-                    v
-    get_etf_holdings()                                  (status + fallback)
-                    v
-    pages/1_ETF_Analysis.py "Holdings & Exposure"        (UI)
+    yfinance Ticker.funds_data (public API)   quoteSummary "topHoldings"
+    -- top_holdings / asset_classes           (private fallback adapter)
+                    \\                          /
+                     v                        v
+              _normalize_public_holdings()  _normalize_yahoo_holdings()
+                              \\              /
+                               v            v
+                        get_etf_holdings()  (tries public first, falls
+                                             back to the private adapter,
+                                             then last-known-good, then an
+                                             honest unavailable status)
+                                v
+                pages/1_ETF_Analysis.py "Holdings & Exposure"  (UI)
 
 No holdings weight in this module is ever hand-typed/fabricated -- every
-HoldingRecord traces back to a live Yahoo Finance response, normalized as-is.
-When the source has nothing for a ticker (rate-limited, network failure, or
-the instrument type genuinely isn't covered by this source), the caller gets
-an explicit status instead of invented numbers -- see HoldingsSnapshot.status.
+HoldingRecord traces back to a live Yahoo Finance response (via one of the
+two adapters below), normalized as-is. When neither source has anything for
+a ticker (rate-limited, network failure, or the instrument type genuinely
+isn't covered), the caller gets an explicit status instead of invented
+numbers -- see HoldingsSnapshot.status.
 
-This intentionally reuses yfinance's already-installed, already-authenticated
-HTTP session (`yf.Ticker(...)._data.get_raw_json`) rather than bumping the
-project's pinned yfinance version: the installed version (see requirements.txt)
-predates yfinance's own public `Ticker.funds_data` convenience wrapper, but
-the underlying quoteSummary "topHoldings" endpoint it wraps is reachable
-through the same crumb/cookie-authenticated request path this app already
-depends on for price downloads and `get_etf_info()` -- so this ships without
-touching the shared yfinance pin (zero blast radius on price downloads,
-Portfolio Optimizer, Investment Simulator, or Risk Analytics).
+Two source adapters, tried in order:
+
+1. `_fetch_public_funds_holdings_raw()` -- yfinance's own supported
+   `Ticker(...).funds_data` wrapper (`top_holdings` DataFrame +
+   `asset_classes` dict). This is the PRIMARY adapter: it's a maintained,
+   public yfinance API rather than a private request path, so it's the one
+   most likely to keep working as Yahoo's backend changes.
+2. `_fetch_yahoo_topholdings_raw()` -- the original direct quoteSummary
+   "topHoldings" call via `yf.Ticker(...)._data.get_raw_json`. Kept only as
+   a FALLBACK for when the public wrapper raises or returns nothing (e.g. an
+   older yfinance release, or a response shape the public wrapper doesn't
+   parse) -- never the first thing tried.
+
+If one adapter fails but the other succeeds, the real data from whichever
+one worked is shown; only when BOTH fail does this fall through to the
+last-known-good cache, and only when that's also empty does it show the
+honest "unavailable" state (see HoldingsSnapshot.status).
 
 Future database compatibility (see PRODUCT SPEC section 15 -- not built this
 round): every HoldingRecord field maps 1:1 onto a future `etf_holdings_snapshots`
@@ -164,8 +177,41 @@ def _source_url(yahoo_symbol: str) -> str:
     return f"https://finance.yahoo.com/quote/{yahoo_symbol}/holdings"
 
 
+def _fetch_public_funds_holdings_raw(yahoo_symbol: str):
+    """PRIMARY source adapter -- yfinance's own supported `funds_data`
+    wrapper. Returns (top_holdings_df_or_None, asset_classes_dict_or_None,
+    reached_source).
+
+    reached_source distinguishes "the request itself failed" (network error,
+    rate limit, timeout, or this yfinance release doesn't expose
+    `funds_data` at all -> Status C) from "Yahoo/yfinance answered but this
+    instrument isn't a fund with holdings data" (Status D -- e.g. a single
+    stock ticker) -- never raises.
+    """
+    try:
+        funds_data = yf.Ticker(yahoo_symbol).funds_data
+        if funds_data is None:
+            return None, None, False
+        top_holdings = getattr(funds_data, "top_holdings", None)
+        asset_classes = getattr(funds_data, "asset_classes", None)
+    except Exception:
+        return None, None, False
+    reached = (top_holdings is not None) or bool(asset_classes)
+    return top_holdings, asset_classes, reached
+
+
+@st.cache_data(ttl=_HOLDINGS_CACHE_TTL_SECONDS, show_spinner=False)
+def _cached_fetch_public(yahoo_symbol: str):
+    """Cached wrapper around the primary source adapter -- only hits the
+    network once per yahoo_symbol per TTL window (PRODUCT SPEC section 14:
+    never re-scrape on every Streamlit rerun)."""
+    return _fetch_public_funds_holdings_raw(yahoo_symbol)
+
+
 def _fetch_yahoo_topholdings_raw(yahoo_symbol: str):
-    """Low-level source adapter. Returns (result_dict_or_None, reached_source).
+    """FALLBACK source adapter, only used when the public `funds_data`
+    adapter above returns nothing. Returns (result_dict_or_None,
+    reached_source).
 
     reached_source distinguishes "the request itself failed" (network error,
     rate limit, timeout -> Status C) from "Yahoo answered but has nothing
@@ -186,9 +232,9 @@ def _fetch_yahoo_topholdings_raw(yahoo_symbol: str):
 
 @st.cache_data(ttl=_HOLDINGS_CACHE_TTL_SECONDS, show_spinner=False)
 def _cached_fetch_raw(yahoo_symbol: str):
-    """Cached wrapper around the source adapter -- the ONLY function that
-    ever hits the network, and only once per yahoo_symbol per TTL window
-    (PRODUCT SPEC section 14: never re-scrape on every Streamlit rerun)."""
+    """Cached wrapper around the fallback source adapter -- only hits the
+    network once per yahoo_symbol per TTL window (PRODUCT SPEC section 14:
+    never re-scrape on every Streamlit rerun)."""
     return _fetch_yahoo_topholdings_raw(yahoo_symbol)
 
 
@@ -252,6 +298,49 @@ def _normalize_yahoo_holdings(etf_ticker: str, yahoo_symbol: str, result: dict,
     return records
 
 
+def _normalize_public_holdings(etf_ticker: str, yahoo_symbol: str, top_holdings_df, asset_classes: Optional[dict],
+                                data_date: str, default_asset_type: str = "Equity") -> List[HoldingRecord]:
+    """Turn yfinance's `funds_data.top_holdings` DataFrame + `asset_classes`
+    dict into normalized HoldingRecords. Same never-invent-a-row contract as
+    _normalize_yahoo_holdings() above -- a missing/empty frame or bucket is
+    simply omitted, not zero-filled.
+
+    `top_holdings_df` is indexed by holding symbol with "Name" and "Holding
+    Percent" columns (fraction 0-1, confirmed against a live VOO response);
+    `asset_classes` is a flat {"cashPosition": 0.006, "bondPosition": 0.0,
+    ...} dict using the SAME bucket keys as `_AGGREGATE_BUCKETS` below, so it
+    reuses that table directly rather than duplicating the bucket labels.
+    """
+    src_url = _source_url(yahoo_symbol)
+    records: List[HoldingRecord] = []
+
+    if top_holdings_df is not None and not top_holdings_df.empty:
+        for symbol, row in top_holdings_df.iterrows():
+            pct = row.get("Holding Percent")
+            if symbol is None or pct is None or (isinstance(pct, float) and pct != pct):  # pct != pct -> NaN
+                continue
+            name = row.get("Name") or symbol
+            records.append(HoldingRecord(
+                etf_ticker=etf_ticker, holding_ticker=_strip_holding_suffix(str(symbol)),
+                holding_name=str(name), asset_type=default_asset_type, weight=float(pct),
+                is_aggregate=False, data_date=data_date,
+                source="Yahoo Finance", source_url=src_url,
+            ))
+
+    for key, sentinel, label, asset_type in _AGGREGATE_BUCKETS:
+        pct = (asset_classes or {}).get(key)
+        if pct:
+            records.append(HoldingRecord(
+                etf_ticker=etf_ticker, holding_ticker=sentinel, holding_name=label,
+                asset_type=asset_type, weight=float(pct),
+                is_aggregate=True, data_date=data_date,
+                source="Yahoo Finance", source_url=src_url,
+            ))
+
+    records.sort(key=lambda h: h.weight, reverse=True)
+    return records
+
+
 def get_etf_holdings(ticker: str) -> HoldingsSnapshot:
     """Public entry point: the single reusable holdings service every page
     should call (PRODUCT SPEC section 2/3: "identify the ETF through the
@@ -280,11 +369,23 @@ def get_etf_holdings(ticker: str) -> HoldingsSnapshot:
         fund_group_id=record.fund_group_id if record else None,
     )
 
-    result, reached = _cached_fetch_raw(yahoo_symbol)
+    # Primary adapter first (public, supported yfinance API); the private
+    # quoteSummary adapter is only consulted as a fallback when the primary
+    # one comes back empty -- see module docstring.
+    pub_top, pub_asset_classes, reached_public = _cached_fetch_public(yahoo_symbol)
     holdings = (
-        _normalize_yahoo_holdings(ticker, yahoo_symbol, result, retrieved_at, default_asset_type)
-        if result else []
+        _normalize_public_holdings(ticker, yahoo_symbol, pub_top, pub_asset_classes, retrieved_at, default_asset_type)
+        if (pub_top is not None or pub_asset_classes) else []
     )
+
+    reached = reached_public
+    if not holdings:
+        result, reached_fallback = _cached_fetch_raw(yahoo_symbol)
+        reached = reached_public or reached_fallback
+        holdings = (
+            _normalize_yahoo_holdings(ticker, yahoo_symbol, result, retrieved_at, default_asset_type)
+            if result else []
+        )
 
     if holdings:
         snapshot = HoldingsSnapshot(

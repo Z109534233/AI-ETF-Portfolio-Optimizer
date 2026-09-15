@@ -30,6 +30,7 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html, d
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card,
     render_footer, render_current_portfolio_handoff, error_state, chart_caption,
+    ai_interpret_button, results_hero, setup_summary_bar,
 )
 from src.theme import COLORS
 from src.i18n import t, t_market_scenario, t_opt_method
@@ -420,26 +421,22 @@ if simulation_mode == "Historical Simulation":
             f"- {t('sim_methodology_hist_xirr')}"
         )
 
-    # ── Backtest Setup ────────────────────────────────────────────────────
-    with chart_card(t("hist_backtest_setup_title")):
-        _bt_setup_rows = [
-            (t("sim_initial_investment"), f"{_currency_symbol}{hist_params['initial_investment']:,.0f}"),
-            (t("sim_monthly_contribution"), f"{_currency_symbol}{hist_params['monthly_contribution']:,.0f}"),
-            (t("hist_num_contributions"), f"{hist_summary['num_contributions']}"),
-            (t("hist_total_invested"), f"{_currency_symbol}{hist_summary['total_invested']:,.0f}"),
-            (t("field_start_date"), str(hist_summary["start_date"].date())),
-            (t("field_end_date"), str(hist_summary["end_date"].date())),
-            (t("hist_rebalancing_label"), t("hist_rebalancing_monthly")),
-        ]
-        _bt_items_html = "".join(
-            f'<div style="min-width:130px;"><div style="font-size:11px;color:{COLORS["text_muted"]};">{label}</div>'
-            f'<div style="font-size:13px;color:{COLORS["text"]};font-weight:600;">{value}</div></div>'
-            for label, value in _bt_setup_rows
-        )
-        st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:10px 28px;">{_bt_items_html}</div>', unsafe_allow_html=True)
+    # ── Backtest Setup (Issue #24: compact "Current Setup" summary instead
+    # of a wide, equally-weighted strip -- the full input values remain
+    # visible in the sidebar controls the user just set; results_hero()
+    # below is where the eye should land) ──────────────────────────────────
+    setup_summary_bar([
+        f"{hist_summary['start_date'].date()} – {hist_summary['end_date'].date()}",
+        f"{_currency_symbol}{hist_params['initial_investment']:,.0f} + {_currency_symbol}{hist_params['monthly_contribution']:,.0f}/mo",
+        f"{hist_summary['num_contributions']} {t('hist_setup_unit_contributions')}",
+        t("hist_rebalancing_monthly"),
+    ], title=t("hist_backtest_setup_title"))
 
     # ── KPI Cards ─────────────────────────────────────────────────────────
-    section_header(t("hist_results_title"))
+    results_hero(t("hist_results_hero_title"), t(
+        "hist_results_hero_subtitle",
+        start=str(hist_summary["start_date"].date()), end=str(hist_summary["end_date"].date()),
+    ))
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(metric_card_html(t("hist_total_invested"), f"{_currency_symbol}{hist_summary['total_invested']:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
@@ -474,6 +471,15 @@ if simulation_mode == "Historical Simulation":
     with chart_card(t("hist_growth_chart_title")):
         fig_hist_growth = historical_growth_chart(history, currency_symbol=_currency_symbol)
         st.plotly_chart(fig_hist_growth, use_container_width=True, key="hist_growth_chart")
+        chart_caption(t("hist_growth_chart_caption"))
+        _hist_growth_context = (
+            f"Start: {hist_summary['start_date'].date()}, End: {hist_summary['end_date'].date()}, "
+            f"Total invested: {_currency_symbol}{hist_summary['total_invested']:,.0f}, "
+            f"Final value: {_currency_symbol}{hist_summary['final_value']:,.0f}, "
+            f"Gain/loss: {_currency_symbol}{hist_summary['gain']:,.0f}, "
+            f"Cumulative return: {hist_summary['cumulative_return']:.2%}"
+        )
+        ai_interpret_button("hist_growth_ai_interpret", st.session_state, _hist_growth_context)
 
     with chart_card(t("hist_drawdown_chart_title")):
         _hist_dd = drawdown_series(history["Portfolio Value"]) * 100
@@ -484,6 +490,7 @@ if simulation_mode == "Historical Simulation":
         ))
         fig_hist_dd.update_layout(xaxis_title=t("chart_date"), yaxis_title=t("chart_drawdown_pct"))
         st.plotly_chart(apply_dark_theme(fig_hist_dd), use_container_width=True, key="hist_drawdown_chart")
+        chart_caption(t("hist_drawdown_chart_caption"))
 
     # ── Result Interpretation (deterministic, not generative) ──────────────
     _hist_interp_key = (
@@ -572,28 +579,18 @@ _setup_portfolio_label = (
     t_opt_method(sim_params["portfolio_strategy"]) if sim_params.get("portfolio_strategy")
     else t("sim_projection_setup_no_portfolio")
 )
-_setup_rows = [
-    (t("sim_projection_setup_portfolio_label"), _setup_portfolio_label),
-    (t("sim_assumption_source_label"), _asrc_display_labels.get(sim_params.get("assumption_source"), "—")),
-    (t("metric_expected_annual_return"), f"{sim_params['annual_return']:.2%}"),
-    (t("metric_expected_volatility"), f"{sim_params['annual_volatility']:.2%}"),
-    (t("sim_initial_investment"), f"${sim_params['initial_investment']:,.0f}"),
-    (t("sim_monthly_contribution"), f"${sim_params['monthly_contribution']:,.0f}"),
-    (t("sim_investment_years"), f"{sim_params['years']}"),
-    (t("sim_inflation_rate_pct"), f"{sim_params['inflation_rate']:.2%}"),
-    (t("sim_annual_fee_pct"), f"{sim_params['annual_fee']:.2%}"),
-    (t("sim_number_of_simulations"), f"{sim_params['n_simulations']:,}"),
-]
-with chart_card(t("sim_projection_setup_title")):
-    _setup_items_html = "".join(
-        f'<div style="min-width:130px;"><div style="font-size:11px;color:{COLORS["text_muted"]};">{label}</div>'
-        f'<div style="font-size:13px;color:{COLORS["text"]};font-weight:600;">{value}</div></div>'
-        for label, value in _setup_rows
-    )
-    st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:10px 28px;">{_setup_items_html}</div>',
-        unsafe_allow_html=True,
-    )
+# Compact "Current Setup" summary (Issue #24: replaces the old wide,
+# equally-weighted strip -- the full input values remain visible in the
+# sidebar controls the user just set; results_hero() below is where the
+# eye should land). Still built entirely from the FROZEN sim_params, so
+# the assumption-transparency guarantee above is unchanged.
+setup_summary_bar([
+    f"{t('sim_assumption_source_label')}: {_asrc_display_labels.get(sim_params.get('assumption_source'), '—')}",
+    f"{sim_params['years']} {t('chart_years')}",
+    f"${sim_params['initial_investment']:,.0f} + ${sim_params['monthly_contribution']:,.0f}/mo",
+    f"{sim_params['annual_return']:.1%} / {sim_params['annual_volatility']:.1%}",
+    f"{sim_params['n_simulations']:,} {t('sim_setup_unit_simulations')}",
+], title=t("sim_projection_setup_title"))
 
 # ── Methodology & Assumptions (M2) ──────────────────────────────────────────
 # Compact disclosure of the ACTUAL Monte Carlo methodology -- see
@@ -612,9 +609,10 @@ with st.expander(t("sim_methodology_title"), expanded=False):
     )
 
 # ── KPI Cards (Issue #22 section K: Principal -> Optimistic -> Median ->
-# Conservative, the primary at-a-glance row; secondary metrics grouped
-# underneath at lower visual weight) ────────────────────────────────────────
-section_header(t("sim_results_title"), t("sim_results_sub", count=f"{n_simulations:,}", years=years))
+# Conservative, the primary at-a-glance row; Issue #24: the remaining
+# secondary metrics move into an expander so they're genuinely lower
+# visual weight, not just equally-sized cards under a comment saying so) ────
+results_hero(t("sim_results_hero_title"), t("sim_results_hero_subtitle", count=f"{n_simulations:,}", years=years))
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.markdown(metric_card_html(t("metric_total_contributed"), f"${total_contributed:,.0f}", color=COLORS["primary"]), unsafe_allow_html=True)
@@ -625,24 +623,25 @@ with col3:
 with col4:
     st.markdown(metric_card_html(t("metric_pessimistic_10"), f"${summary['pessimistic_final']:,.0f}", color=COLORS["danger"]), unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown(metric_card_html(t("metric_median_investment_gain"), f"${summary['median_gain']:,.0f}", color=COLORS["purple"]), unsafe_allow_html=True)
-with col2:
-    st.markdown(metric_card_html(t("metric_inflation_adjusted_value"), f"${summary['real_median_final']:,.0f}", color=COLORS["warning"]), unsafe_allow_html=True)
-with col3:
-    # Honest empirical-frequency framing (Issue #20 section 4A): this is the
-    # observed share of SIMULATED paths that ended above contributions
-    # under the chosen assumptions -- never rendered as if it were a
-    # real-world guaranteed probability. The underlying frequency
-    # (summary["probability_profit"]) is never altered/rounded away from
-    # its true value (e.g. a genuine 100.0% must keep showing as 100.0%).
-    st.markdown(metric_card_html(t("sim_positive_outcome_label"), f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
-st.caption(t(
-    "sim_positive_outcome_detail",
-    count=f"{summary['positive_outcome_count']:,}", total=f"{summary['n_simulations']:,}",
-))
-st.caption(t("sim_positive_outcome_disclaimer", total=f"{summary['n_simulations']:,}"))
+with st.expander(t("sim_additional_metrics_title"), expanded=False):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(metric_card_html(t("metric_median_investment_gain"), f"${summary['median_gain']:,.0f}", color=COLORS["purple"]), unsafe_allow_html=True)
+    with col2:
+        st.markdown(metric_card_html(t("metric_inflation_adjusted_value"), f"${summary['real_median_final']:,.0f}", color=COLORS["warning"]), unsafe_allow_html=True)
+    with col3:
+        # Honest empirical-frequency framing (Issue #20 section 4A): this is the
+        # observed share of SIMULATED paths that ended above contributions
+        # under the chosen assumptions -- never rendered as if it were a
+        # real-world guaranteed probability. The underlying frequency
+        # (summary["probability_profit"]) is never altered/rounded away from
+        # its true value (e.g. a genuine 100.0% must keep showing as 100.0%).
+        st.markdown(metric_card_html(t("sim_positive_outcome_label"), f"{summary['probability_profit']:.1%}", color=COLORS["primary"]), unsafe_allow_html=True)
+    st.caption(t(
+        "sim_positive_outcome_detail",
+        count=f"{summary['positive_outcome_count']:,}", total=f"{summary['n_simulations']:,}",
+    ))
+    st.caption(t("sim_positive_outcome_disclaimer", total=f"{summary['n_simulations']:,}"))
 
 # ── Charts ────────────────────────────────────────────────────────────────────
 # Issue #22 section K: the "Simulation Details"/"模擬詳情" card heading was
@@ -658,6 +657,15 @@ with st.container(border=True):
         fig_mc = monte_carlo_paths_chart(paths_df, t("chart_monte_carlo_simulation") + f" — {years}")
         st.plotly_chart(fig_mc, use_container_width=True, key="sim_monte_carlo_paths")
         chart_caption(t("sim_monte_carlo_chart_caption"))
+        _mc_context = (
+            f"Years: {years}, Assumed annual return: {annual_return:.2%}, "
+            f"Assumed annual volatility: {annual_volatility:.2%}, "
+            f"Median final value: ${summary['median_final']:,.0f}, "
+            f"Optimistic (90th pct): ${summary['optimistic_final']:,.0f}, "
+            f"Pessimistic (10th pct): ${summary['pessimistic_final']:,.0f}, "
+            f"Probability of a positive outcome: {summary['probability_profit']:.1%}"
+        )
+        ai_interpret_button("sim_monte_carlo_ai_interpret", st.session_state, _mc_context)
 
     with tab2:
         # Compound growth projection (deterministic)
@@ -684,6 +692,7 @@ with st.container(border=True):
             xaxis_title=t("chart_years"), yaxis_title=t("chart_value_usd")
         )
         st.plotly_chart(apply_dark_theme(fig_growth), use_container_width=True, key="sim_compound_growth")
+        chart_caption(t("sim_compound_growth_chart_caption"))
 
         # Contributions vs gains
         fig_bar = go.Figure()
@@ -695,10 +704,20 @@ with st.container(border=True):
         fig_bar.update_layout(title=t("chart_contributions_vs_gains"),
                                xaxis_title=t("chart_year"), yaxis_title=t("chart_value_usd"), barmode="stack")
         st.plotly_chart(apply_dark_theme(fig_bar), use_container_width=True, key="sim_contributions_vs_gains")
+        chart_caption(t("sim_contributions_vs_gains_chart_caption"))
 
     with tab3:
         fig_dist = future_value_distribution_chart(final_values, total_contributed)
         st.plotly_chart(fig_dist, use_container_width=True, key="sim_value_distribution")
+        chart_caption(t("sim_value_distribution_chart_caption"))
+        _dist_context = (
+            f"Total contributed: ${total_contributed:,.0f}, "
+            f"Median final value: ${summary['median_final']:,.0f}, "
+            f"Optimistic (90th pct): ${summary['optimistic_final']:,.0f}, "
+            f"Pessimistic (10th pct): ${summary['pessimistic_final']:,.0f}, "
+            f"Probability of a positive outcome: {summary['probability_profit']:.1%}"
+        )
+        ai_interpret_button("sim_value_distribution_ai_interpret", st.session_state, _dist_context)
 
         # Percentile table
         percentiles = [5, 10, 25, 50, 75, 90, 95]
@@ -711,6 +730,7 @@ with st.container(border=True):
         }
         st.markdown(f"**{t('sim_outcome_percentile_table')}**")
         st.dataframe(pd.DataFrame(pct_data).set_index(percentile_col), use_container_width=True)
+        chart_caption(t("sim_percentile_table_caption"))
 
     with tab4:
         st.markdown(f"**{t('sim_annual_balance_summary')}**")
@@ -727,6 +747,7 @@ with st.container(border=True):
             "Year": t("chart_year"),
         })
         st.dataframe(display_table.set_index(t("chart_year")), use_container_width=True)
+        chart_caption(t("sim_annual_table_caption"))
 
         csv = dataframe_to_csv(annual_table)
         st.download_button(t("btn_download_annual_table"), csv, "simulation_annual.csv", "text/csv")
@@ -740,6 +761,7 @@ with chart_card(t("sim_scenario_comparison_card")):
     display_scenario_df["Scenario"] = display_scenario_df["Scenario"].apply(t_market_scenario)
     st.dataframe(display_scenario_df.rename(columns={"Scenario": t("sim_market_scenario")}).set_index(t("sim_market_scenario")),
                  use_container_width=True)
+    chart_caption(t("sim_scenario_comparison_table_caption"))
 
 # ── Save Simulation ───────────────────────────────────────────────────────────
 section_header(t("sim_save_simulation_title"))

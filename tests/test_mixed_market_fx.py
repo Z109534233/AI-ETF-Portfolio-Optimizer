@@ -74,20 +74,19 @@ def mixed_market_setup(monkeypatch):
 
 
 def _seed_mixed_region_state(at):
-    """Pre-seed session_state so the page starts already scoped to "All
-    Regions" with VOO + 0050 selected -- the same direct session_state
-    pre-seeding pattern tests/test_portfolio_optimizer.py uses to simulate
-    the shared global-market-state mechanism (src/ui.py's region_selector()/
-    region_etf_multiselect()) without needing multiple widget-interaction
-    reruns to converge (the widgets are backed by a region-keyed shadow
-    dict, e.g. "selected_etfs_All Regions", not just their own key).
-    """
-    all_regions_label = "All Regions"
+    """Pre-seed session_state so the page starts already scoped to United
+    States + Taiwan with VOO + 0050 selected -- the same direct
+    session_state pre-seeding pattern tests/test_portfolio_optimizer.py
+    uses, adapted to the Portfolio Optimizer's own independent multi-country
+    picker (Issue #24 item 1: no more "All Regions", and no more sharing
+    src/ui.py's region_selector()/region_etf_multiselect() global state --
+    see region_multiselect()/multi_region_etf_multiselect() instead)."""
+    regions = ["United States", "Taiwan"]
     at.session_state["language"] = "en"
-    at.session_state["selected_region"] = all_regions_label
-    at.session_state["_selected_region_shadow"] = all_regions_label
-    at.session_state["_selected_etfs_shadow"] = {all_regions_label: ["VOO", "0050"]}
-    return all_regions_label
+    at.session_state["selected_regions"] = regions
+    at.session_state["_selected_regions_shadow"] = regions
+    at.session_state["_selected_etfs_multi_master"] = ["VOO", "0050"]
+    return regions
 
 
 def test_mixed_currency_selection_triggers_fx_conversion(mixed_market_setup, monkeypatch):
@@ -182,7 +181,8 @@ def test_single_currency_selection_skips_fx_entirely(monkeypatch):
     at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
-    at.multiselect(key="selected_etfs_United States").set_value(["VOO", "QQQ"])
+    ms = next(w for w in at.multiselect if w.key and w.key.startswith("selected_etfs_portfolio_"))
+    ms.set_value(["VOO", "QQQ"])
     at.run()
     at.button(key="opt_run_optimization_btn").click()
     at.run()

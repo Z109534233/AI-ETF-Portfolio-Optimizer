@@ -55,6 +55,114 @@ def region_selector(default_index: int = 1):
     return selected_region, ALL_REGIONS_LABEL
 
 
+_COUNTRY_SHORT_CODE = {"United States": "US", "Taiwan": "TW", "United Kingdom": "UK"}
+
+
+def region_multiselect(default: list = None) -> list:
+    """Portfolio Optimizer's true multi-select country control (Issue #24
+    item 1). Unlike region_selector() above (single-select, shared GLOBAL
+    state used by ETF Analysis / Risk Analytics / Machine Learning / AI
+    Advisor), this is a dedicated, independent st.multiselect scoped ONLY
+    to the Portfolio Optimizer -- picking Taiwan + United States here never
+    affects any other page's market filter, and vice versa. There is no
+    "All Regions" option: the user picks exactly the 1-3 countries they
+    want, and the ETF universe below is the union of ONLY those countries.
+
+    Backed by a plain "_selected_regions_shadow" session_state mirror for
+    the same reason region_selector() needs one: render_sidebar_nav()'s
+    language selector can trigger st.rerun() before this widget is reached
+    on a given script pass, which would otherwise silently drop the
+    widget's own keyed state back to `default`.
+    """
+    countries = get_countries()
+    if default is None:
+        default = [countries[0]] if countries else []
+    labels = {c: t_country(c) for c in countries}
+
+    if "_selected_regions_shadow" not in st.session_state:
+        st.session_state["_selected_regions_shadow"] = default
+    shadow = [c for c in st.session_state["_selected_regions_shadow"] if c in countries]
+
+    selected = st.multiselect(
+        t("field_select_countries"), countries, default=shadow,
+        format_func=lambda c: labels.get(c, c), help=t("field_select_countries_help"),
+        key="selected_regions",
+    )
+    st.session_state["_selected_regions_shadow"] = selected
+    return selected
+
+
+def region_etf_options_multi(selected_regions: list) -> list:
+    """ETF ticker universe for the Portfolio Optimizer's multi-country
+    picker -- the union of tickers from ONLY the countries in
+    `selected_regions`, in a stable, deterministic order (countries in the
+    order the user picked them; tickers within a country in
+    get_tickers_by_country()'s own order). No "All Regions" branch: an
+    empty `selected_regions` deliberately returns an empty universe so the
+    page's own validation can show a clear "select at least one country"
+    message rather than silently defaulting to everything."""
+    seen = []
+    for c in selected_regions:
+        for tk in get_tickers_by_country(c):
+            if tk not in seen:
+                seen.append(tk)
+    return seen
+
+
+def multi_region_etf_multiselect(selected_regions: list, etf_options: list, label: str,
+                                  help_text: str = None, n_default: int = 5) -> list:
+    """ETF multiselect for the Portfolio Optimizer's multi-country picker
+    (Issue #24 item 1). Deliberately NOT region_etf_multiselect() above:
+    that helper keys its stored selection PER region string, so switching
+    which region(s) are active swaps to a completely different stored
+    list. Here we instead keep ONE persistent "master" selection
+    (session_state["_selected_etfs_multi_master"]) that survives country
+    changes -- removing a country prunes only the tickers that belonged
+    EXCLUSIVELY to it (they're no longer in `etf_options`), while every
+    other already-selected ticker from a still-active country stays
+    selected, exactly as required.
+
+    The widget's own `key` still changes with the active country
+    combination (f"selected_etfs_portfolio_{'+'.join(sorted(...))}"),
+    matching the safety pattern documented on
+    _render_etf_universe_filters(): changing a multiselect's `options`
+    between reruns while it keeps the SAME widget key can corrupt/reset
+    its stored selection, so a new combination always gets a fresh widget
+    key + the pruned "master" list as that key's one-time initial default;
+    revisiting a previously-seen combination naturally restores Streamlit's
+    own stored value for that key, which was always built by this same
+    safe pruning logic to begin with.
+    """
+    master_key = "_selected_etfs_multi_master"
+    if master_key not in st.session_state:
+        st.session_state[master_key] = etf_options[:n_default]
+    carry_over = [tk for tk in st.session_state[master_key] if tk in etf_options]
+    if not carry_over and etf_options:
+        carry_over = etf_options[:n_default]
+
+    label_map = _build_etf_label_map(etf_options, include_market=len(selected_regions) > 1)
+
+    if len(etf_options) > 10:
+        matches = _render_etf_universe_filters(etf_options)
+        if matches:
+            _preview_n = 12
+            preview = " · ".join(label_map.get(tk, tk) for tk in matches[:_preview_n])
+            if len(matches) > _preview_n:
+                preview += f" … (+{len(matches) - _preview_n})"
+            st.caption(t("etf_filter_match_count", n=len(matches)))
+            st.caption(preview)
+        else:
+            st.caption(t("etf_filter_no_matches"))
+
+    widget_key = "selected_etfs_portfolio_" + "+".join(sorted(selected_regions))
+    selected = st.multiselect(
+        label, options=etf_options, default=carry_over, help=help_text,
+        format_func=lambda tk: label_map.get(tk, tk), key=widget_key,
+    )
+    st.session_state[master_key] = selected
+    return selected
+
+
 def region_etf_options(selected_region: str, all_regions_label: str) -> list:
     """ETF ticker universe for `selected_region` -- the same "All Regions"
     / "United States" / single-country branching every page used
@@ -132,7 +240,7 @@ def region_benchmark_selector(selected_region: str, etf_options: list, label: st
     return benchmark
 
 
-def _build_etf_label_map(tickers: list) -> dict:
+def _build_etf_label_map(tickers: list, include_market: bool = False) -> dict:
     """Precompute {ticker: "0050 — 元大台灣50"} for every ticker up front,
     in one pass -- this is what a multiselect's `format_func` should read
     from (a plain, side-effect-free dict lookup), rather than calling
@@ -167,7 +275,17 @@ def _build_etf_label_map(tickers: list) -> dict:
             tag = f" [{leveraged_tag}]"
         elif record.return_type == "Inverse":
             tag = f" [{inverse_tag}]"
-        labels[ticker] = f"{ticker} — {name}{tag}" if name else f"{ticker}{tag}"
+        # Market suffix (Issue #24 item 1: "Make ETF labels clearly
+        # identify ticker + name and, where useful, market") -- only added
+        # when the caller is showing a cross-market universe (multiple
+        # countries at once); a single-market list never needs it since
+        # every option is obviously from the same market already.
+        market_tag = ""
+        if include_market:
+            code = _COUNTRY_SHORT_CODE.get(record.country)
+            if code:
+                market_tag = f" ({code})"
+        labels[ticker] = f"{ticker} — {name}{tag}{market_tag}" if name else f"{ticker}{tag}{market_tag}"
     return labels
 
 
@@ -560,6 +678,64 @@ def badge(text: str, variant: str = "neutral") -> str:
     return f'<span class="badge badge-{variant}">{text}</span>'
 
 
+# ── Setup vs Results Visual Hierarchy (Issue #24 items 2/3) ──────────────────
+def setup_summary_bar(parts: list, title: str = None) -> None:
+    """Compact, single-line 'Current setup' summary -- replaces a wide,
+    equally-weighted multi-field settings strip that gave setup inputs the
+    same visual prominence as the actual results. Deliberately plain,
+    muted, low-emphasis text (not a card, no color) so the eye moves past
+    it straight to results_hero() below, which carries the strong visual
+    weight instead. `parts` is a list of short pre-formatted strings (e.g.
+    "2 Markets", "5 ETFs", "USD", "Max Sharpe"), joined with a bullet.
+    `title` is the already-translated eyebrow label (e.g. t("opt_setup_
+    summary_title") / t("sim_projection_setup_title")) -- defaults to the
+    Portfolio Optimizer's own "Portfolio Setup" wording for backward
+    compatibility with its original single-page call site; every other
+    page should pass its own page-appropriate title explicitly."""
+    if title is None:
+        title = t("opt_setup_summary_title")
+    st.markdown(
+        '<div class="setup-summary-bar">'
+        f'<span class="setup-summary-eyebrow">{title}</span>'
+        "&nbsp;&nbsp;" + "&nbsp;&nbsp;•&nbsp;&nbsp;".join(parts) +
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def results_hero(title: str, subtitle: str = None) -> None:
+    """Strong, unmistakable visual break between Setup and Results (Issue
+    #24 item 3) -- a colored, elevated header block, deliberately much
+    stronger than section_header() (used for sub-sections WITHIN results),
+    so a first-time user can find "the answer" within a few seconds. Meant
+    to be the very first thing rendered after a portfolio/analysis is
+    successfully built."""
+    sub_html = f'<div class="results-hero-subtitle">{subtitle}</div>' if subtitle else ""
+    st.markdown(
+        f'<div class="results-hero"><div class="results-hero-eyebrow">{t("results_hero_eyebrow")}</div>'
+        f'<div class="results-hero-title">{title}</div>{sub_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def results_hero_metric(label: str, value: str, color: str = None) -> None:
+    """The ONE visually dominant result number (Issue #24 visual-acceptance
+    round item B1) -- rendered directly below results_hero(), large and
+    isolated, so it reads as THE answer rather than one of several
+    equal-weight KPI cards. Callers render their own smaller secondary
+    metrics (e.g. a plain st.columns(3) row of metric_card_html()) below
+    this, which are visually subordinate by simply being smaller, not by
+    any hidden state this function manages."""
+    color = color or "var(--primary)"
+    st.markdown(
+        '<div class="results-hero-metric">'
+        f'<div class="results-hero-metric-label">{label}</div>'
+        f'<div class="results-hero-metric-value" style="color:{color};">{value}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # ── KPI Cards ───────────────────────────────────────────────────────────────────
 _LABEL_ICON_MAP = [
     (("return", "growth", "gain", "報酬", "成長", "收益"), "trending-up"),
@@ -926,17 +1102,27 @@ def chart_caption(text: str) -> None:
 
 def ai_interpret_button(cache_key: str, session_state, context_text: str) -> None:
     """Optional, user-triggered 'Ask AI to interpret' enrichment for a chart
-    or table (Issue #22 section L). Renders nothing if OpenAI isn't
-    configured -- chart_caption() above always works regardless. No API
-    call happens just from rendering this button; a call only happens on
-    click, and only once per distinct (cache_key, context_text, language)
-    combination -- cached_generate() reuses the prior result on any rerun
-    that doesn't change those (e.g. switching tabs), so repeated clicks or
-    reruns with unchanged inputs never re-spend a call. The system prompt
-    restricts the model to ONLY the metrics passed in `context_text` --
-    it must never invent a number, price, or piece of advice.
+    or table (Issue #22 section L). No API call happens just from rendering
+    this button; a call only happens on click, and only once per distinct
+    (cache_key, context_text, language) combination -- cached_generate()
+    reuses the prior result on any rerun that doesn't change those (e.g.
+    switching tabs), so repeated clicks or reruns with unchanged inputs
+    never re-spend a call. The system prompt restricts the model to ONLY
+    the metrics passed in `context_text` -- it must never invent a number,
+    price, or piece of advice.
+
+    When OpenAI isn't configured, still renders a disabled button (never
+    clickable, never spends a call) plus a caption explaining why -- a
+    silent no-op here would make the whole feature invisible to a user who
+    never sees the button and has no way to know the capability exists or
+    why it's unavailable.
     """
     if not _openai_service.is_configured():
+        st.button(
+            t("chart_ask_ai_interpret"), key=f"{cache_key}_btn_disabled", disabled=True,
+            help=t("chart_ai_interpret_unavailable"),
+        )
+        st.caption(t("chart_ai_interpret_unavailable"))
         return
     if st.button(t("chart_ask_ai_interpret"), key=f"{cache_key}_btn"):
         system_prompt = (

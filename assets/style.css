@@ -89,6 +89,40 @@ h1, h2, h3, h4 { color: var(--text); font-weight: 700; letter-spacing: -0.01em; 
 
 .section-divider { height: 1px; background: var(--border); margin: 28px 0 20px 0; border: none; }
 
+/* Setup vs Results hierarchy (Issue #24 items 2/3) -- setup stays a plain,
+   muted single line; results gets a strong, elevated, colored block so the
+   two are never visually confused. */
+.setup-summary-bar { color: var(--text-muted); font-size: 12px; margin: 2px 0 16px 0; line-height: 1.6; }
+.setup-summary-eyebrow { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; color: var(--text-muted); }
+
+.results-hero {
+    margin: 22px 0 20px 0;
+    padding: 22px 26px;
+    background: linear-gradient(135deg, var(--primary-soft) 0%, rgba(59,130,246,0.04) 100%);
+    border: 1px solid var(--border-strong);
+    border-left: 5px solid var(--primary);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 6px 20px rgba(59,130,246,0.12);
+}
+.results-hero-eyebrow { color: var(--primary); font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+.results-hero-title { color: var(--text); font-size: 27px; font-weight: 800; letter-spacing: -0.01em; }
+.results-hero-subtitle { color: var(--text-secondary); font-size: 13.5px; margin-top: 6px; }
+
+/* Single hero METRIC (Issue #24 visual-acceptance round item B1) -- the
+   one large, isolated number directly under results_hero(); any secondary
+   metrics the caller renders below it are visually subordinate by simply
+   using the much smaller metric-card/kpi-card styles elsewhere in this
+   file, never this class. */
+.results-hero-metric { margin: 4px 0 18px 0; }
+.results-hero-metric-label {
+    color: var(--text-secondary); font-size: 12.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px;
+}
+.results-hero-metric-value { font-size: 52px; font-weight: 800; line-height: 1.08; letter-spacing: -0.02em; }
+@media (max-width: 640px) {
+    .results-hero-metric-value { font-size: 38px; }
+}
+
 .caption-text { color: var(--text-muted); font-size: 11.5px; }
 
 /* Streamlit-native headings used as lightweight section markers */
@@ -473,6 +507,36 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
     background: var(--primary-soft);
     box-shadow: none;
     transform: translateY(-1px);
+}
+
+/* ── Top-level workspace navigation (Issue #24 visual-acceptance round item
+   B3/B6) -- st.segmented_control keeps its real widget behavior; only the
+   visual chrome is restyled from a heavy filled-pill button group into
+   flat text tabs with a colored active underline, so it reads as page
+   navigation rather than another row of loud buttons competing with the
+   primary CTA. Targets Streamlit's stable `data-testid` rather than its
+   internal (unstable, hashed) class names. */
+div[data-testid="stSegmentedControl"] { border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+div[data-testid="stSegmentedControl"] button,
+div[data-testid="stSegmentedControl"] label {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    border-bottom: 2px solid transparent !important;
+    color: var(--text-secondary) !important;
+    font-weight: 600 !important;
+    box-shadow: none !important;
+    padding: 8px 6px !important;
+    margin: 0 14px 0 0 !important;
+    transform: none !important;
+}
+div[data-testid="stSegmentedControl"] button:hover,
+div[data-testid="stSegmentedControl"] label:hover { color: var(--text) !important; }
+div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+div[data-testid="stSegmentedControl"] label[aria-checked="true"],
+div[data-testid="stSegmentedControl"] [aria-checked="true"] button {
+    color: var(--primary) !important;
+    border-bottom-color: var(--primary) !important;
 }
 
 /* ── Download Buttons ─────────────────────────────────────────────────────── */
