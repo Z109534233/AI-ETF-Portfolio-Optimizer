@@ -354,20 +354,27 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .feature-card-title { color: var(--text); font-weight: 700; font-size: 14.5px; margin-bottom: 6px; }
 .feature-card-desc { color: var(--text-secondary); font-size: 12.5px; line-height: 1.55; }
 
-/* ── Capability Hierarchy Grid (Home "Why Choose", Issue #33) ────────────────
+/* ── Capability Hierarchy Grid (Home "Why Choose", Issue #33 / #35) ──────────
    One visually dominant featured capability + a borderless grid of smaller
    supporting "detail items" -- deliberately NOT feature_card()'s uniform
    outlined-card treatment, so other pages that still use .feature-card are
    unaffected. Supporting items carry no border by default; a border/surface
-   only appears on hover or keyboard focus. ─────────────────────────────── */
+   only appears on hover or keyboard focus.
+
+   12-column grid resolves into exactly two complete desktop rows (no
+   trailing orphan row / accidental whitespace hole):
+     row 1: featured (span 6) + 3 compact items (span 2 each)  = 12
+     row 2: 4 detail items (span 3 each)                       = 12
+   Item order in the markup is featured, then all 7 supporting items, so
+   nth-child position doubles as the row assignment. ─────────────────────── */
 .capability-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(12, 1fr);
     gap: 26px 20px;
     margin: 22px 0 14px 0;
 }
 .capability-featured {
-    grid-column: span 2;
+    grid-column: span 6;
     background: linear-gradient(160deg, var(--surface-2) 0%, var(--surface) 100%);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg);
@@ -382,12 +389,18 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .capability-featured-desc { color: var(--text-secondary); font-size: 13.5px; line-height: 1.6; max-width: 46ch; }
 
 .capability-item {
-    grid-column: span 1;
+    grid-column: span 3;
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-md);
     padding: 10px 12px;
     transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+/* Row 1: the three supporting items sharing the row with the featured block. */
+.capability-item:nth-child(2),
+.capability-item:nth-child(3),
+.capability-item:nth-child(4) {
+    grid-column: span 2;
 }
 .capability-item:hover,
 .capability-item:focus-visible {
@@ -401,19 +414,35 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .capability-item-title { color: var(--text); font-weight: 700; font-size: 13px; margin-bottom: 4px; }
 .capability-item-desc { color: var(--text-secondary); font-size: 11.5px; line-height: 1.5; }
 
-/* Asymmetric second-row rhythm: offset the trailing supporting item with a
-   leading spacer column instead of repeating a uniform 4-up row twice. */
-.capability-item:nth-child(8) { grid-column: 2 / span 2; }
-
 @media (prefers-reduced-motion: reduce) {
     .capability-item { transition: none; }
     .capability-item:hover, .capability-item:focus-visible { transform: none; }
 }
 
+/* Tablet: drop the 12-column split for a simple 2-up flow so nothing gets
+   uncomfortably narrow or overflows horizontally. */
+@media (max-width: 1024px) {
+    .capability-grid { grid-template-columns: repeat(2, 1fr); }
+    .capability-featured,
+    .capability-item,
+    .capability-item:nth-child(2),
+    .capability-item:nth-child(3),
+    .capability-item:nth-child(4) {
+        grid-column: span 1;
+    }
+    .capability-featured { grid-column: span 2; }
+}
+
 @media (max-width: 768px) {
     .capability-grid { grid-template-columns: 1fr; gap: 10px; }
-    .capability-featured { grid-column: span 1; padding: 20px 20px; }
-    .capability-item:nth-child(8) { grid-column: span 1; }
+    .capability-featured,
+    .capability-item,
+    .capability-item:nth-child(2),
+    .capability-item:nth-child(3),
+    .capability-item:nth-child(4) {
+        grid-column: span 1;
+    }
+    .capability-featured { padding: 20px 20px; }
 }
 
 /* ── News Cards (Market Intelligence) ─────────────────────────────────────── */
