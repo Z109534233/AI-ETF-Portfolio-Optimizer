@@ -777,7 +777,12 @@ def hero_metric_panel(primary_label: str, primary_value: str, primary_color: str
 
     if right_col is not None:
         badge_color = badge.get("color") or "var(--text-secondary)"
+        # Text-led by default (Issue #29 visual-acceptance round item 4):
+        # `emoji` is optional and only prefixed when a caller explicitly
+        # supplies one, so a badge with no emoji never renders a stray
+        # leading space before its label.
         emoji = badge.get("emoji", "")
+        emoji_html = f"{emoji} " if emoji else ""
         meta_html = "".join(
             f'<div class="hero-metric-panel-badge-meta-row"><span>{ml}</span><span>{mv}</span></div>'
             for ml, mv in badge.get("meta", [])
@@ -786,7 +791,7 @@ def hero_metric_panel(primary_label: str, primary_value: str, primary_color: str
             st.markdown(
                 '<div class="hero-metric-panel-badge">'
                 f'<span class="badge" style="background:{badge_color}22;color:{badge_color};'
-                f'border-color:{badge_color}55;">{emoji} {badge["label"]}</span>'
+                f'border-color:{badge_color}55;">{emoji_html}{badge["label"]}</span>'
                 f'{meta_html}'
                 '</div>',
                 unsafe_allow_html=True,

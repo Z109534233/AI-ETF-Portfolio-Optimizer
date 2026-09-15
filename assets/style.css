@@ -140,22 +140,19 @@ h1, h2, h3, h4 { color: var(--text); font-weight: 700; letter-spacing: -0.01em; 
     .hero-metric-panel-badge { align-items: flex-start; padding-top: 10px; }
 }
 
-/* Insight panel (Issue #29): flat, single-container replacement for nested
-   Result -> Summary -> ... -> Insights card stacks -- a colored left accent
-   border, a short heading, 2-4 bullet points, and an optional compact
-   footer/context line. See src/ui.py::insight_panel(). */
+/* Insight panel (Issue #29 visual-acceptance round item 5): a lightweight
+   left accent bar + bullet list, deliberately NOT another full bordered/
+   backgrounded card -- see src/ui.py::insight_panel(). */
 .insight-panel {
-    background: var(--surface); border: 1px solid var(--border);
-    border-left: 4px solid var(--primary); border-radius: var(--radius-md);
-    padding: 14px 18px; margin: 10px 0 16px 0;
+    border-left: 3px solid var(--primary);
+    padding: 2px 0 2px 14px; margin: 10px 0 16px 0;
 }
 .insight-panel-title {
     color: var(--text); font-weight: 700; font-size: 13.5px; margin-bottom: 8px;
 }
 .insight-panel-bullet { color: var(--text-secondary); font-size: 12.5px; line-height: 1.6; }
 .insight-panel-footer {
-    color: var(--text-muted); font-size: 11.5px; margin-top: 8px;
-    padding-top: 8px; border-top: 1px solid var(--border);
+    color: var(--text-muted); font-size: 11.5px; margin-top: 8px; padding-top: 8px;
 }
 
 .caption-text { color: var(--text-muted); font-size: 11.5px; }
