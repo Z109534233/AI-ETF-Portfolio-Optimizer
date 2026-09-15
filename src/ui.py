@@ -736,6 +736,88 @@ def results_hero_metric(label: str, value: str, color: str = None) -> None:
     )
 
 
+# ── Hero Metric Panel + Insight Panel (Issue #29 visual-acceptance round) ───
+# Generalizes the results_hero_metric() + secondary-row pattern Portfolio
+# Optimizer already established (Issue #24 item B1) into one reusable
+# helper, PLUS an optional right-side badge/metadata block aligned with the
+# primary metric -- ETF Analysis needs the rating badge (trend + Quant
+# Score/Signal Agreement) next to Annualized Return, which the plain
+# results_hero_metric() had no slot for. Only meant to be adopted on other
+# pages if the same one-protagonist-result shape genuinely fits there;
+# results_hero_metric() itself is left as-is for existing callers.
+def hero_metric_panel(primary_label: str, primary_value: str, primary_color: str = None,
+                       badge: dict = None, secondary: list = None) -> None:
+    """One primary metric (large, isolated) with an optional badge on the
+    right and an optional row of smaller secondary metrics underneath.
+
+    `badge`, if given, is a dict: {"emoji": str, "label": str, "color": str,
+    "meta": [(meta_label, meta_value), ...]} -- `label`/`meta` values must
+    already be translated by the caller (this function does no i18n lookup
+    itself, matching every other src/ui.py renderer).
+
+    `secondary`, if given, is a list of (label, value, color) tuples
+    rendered via kpi_card() in one st.columns(len(secondary)) row -- the
+    same small/subordinate styling used everywhere else on the page, never
+    the large hero typography.
+    """
+    color = primary_color or "var(--primary)"
+    if badge:
+        left_col, right_col = st.columns([2, 1])
+    else:
+        left_col, right_col = st.container(), None
+
+    with left_col:
+        st.markdown(
+            '<div class="hero-metric-panel-primary">'
+            f'<div class="results-hero-metric-label">{primary_label}</div>'
+            f'<div class="results-hero-metric-value" style="color:{color};">{primary_value}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    if right_col is not None:
+        badge_color = badge.get("color") or "var(--text-secondary)"
+        emoji = badge.get("emoji", "")
+        meta_html = "".join(
+            f'<div class="hero-metric-panel-badge-meta-row"><span>{ml}</span><span>{mv}</span></div>'
+            for ml, mv in badge.get("meta", [])
+        )
+        with right_col:
+            st.markdown(
+                '<div class="hero-metric-panel-badge">'
+                f'<span class="badge" style="background:{badge_color}22;color:{badge_color};'
+                f'border-color:{badge_color}55;">{emoji} {badge["label"]}</span>'
+                f'{meta_html}'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+    if secondary:
+        cols = st.columns(len(secondary))
+        for col, (s_label, s_value, s_color) in zip(cols, secondary):
+            with col:
+                st.markdown(kpi_card(s_label, s_value, color=s_color or COLORS["primary"]), unsafe_allow_html=True)
+
+
+def insight_panel(title: str, bullets: list, accent_color: str = None, footer: str = None) -> None:
+    """Flat, single-container replacement for nested Result -> Summary ->
+    ... -> Insights card stacks: a colored left accent border, a short
+    heading, 2-4 already-translated bullet-point strings, and one optional
+    compact context/footer line. Meant to be the ONE insight block a
+    workspace renders for its protagonist result, not a per-field card."""
+    color = accent_color or "var(--primary)"
+    bullets_html = "".join(f'<div class="insight-panel-bullet">&bull; {b}</div>' for b in bullets)
+    footer_html = f'<div class="insight-panel-footer">{footer}</div>' if footer else ""
+    st.markdown(
+        f'<div class="insight-panel" style="border-left-color:{color};">'
+        f'<div class="insight-panel-title">{title}</div>'
+        f'{bullets_html}'
+        f'{footer_html}'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # ── KPI Cards ───────────────────────────────────────────────────────────────────
 _LABEL_ICON_MAP = [
     (("return", "growth", "gain", "報酬", "成長", "收益"), "trending-up"),

@@ -22,7 +22,7 @@ from src.charts import (
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer, error_state,
-    region_selector, region_etf_options, chart_caption, ai_interpret_button, results_hero,
+    region_selector, region_etf_options, chart_caption, ai_interpret_button, results_hero, results_hero_metric,
 )
 from src.theme import COLORS
 from src.i18n import t, t_model_type, t_country, MODEL_TYPE_KEYS
@@ -183,16 +183,19 @@ results_hero(t("ml_results_hero_title"), t("ml_results_hero_subtitle"))
 section_header(t("ml_results_title", model=t_model_type(model_name), ticker=ticker_used),
                t("ml_results_sub", train=result["train_size"], test=result["test_size"]))
 
-col1, col2, col3, col4, col5 = st.columns(5)
+# Issue #29 visual-acceptance round: Accuracy -- the model's headline
+# evaluation metric -- is promoted to the single hero metric via
+# results_hero_metric(); Precision/Recall/F1/Baseline become smaller
+# secondary metrics rather than five equal-size cards.
+results_hero_metric(t("metric_accuracy"), f"{metrics['Accuracy']:.2%}", color=COLORS["primary"])
+col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown(metric_card_html(t("metric_accuracy"), f"{metrics['Accuracy']:.2%}", color=COLORS["primary"]), unsafe_allow_html=True)
-with col2:
     st.markdown(metric_card_html(t("metric_precision"), f"{metrics['Precision']:.2%}", color=COLORS["success"]), unsafe_allow_html=True)
-with col3:
+with col2:
     st.markdown(metric_card_html(t("metric_recall"), f"{metrics['Recall']:.2%}", color=COLORS["purple"]), unsafe_allow_html=True)
-with col4:
+with col3:
     st.markdown(metric_card_html(t("metric_f1_score"), f"{metrics['F1 Score']:.2%}", color=COLORS["warning"]), unsafe_allow_html=True)
-with col5:
+with col4:
     st.markdown(metric_card_html(
         t("metric_baseline_accuracy"), f"{result['baseline_accuracy']:.2%}",
         color=COLORS["text_muted"],

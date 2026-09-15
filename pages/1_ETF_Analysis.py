@@ -47,7 +47,8 @@ from src.utils import load_css, page_header, disclaimer_box, dataframe_to_csv, g
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, kpi_card, chart_caption, ai_interpret_button,
-    results_hero, region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
+    region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
+    hero_metric_panel, insight_panel,
 )
 from src.i18n import t, t_country, get_language, t_portfolio_view, t_trend_signal
 from src.etf_signals import (
@@ -221,26 +222,6 @@ st.markdown(
     '</div>',
     unsafe_allow_html=True,
 )
-
-# ── Core KPI Row (focus ETF snapshot) ────────────────────────────────────────
-_k_ret = annualized_return(_focus_p)
-_k_vol = annualized_volatility(_focus_p)
-_k_sharpe = sharpe_ratio(_focus_p, risk_free_rate)
-_k_mdd = maximum_drawdown(_focus_p)
-_k_trend = trend_signal_from_return(recent_trend_return(_focus_p))
-_K_TREND_META = {"Bullish": ("🟢", "var(--success)"), "Neutral": ("🟡", "var(--warning)"), "Bearish": ("🔴", "var(--danger)")}
-_k_emoji, _k_color = _K_TREND_META[_k_trend]
-kcol1, kcol2, kcol3, kcol4, kcol5 = st.columns(5)
-with kcol1:
-    st.markdown(kpi_card(t("etf_kpi_ann_return"), f"{_k_ret:.2%}", color="var(--success)", icon="trending-up"), unsafe_allow_html=True)
-with kcol2:
-    st.markdown(kpi_card(t("etf_kpi_ann_vol"), f"{_k_vol:.2%}", color="var(--warning)", icon="activity"), unsafe_allow_html=True)
-with kcol3:
-    st.markdown(kpi_card(t("etf_kpi_sharpe"), f"{_k_sharpe:.2f}", color="var(--primary)", icon="target"), unsafe_allow_html=True)
-with kcol4:
-    st.markdown(kpi_card(t("etf_kpi_mdd"), f"{_k_mdd:.2%}", color="var(--danger)", icon="trending-down"), unsafe_allow_html=True)
-with kcol5:
-    st.markdown(kpi_card(t("etf_kpi_trend"), f'<span style="color:{_k_color};">{_k_emoji} {t_trend_signal(_k_trend)}</span>', color=_k_color), unsafe_allow_html=True)
 
 
 # ── Shared rule-based analysis helpers (no external LLM) -- EXACT same
@@ -464,16 +445,17 @@ st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 # OVERVIEW -- "What is this ETF?"
 # ══════════════════════════════════════════════════════════════════════════
 if workspace == "Overview":
-    # Issue #24 light hierarchy pass: results_hero() is the strong,
-    # unmistakable visual break used elsewhere (see pages/2_Portfolio_
-    # Optimizer.py) for the first concrete result of a user's selection --
-    # here, that's the focus ETF's own snapshot, so it replaces the plain
-    # section_header() that used to open this workspace. The other five
-    # workspaces stay on section_header(): they're a continuous analytical
-    # explorer (Performance/Risk/Holdings/Compare/Deep Analysis), not a
-    # single "here's the answer" moment, so promoting all of them to hero
-    # weight would just make the whole page loud instead of clarifying it.
-    results_hero(t("etf_overview_snapshot_title"), subtitle=_focus_ticker)
+    # Issue #29 visual-acceptance round: the focus ETF's identity (ticker +
+    # name + metadata) is already shown exactly once in the compact header
+    # above, so this workspace no longer repeats the ticker as a hero
+    # subtitle -- section_header() below is a plain, lightweight label
+    # (unlike results_hero()'s strong elevated box), just enough to name
+    # this workspace. Annualized Return is promoted to the single hero
+    # metric (large, isolated typography), the rating badge (Trend + Quant
+    # Score/Signal Agreement) sits beside it on the right, and Volatility/
+    # Sharpe/Max Drawdown are three smaller secondary metrics underneath --
+    # replacing the old five-equal-size-KPI-card row for this workspace.
+    section_header(t("etf_overview_snapshot_title"))
     # Same thin-history disclosure as the Compare workspace (Issue #20
     # release-gate review, automated PR reviewer finding): a focus ticker
     # under MIN_RELIABLE_HISTORY_POINTS still gets a Quant Score/Trend/
@@ -483,7 +465,31 @@ if workspace == "Overview":
     if not has_sufficient_history(_focus_p):
         st.warning(t("etf_thin_history_warning", tickers=_focus_ticker))
     _focus_entry = _ai_summary_entry(_focus_ticker, _lang)
-    _render_ai_summary_card(_focus_ticker, _focus_entry)
+    _ov_emoji, _ov_color = _SUM_TREND_META[_focus_entry["trend"]]
+
+    hero_metric_panel(
+        t("etf_kpi_ann_return"), f"{_focus_entry['ret_ann']:.2%}", primary_color="var(--success)",
+        badge={
+            "emoji": _ov_emoji, "label": t_trend_signal(_focus_entry["trend"]), "color": _ov_color,
+            "meta": [
+                (t("etf_quant_score_label"), _focus_entry["score"]),
+                (t("etf_signal_agreement_label"), f"{_focus_entry['signal_agreement']}%"),
+            ],
+        },
+        secondary=[
+            (t("etf_kpi_ann_vol"), f"{_focus_entry['vol']:.2%}", "var(--warning)"),
+            (t("etf_kpi_sharpe"), f"{_focus_entry['sharpe']:.2f}", "var(--primary)"),
+            (t("etf_kpi_mdd"), f"{_focus_entry['mdd']:.2%}", "var(--danger)"),
+        ],
+    )
+
+    # ONE flat insight block (left accent + heading + bullets + a compact
+    # Portfolio View footer line) replacing the old nested Result -> Smart
+    # Summary -> Ticker -> Trend -> Quant Score -> Insights card stack.
+    insight_panel(
+        t("etf_quant_insights_label"), _focus_entry["insights"], accent_color=_ov_color,
+        footer=f"{t('etf_portfolio_view_label')}: {t_portfolio_view(_focus_entry['portfolio_view'])}",
+    )
 
     with chart_card(t("etf_overview_chart_title")):
         fig = price_chart(etf_prices[[_focus_ticker]])
