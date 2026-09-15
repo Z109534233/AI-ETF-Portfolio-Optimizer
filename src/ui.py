@@ -575,19 +575,62 @@ def render_sidebar_footer() -> None:
     """, unsafe_allow_html=True)
 
 
+# ── Ticker Strip (Home page, above the hero) ─────────────────────────────────
+def ticker_strip(items: list, is_sample: bool = False) -> None:
+    """Thin finance-style ticker strip rendered above the hero title.
+
+    `items` is a list of (ticker, pct_change) tuples -- pct_change must
+    already be computed by the caller from the SAME demo-portfolio price
+    data the hero composition/metrics use (see app.py), never a second
+    network request. An entry with pct_change=None is skipped rather than
+    shown as a fabricated value, so a ticker whose data failed to load is
+    gracefully hidden instead of faked. When `is_sample` is True (the
+    underlying prices are the synthetic fallback, not real market data),
+    a small "Sample Data" tag is shown so the strip is never mistaken for
+    live market data.
+    """
+    lang = get_language()
+    chips = []
+    for ticker, pct in items:
+        if pct is None:
+            continue
+        is_up = pct >= 0
+        arrow = "&#9650;" if is_up else "&#9660;"
+        direction_class = "ticker-item-up" if is_up else "ticker-item-down"
+        chips.append(
+            f'<div class="ticker-item {direction_class}"><span class="ticker-item-symbol">{ticker}</span>'
+            f'<span class="ticker-item-pct">{arrow} {abs(pct):.2f}%</span></div>'
+        )
+    if not chips:
+        return
+    tag_html = ""
+    if is_sample:
+        tag_text = "示範資料" if lang == "zh-TW" else "Sample Data"
+        tag_html = f'<span class="ticker-strip-tag">{tag_text}</span>'
+    st.markdown(f'<div class="ticker-strip">{"".join(chips)}{tag_html}</div>', unsafe_allow_html=True)
+
+
 # ── Hero Section (Home page) ───────────────────────────────────────────────────
-def hero_section() -> None:
+def hero_section(composition: list = None, metrics: list = None, is_sample: bool = False) -> None:
     """
     Apple/Stripe/Bloomberg-style hero, two columns: left is a plain-
     language title + natural product description + two CTAs; right is a
-    static, non-functional "Dashboard Preview" mockup (placeholder numbers,
-    not wired to any real computation) so the hero is never visually
-    empty on one side and communicates what the platform does at a glance.
-    Shorter than the previous single-column version (no more large
-    multi-line tagline, tighter padding) so Platform Statistics can still
-    land in the first viewport. Bilingual strings are written out directly
-    here (via get_language()) rather than added as new src/i18n.py keys,
-    to keep this change to ui.py + style.css only.
+    compact demo portfolio summary (one composition line + a 3-metric
+    financial-output row) so the hero is never visually empty on one side
+    and communicates what the platform does at a glance -- this is the
+    ONE portfolio demo preview on Home (Issue #31 item 2: the page no
+    longer has a second, duplicated dashboard preview below it).
+
+    `composition` is a list of (ticker, weight_str) tuples and `metrics`
+    is [expected_return_str, volatility_str, sharpe_str] -- both computed
+    by the caller (app.py) from the same demo-portfolio price fetch used
+    by ticker_strip() above, so this never implies an optimizer output or
+    a live recommendation, only an equal-weight illustrative demo.
+    `is_sample` mirrors ticker_strip()'s flag: True when the underlying
+    prices are the synthetic fallback rather than real market data.
+    Bilingual strings are written out directly here (via get_language())
+    rather than added as new src/i18n.py keys, to keep this change to
+    ui.py + style.css only.
     """
     lang = get_language()
     # Positioning (Issue #20 section 1A): the visible product positioning
@@ -604,6 +647,8 @@ def hero_section() -> None:
         btn_secondary = "探索功能"
         preview_title = "投資組合預覽（示範）"
         preview_metrics = ["預期報酬", "波動", "Sharpe"]
+        composition_label = "示範投資組合"
+        sample_word = "示範資料"
     else:
         title = "ETF Portfolio Analytics & Quantitative Decision Platform"
         subtitle = "Performance analysis, portfolio optimization, risk analytics, simulation, machine learning, and AI-assisted interpretation, in one platform."
@@ -611,9 +656,11 @@ def hero_section() -> None:
         btn_secondary = "Explore Features"
         preview_title = "Portfolio Preview (Demo)"
         preview_metrics = ["Expected Return", "Volatility", "Sharpe"]
+        composition_label = "Demo Portfolio"
+        sample_word = "Sample Data"
 
-    holdings = [("VOO", "40%"), ("QQQ", "35%"), ("0050", "25%")]
-    metric_values = ["12.8%", "14.5%", "1.31"]
+    composition = composition or [("VOO", "40%"), ("QQQ", "35%"), ("0050", "25%")]
+    metric_values = metrics or ["12.8%", "14.5%", "1.31"]
 
     with st.container(border=True):
         st.markdown('<div class="hero-marker"></div>', unsafe_allow_html=True)
@@ -632,17 +679,17 @@ def hero_section() -> None:
                     st.switch_page("pages/1_ETF_Analysis.py")
                 st.markdown('</div>', unsafe_allow_html=True)
             with btn_col2:
+                # A real in-page jump to the Why Choose section (see
+                # section_header()'s anchor_id) -- not static text styled
+                # like a button (Issue #31 item 1: CTA hierarchy).
                 st.markdown(
-                    f'<div class="hero-cta-secondary-link">{btn_secondary}</div>',
+                    f'<a href="#why-choose-anchor" class="hero-cta-secondary-link">{btn_secondary}</a>',
                     unsafe_allow_html=True,
                 )
 
         with col_right:
-            holdings_html = "".join(
-                f'<div class="hero-preview-row"><span class="hero-preview-row-label">{ticker}</span>'
-                f'<span class="hero-preview-row-value">{weight}</span></div>'
-                for ticker, weight in holdings
-            )
+            composition_text = " &middot; ".join(f"<b>{ticker}</b> {weight}" for ticker, weight in composition)
+            sample_html = f' <span class="hero-preview-sample-tag">{sample_word}</span>' if is_sample else ""
             metrics_html = "".join(
                 f'<div class="hero-preview-metric"><div class="hero-preview-metric-label">{label}</div>'
                 f'<div class="hero-preview-metric-value">{value}</div></div>'
@@ -651,7 +698,7 @@ def hero_section() -> None:
             st.markdown(
                 '<div class="hero-preview-card">'
                 f'<div class="hero-preview-caption">{preview_title}</div>'
-                f'{holdings_html}'
+                f'<div class="hero-preview-composition">{composition_label} &middot; {composition_text}{sample_html}</div>'
                 '<div class="hero-preview-metrics">' + metrics_html + '</div>'
                 '</div>',
                 unsafe_allow_html=True,
@@ -659,7 +706,7 @@ def hero_section() -> None:
 
 
 # ── Section / Page Headers ──────────────────────────────────────────────────────
-def section_header(title: str, subtitle: str = None) -> None:
+def section_header(title: str, subtitle: str = None, anchor_id: str = None) -> None:
     # Built as a single-line string deliberately: when subtitle is None,
     # sub_html is "" and, if placed on its own line inside a multi-line
     # HTML block, that line becomes blank. Streamlit's markdown renderer
@@ -668,9 +715,83 @@ def section_header(title: str, subtitle: str = None) -> None:
     # text instead of HTML and is displayed literally on the page. Keeping
     # the whole block on one line makes that impossible regardless of
     # which optional pieces are present.
+    # `anchor_id`, if given, renders an invisible in-page jump target (see
+    # .section-anchor in style.css) -- used by the Home hero's "Explore
+    # Features" secondary CTA to jump to the Why Choose section.
+    anchor_html = f'<span id="{anchor_id}" class="section-anchor"></span>' if anchor_id else ""
     sub_html = f'<div class="section-subtitle">{subtitle}</div>' if subtitle else ""
-    html = f'<div class="section-header"><div class="section-title">{title}</div>{sub_html}</div>'
+    html = f'<div class="section-header">{anchor_html}<div class="section-title">{title}</div>{sub_html}</div>'
     st.markdown(html, unsafe_allow_html=True)
+
+
+# ── Low-Emphasis Numeric Strip (Home Platform Statistics, Issue #31) ─────────
+def stat_strip(stats: list) -> None:
+    """Render a compact row of (value, label) pairs with no card chrome --
+    replaces a 4-card KPI grid so real platform statistics stay visible
+    without adding another card-grid section to the page (Issue #31 item
+    8: simplify Statistics to a low-emphasis numeric strip)."""
+    items = "".join(
+        f'<div class="stat-strip-item"><div class="stat-strip-value">{value}</div>'
+        f'<div class="stat-strip-label">{label}</div></div>'
+        for value, label in stats
+    )
+    st.markdown(f'<div class="stat-strip">{items}</div>', unsafe_allow_html=True)
+
+
+# ── Persona Row (Who It's For, Issue #31 item 3) ──────────────────────────────
+def persona_row(personas: list) -> None:
+    """Lightweight icon + title + one-line description row -- deliberately
+    NOT feature_card()'s full outlined card grid, since Why Choose is
+    already the page's one primary card-grid section. `personas` is a
+    list of {"icon", "title", "desc"} dicts (already translated)."""
+    items = "".join(
+        '<div class="persona-item">'
+        f'<div class="persona-icon">{icon_svg(p["icon"], 18, COLORS["primary"])}</div>'
+        '<div class="persona-text">'
+        f'<div class="persona-title">{p["title"]}</div>'
+        f'<div class="persona-desc">{p["desc"]}</div>'
+        '</div></div>'
+        for p in personas
+    )
+    st.markdown(f'<div class="persona-row">{items}</div>', unsafe_allow_html=True)
+
+
+# ── FAQ Accordion (Common Investment Questions, Issue #31 item 3) ────────────
+def faq_accordion(items: list) -> None:
+    """Render one native st.expander per (question, answer) pair --
+    replaces the six-box question grid so the FAQ reads as a compact
+    accordion instead of six identical blue boxes. `question`/`answer`
+    must already be translated by the caller."""
+    for question, answer in items:
+        with st.expander(question):
+            st.markdown(f'<div class="faq-answer">{answer}</div>', unsafe_allow_html=True)
+
+
+# ── Tech Stack Strip (moved near the footer, Issue #31 item 7) ───────────────
+def tech_stack_strip(items: list, label: str = None) -> None:
+    """Small, low-emphasis pill row for the technology stack -- meant to
+    sit near the footer/credits, never competing visually with the
+    finance-capability sections above it."""
+    label_html = f'<span class="tech-stack-label">{label}</span>' if label else ""
+    pills_html = "".join(f'<span class="tech-pill">{item}</span>' for item in items)
+    st.markdown(f'<div class="tech-stack-strip">{label_html}{pills_html}</div>', unsafe_allow_html=True)
+
+
+# ── Alternating Section Surface (background rhythm, Issue #31 item 4) ────────
+@contextlib.contextmanager
+def section_surface():
+    """A section wrapper with a very slightly lifted background
+    (--bg-alt) so Home reads as a gentle rhythm of surfaces rather than
+    one continuous dark slab -- without looking like another floating
+    card. Reuses the exact st.container(border=True) + invisible marker +
+    CSS :has() technique already proven by .hero-marker / .chart-card-
+    header above (the only selector shape confirmed to reliably target
+    Streamlit's bordered-container wrapper); the border itself is made
+    transparent in CSS so this never reads as a card."""
+    container = st.container(border=True)
+    with container:
+        st.markdown('<div class="section-surface-marker"></div>', unsafe_allow_html=True)
+        yield container
 
 
 def badge(text: str, variant: str = "neutral") -> str:

@@ -342,14 +342,14 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .feature-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-top: 2px solid var(--primary);
+    border-top: 2px solid rgba(59, 130, 246, 0.45);
     border-radius: var(--radius-lg);
-    padding: 14px 16px 12px 16px;
-    margin: 6px 0;
-    min-height: 118px;
+    padding: 14px 16px;
+    margin: 5px 0;
+    min-height: 110px;
     transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
-.feature-card:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.feature-card:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
 .feature-card-icon { margin-bottom: 6px; }
 .feature-card-title { color: var(--text); font-weight: 700; font-size: 14.5px; margin-bottom: 6px; }
 .feature-card-desc { color: var(--text-secondary); font-size: 12.5px; line-height: 1.55; }
@@ -737,6 +737,116 @@ hr { border-color: var(--border); margin: 18px 0; }
     text-align: center; color: var(--text-secondary); font-size: 13.5px; margin-top: 4px; padding: 14px;
     background: var(--primary-soft); border: 1px solid rgba(59,130,246,0.25); border-radius: var(--radius-md);
 }
+
+/* ── Ticker Strip (Home hero, Issue #31) ──────────────────────────────────────
+   Thin finance-style strip rendered above the hero title. Percentages come
+   from the same demo-portfolio price fetch the hero composition/metrics
+   use (see src/ui.py::ticker_strip() + app.py) -- never a second network
+   request. A monospace stack + tabular-nums are scoped to this strip only,
+   not applied globally (Issue #31 item 5). */
+.ticker-strip {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px;
+    padding: 8px 4px; margin: 0 0 10px 2px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+.ticker-item { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12.5px; }
+.ticker-item-symbol { color: var(--text); font-weight: 700; letter-spacing: 0.01em; }
+.ticker-item-pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+.ticker-item-up .ticker-item-pct { color: var(--success); }
+.ticker-item-down .ticker-item-pct { color: var(--danger); }
+.ticker-strip-tag {
+    margin-left: auto; color: var(--text-muted); font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font);
+}
+@media (max-width: 640px) {
+    .ticker-strip { gap: 6px 12px; }
+    .ticker-strip-tag { margin-left: 0; width: 100%; }
+}
+
+/* ── Hero Demo Composition (single compact line -- replaces the old
+   stacked ticker/weight row list) + financial-output metric row. Numbers
+   use tabular-nums and a larger, bolder weight so they read as financial
+   output rather than plain body text (Issue #31 item 5), scoped to the
+   hero only. ─────────────────────────────────────────────────────────── */
+.hero-preview-composition {
+    color: var(--text-secondary); font-size: 12.5px; line-height: 1.6;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.hero-preview-composition b { color: var(--text); font-variant-numeric: tabular-nums; }
+.hero-preview-sample-tag {
+    color: var(--text-muted); font-size: 9.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border: 1px solid var(--border-strong); border-radius: 999px; padding: 1px 7px;
+}
+.hero-preview-metrics { font-variant-numeric: tabular-nums; }
+.hero-preview-metric-value { font-size: 17px; }
+
+/* ── Platform Statistics: low-emphasis numeric strip (replaces the 4-card
+   KPI grid, Issue #31 item 8) ────────────────────────────────────────── */
+.stat-strip { display: flex; flex-wrap: wrap; gap: 22px 40px; padding: 6px 2px 4px 2px; }
+.stat-strip-item { min-width: 84px; }
+.stat-strip-value {
+    color: var(--text); font-size: 22px; font-weight: 800; letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums; line-height: 1.15;
+}
+.stat-strip-label { color: var(--text-muted); font-size: 11.5px; margin-top: 2px; }
+
+/* ── Persona Row (Who It's For -- lightweight row, no full cards,
+   Issue #31 item 3) ──────────────────────────────────────────────────── */
+.persona-row { display: flex; flex-wrap: wrap; gap: 22px; margin: 8px 0 4px 0; }
+.persona-item { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 220px; min-width: 200px; }
+.persona-icon {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: var(--radius-md);
+    background: var(--primary-soft); display: flex; align-items: center; justify-content: center;
+}
+.persona-title { color: var(--text); font-weight: 700; font-size: 13.5px; margin-bottom: 2px; }
+.persona-desc { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+@media (max-width: 768px) {
+    .persona-row { flex-direction: column; gap: 16px; }
+}
+
+/* ── FAQ Accordion (replaces the six-box question grid, Issue #31 item 3) ── */
+.faq-answer { color: var(--text-secondary); font-size: 13px; line-height: 1.6; padding: 2px 2px 4px 2px; }
+
+/* ── Tech Stack Strip (moved near the footer, de-emphasized,
+   Issue #31 item 7) ──────────────────────────────────────────────────── */
+.tech-stack-strip {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+    justify-content: center; margin: 10px 0 4px 0;
+}
+.tech-stack-label {
+    color: var(--text-muted); font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.06em; margin-right: 4px;
+}
+.tech-pill {
+    display: inline-flex; align-items: center; color: var(--text-muted); font-size: 10.5px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 10px;
+}
+
+/* ── Section Surface: subtle alternating background rhythm (Issue #31
+   item 4). Reuses the same st.container(border=True) + marker + :has()
+   technique already used for .hero-marker / .chart-card-header above --
+   the only selector shape confirmed to reliably target Streamlit's
+   bordered-container wrapper. The border is intentionally made
+   transparent here (this is a full-width section background, not
+   another card) and the background swap is a deliberately small step up
+   from --bg so sections read as a gentle rhythm, not floating panels. ── */
+.section-surface-marker { display: none; }
+div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div > .section-surface-marker) {
+    background: var(--bg-alt) !important;
+    border: 1px solid transparent !important;
+    border-radius: var(--radius-xl) !important;
+    box-shadow: none !important;
+    padding: 22px clamp(14px, 4vw, 36px) !important;
+    margin: 4px 0 18px 0;
+}
+
+/* Invisible in-page jump target for the hero's secondary CTA (Issue #31
+   item 1) -- offset so the section title doesn't land flush against the
+   viewport edge after the jump. */
+.section-anchor { display: block; position: relative; top: -76px; visibility: hidden; }
 
 /* ── Responsive: Tablet & Mobile ───────────────────────────────────────────── */
 @media (max-width: 992px) {
