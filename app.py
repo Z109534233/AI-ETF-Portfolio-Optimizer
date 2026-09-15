@@ -32,6 +32,7 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, get_language
+from src.auth import require_login
 
 # ── Page Configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -45,6 +46,8 @@ st.set_page_config(
         "About": "AI ETF Portfolio Optimizer — Educational FinTech Portfolio Project",
     }
 )
+
+require_login()
 
 # ── Initialisation ────────────────────────────────────────────────────────────
 ensure_directories()

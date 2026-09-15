@@ -87,3 +87,59 @@ def test_get_current_user_id_never_raises_on_broken_user_object(monkeypatch):
     monkeypatch.setattr(st, "user", _BrokenUser())
     assert auth.get_current_user_id() == DEFAULT_USER_ID
     assert auth.is_authenticated() is False
+
+
+# ── require_login() / render_account_section() (Issue #26) ─────────────────
+# require_login() is the central page guard called from app.py and every
+# page in pages/. It must be a strict no-op (never redirect) unless a
+# deployment BOTH has [auth] configured AND the visitor isn't signed in --
+# otherwise the public demo would become unreachable, exactly the failure
+# mode Issue #22 section C was written to prevent.
+
+def test_require_login_noop_when_not_configured(monkeypatch):
+    monkeypatch.setattr(auth, "is_auth_configured", lambda: False)
+    redirects = []
+    monkeypatch.setattr(st, "switch_page", lambda page: redirects.append(page))
+    auth.require_login()
+    assert redirects == []
+
+
+def test_require_login_noop_when_already_authenticated(monkeypatch):
+    monkeypatch.setattr(auth, "is_auth_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_authenticated", lambda: True)
+    redirects = []
+    monkeypatch.setattr(st, "switch_page", lambda page: redirects.append(page))
+    auth.require_login()
+    assert redirects == []
+
+
+def test_require_login_redirects_to_login_page_when_signed_out(monkeypatch):
+    monkeypatch.setattr(auth, "is_auth_configured", lambda: True)
+    monkeypatch.setattr(auth, "is_authenticated", lambda: False)
+    redirects = []
+    monkeypatch.setattr(st, "switch_page", lambda page: redirects.append(page))
+    auth.require_login()
+    assert redirects == [auth.LOGIN_PAGE]
+
+
+def test_render_account_section_silent_when_not_authenticated(monkeypatch):
+    monkeypatch.setattr(auth, "is_authenticated", lambda: False)
+    rendered = []
+    monkeypatch.setattr(st, "markdown", lambda *a, **k: rendered.append(a))
+    monkeypatch.setattr(st, "caption", lambda *a, **k: rendered.append(a))
+    auth.render_account_section()
+    assert rendered == []
+
+
+def test_render_account_section_shows_signed_in_user_and_sign_out(monkeypatch):
+    monkeypatch.setattr(auth, "is_authenticated", lambda: True)
+    monkeypatch.setattr(auth, "get_current_user_display_name", lambda: "Alice")
+    captions = []
+    monkeypatch.setattr(st, "markdown", lambda *a, **k: None)
+    monkeypatch.setattr(st, "caption", lambda *a, **k: captions.append(a))
+    logged_out = []
+    monkeypatch.setattr(st, "button", lambda *a, **k: True)
+    monkeypatch.setattr(st, "logout", lambda: logged_out.append(True))
+    auth.render_account_section()
+    assert any("Alice" in str(c) for c in captions)
+    assert logged_out == [True]

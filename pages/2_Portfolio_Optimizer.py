@@ -64,12 +64,15 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
+from src.auth import require_login
 
 st.set_page_config(
     page_title="Portfolio Optimizer | AI ETF Portfolio Optimizer",
     page_icon="⚡",
     layout="wide"
 )
+
+require_login()
 
 load_css()
 init_database()

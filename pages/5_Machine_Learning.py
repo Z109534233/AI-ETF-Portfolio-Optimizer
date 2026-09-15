@@ -26,12 +26,15 @@ from src.ui import (
 )
 from src.theme import COLORS
 from src.i18n import t, t_model_type, t_country, MODEL_TYPE_KEYS
+from src.auth import require_login
 
 st.set_page_config(
     page_title="Machine Learning | AI ETF Portfolio Optimizer",
     page_icon="🤖",
     layout="wide"
 )
+
+require_login()
 
 load_css()
 

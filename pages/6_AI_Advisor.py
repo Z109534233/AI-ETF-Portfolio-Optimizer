@@ -36,12 +36,15 @@ from src.i18n import (
     t, t_investment_objective, t_risk_level, t_country, get_language,
     INVESTMENT_OBJECTIVE_KEYS, RISK_LEVEL_KEYS
 )
+from src.auth import require_login
 
 st.set_page_config(
     page_title="AI Portfolio Analyst | AI ETF Portfolio Optimizer",
     page_icon="🧠",
     layout="wide"
 )
+
+require_login()
 
 load_css()
 
