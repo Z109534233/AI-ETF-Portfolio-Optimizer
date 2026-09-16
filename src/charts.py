@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 
-from src.theme import COLORS, CHART_COLORS, FONT_FAMILY
+from src.theme import COLORS, CHART_COLORS, FONT_FAMILY, color_for_ticker
 from src.i18n import t
 
 DARK_TEMPLATE = dict(
@@ -62,10 +62,10 @@ def price_chart(prices_df: pd.DataFrame, title: str = None) -> go.Figure:
     """Line chart of historical prices."""
     title = title if title is not None else t("chart_historical_prices")
     fig = go.Figure()
-    for i, col in enumerate(prices_df.columns):
+    for col in prices_df.columns:
         fig.add_trace(go.Scatter(
             x=prices_df.index, y=prices_df[col],
-            name=col, line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
+            name=col, line=dict(color=color_for_ticker(col), width=2),
             hovertemplate=f"<b>{col}</b><br>{t('chart_date')}: %{{x|%Y-%m-%d}}<br>{t('chart_price')}: $%{{y:.2f}}<extra></extra>"
         ))
     fig.update_layout(title=title, xaxis_title=t("chart_date"), yaxis_title=t("chart_price_usd"))
@@ -76,10 +76,10 @@ def normalized_price_chart(prices_df: pd.DataFrame, base: float = 100.0) -> go.F
     """Normalized price comparison chart (all starting at base value)."""
     normalized = prices_df.div(prices_df.iloc[0]) * base
     fig = go.Figure()
-    for i, col in enumerate(normalized.columns):
+    for col in normalized.columns:
         fig.add_trace(go.Scatter(
             x=normalized.index, y=normalized[col],
-            name=col, line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
+            name=col, line=dict(color=color_for_ticker(col), width=2),
             hovertemplate=f"<b>{col}</b><br>{t('chart_date')}: %{{x|%Y-%m-%d}}<br>{t('chart_normalized')}: %{{y:.1f}}<extra></extra>"
         ))
     fig.update_layout(
@@ -94,10 +94,10 @@ def cumulative_return_chart(prices_df: pd.DataFrame) -> go.Figure:
     returns = prices_df.pct_change().dropna()
     cum_returns = (1 + returns).cumprod() - 1
     fig = go.Figure()
-    for i, col in enumerate(cum_returns.columns):
+    for col in cum_returns.columns:
         fig.add_trace(go.Scatter(
             x=cum_returns.index, y=cum_returns[col] * 100,
-            name=col, line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=2),
+            name=col, line=dict(color=color_for_ticker(col), width=2),
             hovertemplate=f"<b>{col}</b><br>{t('chart_date')}: %{{x|%Y-%m-%d}}<br>{t('chart_return')}: %{{y:.2f}}%<extra></extra>"
         ))
     fig.add_hline(y=0, line_dash="dash", line_color=COLORS["muted"], opacity=0.5)
@@ -108,17 +108,18 @@ def cumulative_return_chart(prices_df: pd.DataFrame) -> go.Figure:
 def drawdown_chart(prices_df: pd.DataFrame) -> go.Figure:
     """Drawdown chart for each ETF."""
     fig = go.Figure()
-    for i, col in enumerate(prices_df.columns):
+    for col in prices_df.columns:
         prices = prices_df[col].dropna()
         rolling_max = prices.cummax()
         drawdown = (prices - rolling_max) / rolling_max * 100
+        _color = color_for_ticker(col)
         fig.add_trace(go.Scatter(
             x=drawdown.index, y=drawdown,
             name=col, fill="tozeroy",
-            line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=1.5),
-            fillcolor=f"rgba({int(CHART_COLORS[i % len(CHART_COLORS)][1:3], 16)}, "
-                      f"{int(CHART_COLORS[i % len(CHART_COLORS)][3:5], 16)}, "
-                      f"{int(CHART_COLORS[i % len(CHART_COLORS)][5:7], 16)}, 0.15)",
+            line=dict(color=_color, width=1.5),
+            fillcolor=f"rgba({int(_color[1:3], 16)}, "
+                      f"{int(_color[3:5], 16)}, "
+                      f"{int(_color[5:7], 16)}, 0.15)",
             hovertemplate=f"<b>{col}</b><br>{t('chart_date')}: %{{x|%Y-%m-%d}}<br>{t('chart_return')}: %{{y:.2f}}%<extra></extra>"
         ))
     fig.update_layout(title=t("chart_drawdown_pct"), xaxis_title=t("chart_date"), yaxis_title=t("chart_drawdown_pct"))
@@ -147,10 +148,10 @@ def return_distribution_chart(prices_df: pd.DataFrame) -> go.Figure:
     """Daily return distribution histogram."""
     returns = prices_df.pct_change().dropna() * 100
     fig = go.Figure()
-    for i, col in enumerate(returns.columns):
+    for col in returns.columns:
         fig.add_trace(go.Histogram(
             x=returns[col], name=col, opacity=0.7, nbinsx=50,
-            marker_color=CHART_COLORS[i % len(CHART_COLORS)],
+            marker_color=color_for_ticker(col),
             hovertemplate=f"<b>{col}</b><br>{t('chart_return')}: %{{x:.2f}}%<br>{t('chart_frequency')}: %{{y}}<extra></extra>"
         ))
     fig.update_layout(
@@ -279,7 +280,7 @@ def allocation_donut_chart(weights: dict, title: str = None) -> go.Figure:
     fig = go.Figure(data=[go.Pie(
         labels=labels, values=values,
         hole=0.5, textinfo="label+percent",
-        marker=dict(colors=CHART_COLORS[:len(labels)],
+        marker=dict(colors=[color_for_ticker(tk) for tk in labels],
                     line=dict(color=COLORS["bg"], width=2)),
         hovertemplate=f"<b>%{{label}}</b><br>{t('chart_weight')}: %{{value:.1f}}%<extra></extra>"
     )])
@@ -309,14 +310,14 @@ def risk_return_scatter(prices_df: pd.DataFrame, periods_per_year: int = 252) ->
     """Risk vs Return scatter plot for multiple ETFs."""
     from src.financial_metrics import annualized_return, annualized_volatility
     fig = go.Figure()
-    for i, col in enumerate(prices_df.columns):
+    for col in prices_df.columns:
         prices = prices_df[col].dropna()
         ret = annualized_return(prices, periods_per_year) * 100
         vol = annualized_volatility(prices, periods_per_year) * 100
         fig.add_trace(go.Scatter(
             x=[vol], y=[ret], mode="markers+text",
             name=col, text=[col], textposition="top center",
-            marker=dict(color=CHART_COLORS[i % len(CHART_COLORS)], size=12),
+            marker=dict(color=color_for_ticker(col), size=12),
             hovertemplate=f"<b>{col}</b><br>{t('chart_volatility')}: {vol:.2f}%<br>{t('chart_return')}: {ret:.2f}%<extra></extra>"
         ))
     fig.update_layout(

@@ -30,7 +30,7 @@ from src.market_intelligence import (
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
-    generate_todays_market_action,
+    generate_todays_market_action, stars_to_impact_label,
 )
 from src.charts import sentiment_donut_chart, allocation_donut_chart
 from src.theme import COLORS
@@ -179,23 +179,39 @@ with tab_overview:
                 st.caption(t("mi_no_news_available"))
 
     # ── Market Impact Score ───────────────────────────────────────────────
+    # ONE primary scale (Issue #43 item F): the numeric score/100 stays the
+    # primary value, and the secondary text is a localized QUALITATIVE
+    # impact level (e.g. "High Impact" / "高度影響") derived from the exact
+    # same star count already used elsewhere on this page -- never a second
+    # 1-5 star rating duplicating the same market-impact concept. Stars
+    # remain fine on the per-news/per-market cards elsewhere on this page.
     _mi_score_title = "市場影響分數" if _mi_lang == "zh-TW" else "Market Impact Score"
-    _mi_star_label = "★" * market_impact["stars"] + "☆" * (5 - market_impact["stars"])
+    _mi_impact_level_label = stars_to_impact_label(market_impact["stars"])
     _mi_score_color = (
         COLORS["danger"] if market_impact["stars"] >= 4
         else COLORS["warning"] if market_impact["stars"] == 3
         else COLORS["text_muted"]
     )
     st.markdown(
-        metric_card_html(_mi_score_title, f"{market_impact['score']}/100", _mi_star_label, color=_mi_score_color),
+        metric_card_html(_mi_score_title, f"{market_impact['score']}/100", _mi_impact_level_label, color=_mi_score_color),
         unsafe_allow_html=True,
     )
 
     # ── Today's Market Overview ────────────────────────────────────────────
     section_header(t("mi_section_overview_title"))
 
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    index_cols = {"sp500": col1, "nasdaq": col2, "dow": col3, "russell": col4, "vix": col5}
+    # Fear & Greed has no verified/keyless data source connected yet
+    # (fetch_fear_greed_index() always returns available=False) -- render
+    # it as a KPI card ONLY when a real source is actually available, so it
+    # never looks like a broken/empty live metric next to VIX (Issue #43
+    # item G). The 5 real indices always render their own column,
+    # individually showing "Data unavailable" only on a genuine fetch
+    # failure -- a different, temporary condition from Fear & Greed's
+    # structural "not connected" state.
+    _mi_show_fear_greed = bool(fear_greed.get("available"))
+    _mi_index_keys = ["sp500", "nasdaq", "dow", "russell", "vix"]
+    _mi_cols = st.columns(len(_mi_index_keys) + (1 if _mi_show_fear_greed else 0))
+    index_cols = dict(zip(_mi_index_keys, _mi_cols))
 
     for key, col in index_cols.items():
         info = indices.get(key, {"label": t(f"mi_{key}"), "available": False})
@@ -214,12 +230,15 @@ with tab_overview:
                     unsafe_allow_html=True,
                 )
 
-    with col6:
-        st.markdown(
-            metric_card_html(fear_greed["label"], t("mi_placeholder_value"), t("mi_placeholder_note"),
-                              color=COLORS["text_muted"]),
-            unsafe_allow_html=True,
-        )
+    if _mi_show_fear_greed:
+        with _mi_cols[-1]:
+            st.markdown(
+                metric_card_html(fear_greed["label"], str(fear_greed.get("value", "—")),
+                                  fear_greed.get("category"), color=COLORS["primary"]),
+                unsafe_allow_html=True,
+            )
+    else:
+        st.caption(t("mi_fear_greed_not_connected"))
 
     # ── Affected Markets ──────────────────────────────────────────────────
     section_header(t("mi_section_affected_markets_title"), t("mi_section_affected_markets_subtitle"))

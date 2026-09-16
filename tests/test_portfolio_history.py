@@ -451,3 +451,211 @@ def test_real_saved_portfolio_shows_no_demo_badge(isolated_db):
     assert "Curated Demo Example" not in warnings
     summary_corpus = str(at.dataframe[0].value)
     assert "(Demo)" not in summary_corpus
+
+
+# ── Issue #43 item K: legacy/custom saved-strategy display ───────────────
+def test_legacy_custom_allocation_strategy_localized_in_zh_tw(isolated_db):
+    isolated_db.save_portfolio(
+        name="LegacyCustom", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Custom Allocation", expected_return=0.08,
+        expected_volatility=0.12, sharpe_ratio=0.6,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "zh-TW"
+    at.run()
+    assert at.exception == []
+    summary_corpus = str(at.dataframe[0].value)
+    assert "自訂配置" in summary_corpus
+    assert "Custom Allocation" not in summary_corpus
+
+
+def test_custom_allocation_never_added_to_optimizer_dropdown():
+    from src.i18n import OPTIMIZATION_METHOD_KEYS
+    assert "Custom Allocation" not in OPTIMIZATION_METHOD_KEYS
+    assert len(OPTIMIZATION_METHOD_KEYS) == 5
+
+
+def test_unknown_legacy_strategy_falls_back_safely_without_crashing():
+    from src.i18n import t_saved_strategy
+    assert t_saved_strategy("Some Future Method") == "Some Future Method"
+    assert t_saved_strategy("") == "—"
+    assert t_saved_strategy(None) == "—"
+
+
+# ── Issue #43 item J: saved methodology metadata localized at display ────
+def test_experiment_details_localizes_estimator_labels_in_zh_tw(isolated_db):
+    isolated_db.save_portfolio(
+        name="MetaPortfolioZh", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Maximum Sharpe Ratio", expected_return=0.12,
+        expected_volatility=0.15, sharpe_ratio=0.8, metadata=SAMPLE_METADATA,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "zh-TW"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "歷史複合年化成長率" in corpus
+    assert "歷史樣本共變異數" in corpus
+    # No raw snake_case internal function-argument name leaked into zh-TW.
+    assert "annualized_return" not in corpus
+
+
+# ── Issue #43 item L: meaningful Market display (never a bare dash) ──────
+def test_multi_market_display_from_metadata_markets_list(isolated_db):
+    meta = dict(SAMPLE_METADATA)
+    meta["markets"] = ["United States", "Taiwan"]
+    isolated_db.save_portfolio(
+        name="MultiMarket", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Maximum Sharpe Ratio", expected_return=0.1,
+        expected_volatility=0.15, sharpe_ratio=0.7, metadata=meta,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "Multi-market" in corpus
+    assert "United States" in corpus and "Taiwan" in corpus
+
+
+def test_market_inferred_from_holdings_when_no_markets_metadata(isolated_db):
+    # VOO/VTI are both US-listed and SAMPLE_METADATA has no "markets" list
+    # (only the older singular "market" string) -- the display must infer
+    # from holdings rather than trust the old field.
+    isolated_db.save_portfolio(
+        name="InferredMarket", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Maximum Sharpe Ratio", expected_return=0.1,
+        expected_volatility=0.15, sharpe_ratio=0.7, metadata=SAMPLE_METADATA,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "**Market**: United States" in corpus
+
+
+def test_market_shows_localized_not_recorded_instead_of_bare_dash(isolated_db):
+    isolated_db.save_portfolio(
+        name="UnknownMarket", weights={"ZZZFAKETICKER": 1.0}, investment_amount=10000.0,
+        optimization_method="Equal Weight", expected_return=0.05,
+        expected_volatility=0.1, sharpe_ratio=0.5,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "zh-TW"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "未記錄" in corpus
+    assert "市場**: —" not in corpus
+
+
+# ── Issue #43 item M: old-version provenance notice ───────────────────────
+def test_legacy_app_version_notice_shown_when_version_differs(isolated_db):
+    meta = dict(SAMPLE_METADATA)
+    meta["app_version"] = "2020.01-ancient"
+    isolated_db.save_portfolio(
+        name="OldVersionPortfolio", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Maximum Sharpe Ratio", expected_return=0.1,
+        expected_volatility=0.15, sharpe_ratio=0.7, metadata=meta,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    assert any(
+        "created with app version" in i.value and "2020.01-ancient" in i.value
+        for i in at.info
+    )
+
+
+def test_no_legacy_notice_when_version_matches_current(isolated_db):
+    meta = dict(SAMPLE_METADATA)
+    meta["app_version"] = dbmod.APP_VERSION
+    isolated_db.save_portfolio(
+        name="CurrentVersionPortfolio", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Maximum Sharpe Ratio", expected_return=0.1,
+        expected_volatility=0.15, sharpe_ratio=0.7, metadata=meta,
+    )
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    assert not any("created with app version" in i.value for i in at.info)
+
+
+# ── Issue #43 item N: delete requires explicit second confirmation ───────
+def test_delete_button_disabled_until_confirmed_then_deletes(isolated_db):
+    _seed_portfolio(isolated_db, "ToDelete", PORTFOLIO_A_HOLDINGS)
+    saved = isolated_db.load_all_portfolios()[0]
+
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+
+    delete_btn = next(b for b in at.button if b.label == "Delete Portfolio")
+    assert delete_btn.disabled is True
+
+    checkbox = next(c for c in at.checkbox if c.key == f"hist_delete_confirm_{saved['id']}")
+    checkbox.set_value(True)
+    at.run()
+
+    delete_btn = next(b for b in at.button if b.label == "Delete Portfolio")
+    assert delete_btn.disabled is False
+    delete_btn.click()
+    at.run()
+    assert at.exception == []
+    assert isolated_db.load_all_portfolios() == []
+
+
+def test_changing_selected_portfolio_resets_delete_confirmation(isolated_db):
+    _seed_portfolio(isolated_db, "PortA", PORTFOLIO_A_HOLDINGS)
+    _seed_portfolio(isolated_db, "PortB", PORTFOLIO_B_HOLDINGS)
+    saved = isolated_db.load_all_portfolios()
+    id_a = next(p["id"] for p in saved if p["name"] == "PortA")
+    id_b = next(p["id"] for p in saved if p["name"] == "PortB")
+
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+
+    # Explicitly select PortA first -- load_all_portfolios() orders newest
+    # first, so the delete dropdown's own default selection is not assumed.
+    delete_select = next(sb for sb in at.selectbox if sb.key == "delete_select")
+    delete_select.set_value(id_a)
+    at.run()
+
+    checkbox_a = next(c for c in at.checkbox if c.key == f"hist_delete_confirm_{id_a}")
+    checkbox_a.set_value(True)
+    at.run()
+    delete_btn = next(b for b in at.button if b.label == "Delete Portfolio")
+    assert delete_btn.disabled is False
+
+    delete_select = next(sb for sb in at.selectbox if sb.key == "delete_select")
+    delete_select.set_value(id_b)
+    at.run()
+
+    # A different portfolio is now selected -- its own confirmation
+    # checkbox is a fresh, unchecked widget, so the button must be disabled
+    # again even though PortA's checkbox was previously checked.
+    delete_btn = next(b for b in at.button if b.label == "Delete Portfolio")
+    assert delete_btn.disabled is True
+    assert len(isolated_db.load_all_portfolios()) == 2
+
+
+# ── Issue #43 item Q: no literal Markdown heading-marker leak ────────────
+def test_no_literal_markdown_heading_leak_in_captions_and_alerts(isolated_db):
+    _seed_portfolio(isolated_db, "HeadingLeakCheck", PORTFOLIO_A_HOLDINGS)
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    # st.markdown() elements legitimately include real "### " headings
+    # (e.g. the sidebar title) that render correctly -- this regression
+    # check instead targets non-markdown display surfaces (captions,
+    # success/error/warning/info banners) where a literal, unrendered
+    # "### " prefix would indicate the old leaked-markdown bug.
+    for collection in (at.caption, at.success, at.error, at.warning, at.info):
+        for el in collection:
+            assert "### " not in el.value, el.value

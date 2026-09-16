@@ -22,6 +22,7 @@ from src.database import (
     load_all_portfolios, delete_portfolio, init_database,
     add_user_holding, load_user_holdings, delete_user_holding,
     add_watchlist_item, load_watchlist, remove_watchlist_item,
+    APP_VERSION,
 )
 from src.etf_database import get_country, get_etf, to_yahoo_symbol
 from src.data_loader import _download_single_ticker
@@ -31,9 +32,13 @@ from src.utils import load_css, page_header, disclaimer_box, metric_card_html
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, empty_state, error_state, status_card,
-    chart_caption, ai_interpret_button,
+    chart_caption, ai_interpret_button, info_badge,
 )
-from src.i18n import t, t_opt_method, t_country, t_goal_target_mode, t_goal_risk, t_goal_status
+from src.i18n import (
+    t, t_saved_strategy, t_country, t_goal_target_mode, t_goal_risk, t_goal_status,
+    t_return_estimator, t_covariance_estimator, t_market_display,
+    get_language,
+)
 from src.auth import get_current_user_id, is_authenticated, render_auth_status
 from src.goal_planner import (
     build_goal_plan, VALID_TARGET_MODES, VALID_MARKET_PREFERENCES,
@@ -145,6 +150,25 @@ def _infer_market_from_holdings(holdings: dict):
     return max(set(countries), key=countries.count)
 
 
+def _market_display_for_portfolio(p: dict) -> str:
+    """Meaningful, already-translated Market display for Experiment Details
+    (Issue #43 item L) -- never a bare "--" when there is meaningful
+    information to show: prefers the saved metadata["markets"] list (added
+    by pages/2_Portfolio_Optimizer.py's _experiment_metadata) when present;
+    for older records saved before that metadata existed, infers the set of
+    known countries from the portfolio's own saved holdings instead. Either
+    way, t_market_display() renders one market, a localized "Multi-market
+    (...)" summary, or a localized "Not recorded" -- purely a display-layer
+    summary, never a rewrite of the saved record itself.
+    """
+    meta = p.get("metadata") or {}
+    if meta.get("markets"):
+        return t_market_display(meta["markets"])
+    holdings = p.get("holdings") or {}
+    countries = [get_country(tk) for tk in holdings if get_country(tk)]
+    return t_market_display(countries)
+
+
 def _set_as_current_portfolio(p: dict) -> None:
     """Reload a saved portfolio into the ONE canonical
     st.session_state["current_portfolio"] object (same shape Portfolio
@@ -224,7 +248,7 @@ def _render_portfolio_history_tab():
             "ID": p["id"],
             t("hist_col_name"): _display_name,
             t("hist_col_created"): p["created_at"],
-            t("hist_col_method"): t_opt_method(p["optimization_method"]) if p["optimization_method"] else "—",
+            t("hist_col_method"): t_saved_strategy(p["optimization_method"]) if p["optimization_method"] else "—",
             t("hist_col_investment"): f"${_safe_num(p['investment_amount'])}",
             t("hist_col_exp_return"): _safe_pct(p["expected_return"]),
             t("hist_col_exp_volatility"): _safe_pct(p["expected_volatility"]),
@@ -275,7 +299,7 @@ def _render_portfolio_history_tab():
                     st.caption(f"✓ {t('hist_current_portfolio_badge')}")
                 detail_data = {
                     t("metric_optimization_method"): (
-                        t_opt_method(selected_portfolio["optimization_method"])
+                        t_saved_strategy(selected_portfolio["optimization_method"])
                         if selected_portfolio["optimization_method"] else "—"
                     ),
                     t("field_investment_amount_usd"): f"${_safe_num(selected_portfolio['investment_amount'], ',.2f')}",
@@ -328,15 +352,32 @@ def _render_portfolio_history_tab():
 
                 # Experiment metadata (Issue #20 section 9C) -- shown for every
                 # portfolio; legacy saves (before this feature existed) simply
-                # have an empty dict rather than fabricated values.
+                # have an empty dict rather than fabricated values. The small
+                # ⓘ info_badge() cue (Issue #43 item O) gives this the same
+                # info/explanation visual semantics as Risk Analytics'
+                # Methodology & Assumptions, distinct from a plain expander.
+                st.markdown(info_badge(t("hist_experiment_details_badge_label")), unsafe_allow_html=True)
                 with st.expander(t("hist_experiment_details_title")):
                     _meta = selected_portfolio.get("metadata") or {}
                     if not _meta:
                         st.caption(t("hist_no_experiment_metadata"))
+                        # Market is still meaningful even with zero other
+                        # metadata (Issue #43 item L): inferred directly
+                        # from the portfolio's own saved holdings, never a
+                        # bare "--" when there is real information to show.
+                        st.markdown(f"**{t('hist_meta_market')}**: {_market_display_for_portfolio(selected_portfolio)}")
                     else:
+                        # Old-version provenance note (Issue #43 item M): a
+                        # saved record's historical window/assumptions are
+                        # whatever was true when IT was saved, not a stale
+                        # value to "fix" against today's app defaults --
+                        # this is a neutral disclosure, never a warning.
+                        _record_version = _meta.get("app_version")
+                        if _record_version and _record_version != APP_VERSION:
+                            st.info(t("hist_legacy_version_notice", version=_record_version))
                         _meta_rows = {
                             t("hist_meta_schema_version"): _meta.get("schema_version", "—"),
-                            t("hist_meta_market"): t_country(_meta["market"]) if _meta.get("market") else "—",
+                            t("hist_meta_market"): _market_display_for_portfolio(selected_portfolio),
                             t("hist_meta_historical_window"): (
                                 f"{_meta.get('historical_start_date', '—')} → {_meta.get('historical_end_date', '—')}"
                             ),
@@ -350,8 +391,8 @@ def _render_portfolio_history_tab():
                             t("hist_meta_allow_short"): (
                                 t("hist_meta_yes") if _meta.get("allow_short") else t("hist_meta_no")
                             ),
-                            t("hist_meta_return_estimator"): _meta.get("expected_return_estimator", "—"),
-                            t("hist_meta_covariance_estimator"): _meta.get("covariance_estimator", "—"),
+                            t("hist_meta_return_estimator"): t_return_estimator(_meta.get("expected_return_estimator")),
+                            t("hist_meta_covariance_estimator"): t_covariance_estimator(_meta.get("covariance_estimator")),
                             t("hist_meta_asset_universe"): ", ".join(_meta.get("asset_universe", [])) or "—",
                             t("hist_meta_data_as_of"): _meta.get("data_as_of", "—"),
                             t("hist_meta_app_version"): _meta.get("app_version", "—"),
@@ -362,7 +403,7 @@ def _render_portfolio_history_tab():
         with col_right:
             if selected_portfolio["holdings"]:
                 _detail_method_label = (
-                    t_opt_method(selected_portfolio["optimization_method"])
+                    t_saved_strategy(selected_portfolio["optimization_method"])
                     if selected_portfolio["optimization_method"] else None
                 )
                 with chart_card(t("hist_allocation_breakdown_card"), _detail_method_label):
@@ -414,7 +455,7 @@ def _render_portfolio_history_tab():
                              t("metric_expected_volatility"), t("metric_sharpe_ratio"), t("metric_number_of_holdings"),
                              t("hist_col_effective_holdings")],
                 port_a["name"]: [
-                    t_opt_method(port_a["optimization_method"]) if port_a["optimization_method"] else "—",
+                    t_saved_strategy(port_a["optimization_method"]) if port_a["optimization_method"] else "—",
                     f"${_safe_num(port_a['investment_amount'])}",
                     _safe_pct(port_a["expected_return"]),
                     _safe_pct(port_a["expected_volatility"]),
@@ -423,7 +464,7 @@ def _render_portfolio_history_tab():
                     f"{diag_a['effective_holdings']:.2f}" if diag_a else "—",
                 ],
                 port_b["name"]: [
-                    t_opt_method(port_b["optimization_method"]) if port_b["optimization_method"] else "—",
+                    t_saved_strategy(port_b["optimization_method"]) if port_b["optimization_method"] else "—",
                     f"${_safe_num(port_b['investment_amount'])}",
                     _safe_pct(port_b["expected_return"]),
                     _safe_pct(port_b["expected_volatility"]),
@@ -457,14 +498,14 @@ def _render_portfolio_history_tab():
             col_a, col_b = st.columns(2)
             with col_a:
                 if port_a["holdings"]:
-                    _a_method_label = t_opt_method(port_a["optimization_method"]) if port_a["optimization_method"] else None
+                    _a_method_label = t_saved_strategy(port_a["optimization_method"]) if port_a["optimization_method"] else None
                     with chart_card(port_a["name"], _a_method_label):
                         fig_a = allocation_donut_chart(port_a["holdings"], "")
                         st.plotly_chart(fig_a, use_container_width=True, key=f"history_compare_donut_a_{port_a['id']}")
                         chart_caption(t("hist_compare_donut_caption"))
             with col_b:
                 if port_b["holdings"]:
-                    _b_method_label = t_opt_method(port_b["optimization_method"]) if port_b["optimization_method"] else None
+                    _b_method_label = t_saved_strategy(port_b["optimization_method"]) if port_b["optimization_method"] else None
                     with chart_card(port_b["name"], _b_method_label):
                         fig_b = allocation_donut_chart(port_b["holdings"], "")
                         st.plotly_chart(fig_b, use_container_width=True, key=f"history_compare_donut_b_{port_b['id']}")
@@ -502,9 +543,20 @@ def _render_portfolio_history_tab():
                            format_func=lambda x: portfolio_names[x],
                            key="delete_select")
 
+    # Explicit second confirmation (Issue #43 item N): selecting a portfolio
+    # above never deletes it by itself. The confirmation checkbox is keyed
+    # by `del_id`, so it is a BRAND NEW (unchecked) widget whenever the
+    # selection changes -- switching portfolios automatically invalidates
+    # any prior confirmation without extra session-state bookkeeping. The
+    # Delete button stays disabled until this box is checked.
+    _del_name = portfolio_names.get(del_id, "")
+    confirm_delete = st.checkbox(
+        t("hist_delete_confirm_checkbox", name=_del_name), key=f"hist_delete_confirm_{del_id}",
+    )
+
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button(t("btn_delete_portfolio"), type="secondary"):
+        if st.button(t("btn_delete_portfolio"), type="secondary", disabled=not confirm_delete):
             if delete_portfolio(del_id):
                 st.success(t("hist_delete_success"))
                 st.rerun()
@@ -783,7 +835,7 @@ with tab_brief:
             _brief_news = []
 
         _brief_context = build_brief_context(_brief_holdings, _brief_watchlist, _brief_news)
-        _brief_result = generate_daily_brief(_brief_context, st.session_state)
+        _brief_result = generate_daily_brief(_brief_context, st.session_state, language=get_language())
 
         with chart_card(
             t("db_section_title"),
