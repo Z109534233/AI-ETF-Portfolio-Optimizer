@@ -400,7 +400,12 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
 ETF_ANALYSIS_METHODOLOGY = {
     "expected_return_and_volatility": {
         "return_type": "simple daily percentage returns (DataFrame.pct_change)",
-        "annualization": "mean daily return * 252 trading days; volatility is the daily-return standard deviation * sqrt(252)",
+        "annualization": (
+            "annualized return uses CAGR: (last usable price / first usable "
+            "price) ** (252 / number of usable trading days) - 1 -- NOT a "
+            "mean-daily-return x 252 approximation; annualized volatility is "
+            "the daily-return standard deviation x sqrt(252)"
+        ),
     },
     "risk_free_rate": {
         "nature": (
@@ -522,13 +527,17 @@ def validate_ml_split(train_start: str, train_end: str, test_start: str, test_en
 
 def validate_etf_analysis_window(observations: int, min_observations: int = 20) -> dict:
     """Factual check that the focus ticker's usable historical window (M5)
-    has enough observations for the displayed annualized metrics to be
-    numerically stable. Returns {"is_valid": bool, "issues": [str, ...]}."""
+    meets this page's minimum observation-count threshold before showing
+    annualized metrics. This is a MINIMUM USABILITY/SUFFICIENCY check only --
+    it does NOT re-derive or reconcile the displayed return/volatility/ratio
+    figures against the price data, and it is not a claim of statistical
+    stability. Returns {"is_valid": bool, "issues": [str, ...]}."""
     issues = []
     if observations < min_observations:
         issues.append(
             f"only {observations} usable observation(s) are available; at "
-            f"least {min_observations} are recommended for stable annualized metrics"
+            f"least {min_observations} are recommended as a minimum "
+            f"usability threshold before this page's annualized metrics are shown"
         )
     return {"is_valid": len(issues) == 0, "issues": issues}
 

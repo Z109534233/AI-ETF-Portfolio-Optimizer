@@ -545,7 +545,7 @@ TRANSLATIONS = {
         "etf_methodology_history_label": "歷史資料區間",
         "etf_methodology_history_value": "{ticker}：{start} 至 {end}（{days} 個可用交易日）",
         "etf_methodology_annualization_label": "年化換算",
-        "etf_methodology_annualization_value": "以 252 個交易日年化：年化報酬率為每日簡單報酬率平均值 ×252；年化波動度為每日報酬率標準差 ×√252。",
+        "etf_methodology_annualization_value": "年化報酬率採用 CAGR（複合年成長率）計算：以「期末可用價格 ÷ 期初可用價格」開 (252 ÷ 可用交易日數) 次方後減一，而非每日簡單報酬率平均值 ×252 的近似算法；年化波動度為每日報酬率標準差 ×√252。",
         "etf_methodology_benchmark_label": "目前選定的比較基準",
         "etf_methodology_rfr_label": "無風險利率假設",
         "etf_methodology_rfr_value": "目前無風險利率假設為 {rf}，由使用者於側邊欄設定；本系統不會自動同步即時公債殖利率或其他外部利率來源。",
@@ -555,7 +555,7 @@ TRANSLATIONS = {
         "etf_methodology_data_source_value": "價格資料透過 yfinance 取得，來源為 Yahoo Finance，採用已依股息與拆股調整之收盤價（auto_adjust=True）；缺漏交易日以前值／後值填補（forward/back-fill）。",
         "etf_methodology_limitation_label": "歷史分析限制",
         "etf_methodology_limitation_value": "以上所有指標皆描述所選日期區間內「已觀察到的歷史表現」，並非對未來報酬、波動度或風險調整後績效的預測。",
-        "etf_methodology_validation_pass": "驗證通過：所選標的具備足夠可用歷史資料，且上方顯示之報酬／波動度／比率與此資料區間在數值上一致。",
+        "etf_methodology_validation_pass": "驗證通過：所選標的的可用歷史資料筆數達到本頁面年化指標所需的最低可用天數門檻（此為歷史資料充足性檢查，並非對上方數值的獨立重新計算或驗證）。",
         "etf_methodology_validation_fail": "驗證發現以下問題：{issues}",
 
         # ── Portfolio Optimizer Page ─────────────────────────────────────
@@ -2185,7 +2185,7 @@ TRANSLATIONS = {
         "etf_methodology_history_label": "Historical Window",
         "etf_methodology_history_value": "{ticker}: {start} to {end} ({days} usable trading days)",
         "etf_methodology_annualization_label": "Annualization Convention",
-        "etf_methodology_annualization_value": "Annualized ×252 trading days: annualized return is the mean daily simple return ×252; annualized volatility is the daily-return standard deviation ×√252.",
+        "etf_methodology_annualization_value": "Annualized return uses CAGR (compound annual growth rate): (last usable price / first usable price) ^ (252 / number of usable trading days) − 1 -- not a mean-daily-return ×252 approximation; annualized volatility is the daily-return standard deviation ×√252.",
         "etf_methodology_benchmark_label": "Currently Selected Benchmark",
         "etf_methodology_rfr_label": "Risk-Free Rate Assumption",
         "etf_methodology_rfr_value": "The current risk-free rate assumption is {rf}, set by you in the sidebar; this system does not automatically sync a live Treasury yield or any other external rate.",
@@ -2195,7 +2195,7 @@ TRANSLATIONS = {
         "etf_methodology_data_source_value": "Price data is fetched via yfinance from Yahoo Finance, using dividend/split-adjusted closing prices (auto_adjust=True); missing trading days are forward- then back-filled.",
         "etf_methodology_limitation_label": "Historical-Analysis Limitation",
         "etf_methodology_limitation_value": "Every metric above describes OBSERVED HISTORICAL performance over the selected date range -- it is not a forecast of future return, volatility, or risk-adjusted performance.",
-        "etf_methodology_validation_pass": "Validation passed: the selected ticker has enough usable historical data, and the return/volatility/ratios shown above are numerically consistent with this data window.",
+        "etf_methodology_validation_pass": "Validation passed: the selected ticker's usable historical data meets this page's minimum observation-count threshold for showing annualized metrics (a historical-data sufficiency check only -- it does not independently re-derive or reconcile the figures shown above).",
         "etf_methodology_validation_fail": "Validation found the following issue(s): {issues}",
 
         # ── Portfolio Optimizer Page ─────────────────────────────────────

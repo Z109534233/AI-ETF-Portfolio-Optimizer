@@ -23,6 +23,7 @@ import pytest
 
 from src.methodology import ETF_ANALYSIS_METHODOLOGY, validate_etf_analysis_window
 from src.i18n import TRANSLATIONS
+from src.financial_metrics import annualized_return
 
 
 def _apptest_from_file(rel_path, **kwargs):
@@ -81,6 +82,45 @@ def test_methodology_metadata_matches_actual_implementation():
     assert "forecast" in m["limitation"]
 
 
+# ── Annualization methodology text must match the actual CAGR implementation
+def test_annualization_metadata_describes_cagr_not_mean_return_approximation():
+    ann = ETF_ANALYSIS_METHODOLOGY["expected_return_and_volatility"]["annualization"]
+    assert "CAGR" in ann
+    assert "NOT a mean-daily-return" in ann
+    assert "sqrt(252)" in ann
+
+
+def test_annualized_return_matches_cagr_formula_not_mean_daily_times_252():
+    """Ties the methodology's stated formula directly to
+    src.financial_metrics.annualized_return()'s actual implementation, so the
+    methodology text can never silently drift back to describing a
+    mean-daily-return x252 approximation while the code stays CAGR-based
+    (or vice versa)."""
+    idx = pd.date_range("2023-01-02", periods=253, freq="B")
+    rng = np.random.default_rng(42)
+    prices = pd.Series(100 * np.cumprod(1 + rng.normal(0.0005, 0.01, len(idx))), index=idx)
+
+    actual = annualized_return(prices)
+    n_years = len(prices) / 252
+    expected_cagr = (prices.iloc[-1] / prices.iloc[0]) ** (1 / n_years) - 1
+    assert actual == pytest.approx(expected_cagr)
+
+    mean_daily_times_252_approximation = prices.pct_change().dropna().mean() * 252
+    assert actual != pytest.approx(mean_daily_times_252_approximation, rel=1e-2)
+
+
+def test_i18n_annualization_value_describes_cagr_in_both_languages():
+    en = TRANSLATIONS["en"]["etf_methodology_annualization_value"]
+    zh = TRANSLATIONS["zh-TW"]["etf_methodology_annualization_value"]
+    assert "CAGR" in en
+    assert "not a mean-daily-return" in en
+    assert "CAGR" in zh
+    # the zh-TW copy must mention the old mean-return approximation only as
+    # an explicit negation ("而非...的近似算法" -- "not the ... approximation"),
+    # never as an affirmative statement of how return is actually annualized.
+    assert "而非每日簡單報酬率平均值" in zh
+
+
 # ── validate_etf_analysis_window() ───────────────────────────────────────
 def test_validation_passes_with_enough_observations():
     result = validate_etf_analysis_window(250)
@@ -92,6 +132,27 @@ def test_validation_fails_with_too_few_observations():
     result = validate_etf_analysis_window(5)
     assert result["is_valid"] is False
     assert any("5" in issue for issue in result["issues"])
+
+
+def test_validation_does_not_overclaim_statistical_stability():
+    """The helper only counts usable observations -- it never re-derives
+    return/volatility/ratios -- so its issue text must describe a minimum
+    usability threshold, not a claim of statistical stability."""
+    result = validate_etf_analysis_window(5)
+    assert not any("stable" in issue.lower() for issue in result["issues"])
+
+
+def test_i18n_validation_pass_text_does_not_overclaim_numerical_consistency():
+    """The success copy must describe only what validate_etf_analysis_window()
+    actually checks (a usable-history/window sufficiency check), never a
+    claim that the displayed return/volatility/ratio figures were
+    independently re-derived or reconciled."""
+    en = TRANSLATIONS["en"]["etf_methodology_validation_pass"]
+    zh = TRANSLATIONS["zh-TW"]["etf_methodology_validation_pass"]
+    assert "numerically consistent" not in en
+    assert "does not independently re-derive or reconcile" in en
+    assert "數值上一致" not in zh
+    assert "並非對上方數值的獨立重新計算或驗證" in zh
 
 
 # ── i18n parity for every new etf_methodology_* key ──────────────────────
