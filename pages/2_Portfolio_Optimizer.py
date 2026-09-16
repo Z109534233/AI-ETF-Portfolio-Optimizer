@@ -38,11 +38,12 @@ from src.etf_database import to_yahoo_symbol, rename_yahoo_columns, get_etf
 from src.fx import convert_prices_to_base_currency
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
-    compute_efficient_frontier
+    compute_efficient_frontier, build_backtest_reference_plan
 )
 from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
-    sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis
+    sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis,
+    correlation_matrix, average_pairwise_correlation, correlation_diversification_level
 )
 from src.database import save_portfolio, init_database, find_duplicate_portfolio, APP_VERSION
 from src.risk_analytics import holdings_overlap_matrix
@@ -60,7 +61,7 @@ from src.ui import (
     chart_card, render_footer, error_state,
     region_multiselect, region_etf_options_multi, multi_region_etf_multiselect,
     kpi_card, chart_caption, ai_interpret_button,
-    setup_summary_bar, results_hero, results_hero_metric,
+    setup_summary_pills, results_hero, results_hero_metric,
 )
 from src.theme import COLORS
 from src.i18n import t, t_opt_method, t_country, get_language, OPTIMIZATION_METHOD_KEYS
@@ -320,7 +321,7 @@ if start_date >= end_date:
 # is where the eye is meant to land once a portfolio has been built.
 _market_word = t("opt_setup_unit_market") if len(selected_regions) == 1 else t("opt_setup_unit_markets")
 _etf_word = t("opt_setup_unit_etf") if len(selected_etfs) == 1 else t("opt_setup_unit_etfs")
-setup_summary_bar([
+setup_summary_pills([
     f"{len(selected_regions)} {_market_word}",
     f"{len(selected_etfs)} {_etf_word}",
     base_currency,
@@ -694,6 +695,7 @@ with st.expander(t("opt_methodology_title"), expanded=False):
         f"- **{t('opt_methodology_optimizer_label')}** — {_optimizer_desc}\n"
         f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
         f"{t('opt_methodology_backtest_desc')}\n"
+        f"- **{t('opt_methodology_rfr_label')}** — {t('opt_methodology_rfr_value', rf=f'{risk_free_rate:.2%}')}\n"
         f"- **{t('opt_fx_methodology_label')}** — {_fx_currency_line}"
     )
     _validation = result.get("validation")
@@ -803,6 +805,87 @@ def _render_holdings_overlap_check(active_tickers: list) -> None:
             st.caption(t("opt_diag_overlap_low", overlap=f"{avg_overlap:.0%}"))
         if unavailable_pairs:
             st.caption(t("opt_diag_overlap_partial", n=len(unavailable_pairs)))
+
+
+# ── Shared Reference-Strategy Computation (Issue #41 items C/D) ─────────────
+# Equal Weight / Maximum Sharpe Ratio / Minimum Volatility are the three
+# parameter-free reference strategies used by BOTH Allocation's Strategy
+# Comparison/Efficient Frontier sub-views AND Backtest & Risk's Historical
+# Performance/Drawdown sub-views. Extracted here as the ONE shared
+# computation (same run_optimization() + backtest_portfolio() calls on the
+# SAME already-loaded prices_df/risk_free_rate/bounds, no re-download) so
+# the two workspaces can never duplicate this formula or silently disagree
+# with each other. Still only ever called from inside the specific
+# sub-view that needs it -- never unconditionally -- so Weights/Overview/
+# Save & Actions/Diagnosis never pay for these 3 extra optimizer solves.
+_REFERENCE_METHODS = ["Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility"]
+_REFERENCE_COLORS = {
+    "Equal Weight": COLORS["text_muted"],
+    "Maximum Sharpe Ratio": COLORS["warning"],
+    "Minimum Volatility": COLORS["purple"],
+}
+
+
+def _compute_reference_strategies() -> dict:
+    """Weights/metrics/backtest for each of _REFERENCE_METHODS, computed
+    fresh from the current prices_df/risk_free_rate/bounds. Purely
+    informational -- never writes to st.session_state.opt_result /
+    opt_run_inputs / prices_df, so it cannot alter the user's actual
+    selected strategy."""
+    results = {}
+    for _rm in _REFERENCE_METHODS:
+        _rr = run_optimization(
+            prices_df=prices_df, method=_rm, risk_free_rate=risk_free_rate,
+            min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
+        )
+        _rw = _rr["weights"]
+        _largest_ticker = max(_rw, key=_rw.get) if _rw else None
+        _largest_weight = _rw.get(_largest_ticker, 0.0) if _largest_ticker else 0.0
+        _rbt = backtest_portfolio(prices_df, _rw, investment_amount)
+        _rmdd = maximum_drawdown(_rbt["Portfolio Value"]) if not _rbt.empty else None
+        results[_rm] = {
+            "weights": _rw, "expected_return": _rr["expected_return"],
+            "expected_volatility": _rr["expected_volatility"], "sharpe_ratio": _rr["sharpe_ratio"],
+            "largest_ticker": _largest_ticker, "largest_weight": _largest_weight, "max_drawdown": _rmdd,
+            "backtest_df": _rbt,
+        }
+    return results
+
+
+def _build_backtest_reference_lines(reference_results: dict) -> list:
+    """Return [(label, backtest_df, color, dash, width), ...] for Backtest &
+    Risk's Historical Performance / Drawdown Analysis charts -- the current
+    strategy's own already-computed `backtest_df` plus the UNIQUE reference
+    strategies not already shown as the current one (Issue #41 item D: the
+    self-comparison bug where a current method identical to the equal-
+    weight baseline produced two indistinguishable "Equal Weight" traces).
+    Each canonical method name appears in this list at most once, so no
+    legend label/trace can ever collide with another.
+
+    - If the current method IS one of _REFERENCE_METHODS, all three
+      reference strategies are shown once each, with the current one
+      visually emphasized (solid, primary color, thicker, a trailing
+      " ★" marker) instead of being duplicated as a separate line.
+    - Otherwise (Target Return / Risk Parity), the current strategy is
+      shown as its own emphasized line PLUS all three reference
+      strategies (4 unique lines total).
+
+    The actual dedup decision (which methods appear, and which is current)
+    is delegated to src.portfolio_optimizer.build_backtest_reference_plan()
+    -- pure, Streamlit-free logic shared with tests/test_portfolio_optimizer.py
+    -- this function only attaches the already-computed DataFrame/styling
+    per planned method.
+    """
+    plan = build_backtest_reference_plan(optimization_method, _REFERENCE_METHODS)
+    lines = []
+    for _method, _is_current in plan:
+        _label = t_opt_method(_method) + (" ★" if _is_current else "")
+        _df = backtest_df if _is_current else reference_results[_method]["backtest_df"]
+        _color = COLORS["primary"] if _is_current else _REFERENCE_COLORS[_method]
+        _dash = None if _is_current else "dash"
+        _width = 2.5 if _is_current else 1.5
+        lines.append((_label, _df, _color, _dash, _width))
+    return lines
 
 
 # ── Top-Level Workspace Navigation ───────────────────────────────────────────
@@ -923,29 +1006,17 @@ elif opt_workspace == "Allocation":
         # run_optimization() already verified in Round 2A (no duplicated
         # optimization math) on the SAME already-loaded `prices_df` (no
         # re-download, no extra network requests).
-        _COMPARISON_METHODS = ["Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility"]
+        _COMPARISON_METHODS = _REFERENCE_METHODS
         _CONCENTRATION_THRESHOLD = 0.50
         _CARD_DESC_KEYS = {
             "Equal Weight": "opt_card_desc_equal_weight",
             "Maximum Sharpe Ratio": "opt_card_desc_max_sharpe",
             "Minimum Volatility": "opt_card_desc_min_vol",
         }
-        _comparison_results = {}
-        for _cm in _COMPARISON_METHODS:
-            _cr = run_optimization(
-                prices_df=prices_df, method=_cm, risk_free_rate=risk_free_rate,
-                min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
-            )
-            _cw = _cr["weights"]
-            _largest_ticker = max(_cw, key=_cw.get) if _cw else None
-            _largest_weight = _cw.get(_largest_ticker, 0.0) if _largest_ticker else 0.0
-            _cbt = backtest_portfolio(prices_df, _cw, investment_amount)
-            _cmdd = maximum_drawdown(_cbt["Portfolio Value"]) if not _cbt.empty else None
-            _comparison_results[_cm] = {
-                "weights": _cw, "expected_return": _cr["expected_return"],
-                "expected_volatility": _cr["expected_volatility"], "sharpe_ratio": _cr["sharpe_ratio"],
-                "largest_ticker": _largest_ticker, "largest_weight": _largest_weight, "max_drawdown": _cmdd,
-            }
+        # Shared with Backtest & Risk's Historical/Drawdown sub-views (see
+        # _compute_reference_strategies() above) so the two workspaces never
+        # duplicate this formula or disagree with each other.
+        _comparison_results = _compute_reference_strategies()
         # Winners are derived from the ACTUAL calculated values above -- never
         # assumed or hard-coded.
         _best_sharpe_method = max(_comparison_results, key=lambda m: _comparison_results[m]["sharpe_ratio"])
@@ -953,6 +1024,7 @@ elif opt_workspace == "Allocation":
 
         if alloc_view == "Comparison":
             section_header(t("opt_strategy_comparison_title"), t("opt_strategy_comparison_subtitle"))
+            st.caption(t("opt_strategy_comparison_scope_note"))
 
             _comp_cols = st.columns(3)
             for _idx, _cm in enumerate(_COMPARISON_METHODS):
@@ -1083,6 +1155,36 @@ elif opt_workspace == "Allocation":
                 if frontier_df is None or len(frontier_df) < 2:
                     st.info(t("opt_frontier_insufficient_points"))
                 chart_caption(t("opt_efficient_frontier_caption"))
+
+                # ── Dynamic correlation / diversification insight (Issue #41
+                # item E) -- computed from the ACTUAL selected-ETF pairwise
+                # return correlations in THIS prices_df, never a hardcoded
+                # VOO/VTI/SPY assumption. A near-flat-looking frontier is
+                # frequently just a symptom of a highly-correlated selection
+                # -- this makes that visible instead of leaving the reader to
+                # guess why the curve looks the way it does.
+                _corr_df = correlation_matrix(prices_df)
+                _avg_corr = average_pairwise_correlation(prices_df)
+                if _avg_corr is not None:
+                    _corr_pairs = [
+                        (_corr_df.columns[i], _corr_df.columns[j], _corr_df.iloc[i, j])
+                        for i in range(len(_corr_df.columns))
+                        for j in range(i + 1, len(_corr_df.columns))
+                        if pd.notna(_corr_df.iloc[i, j])
+                    ]
+                    _highest_pair = max(_corr_pairs, key=lambda c: c[2])
+                    _corr_level = correlation_diversification_level(_avg_corr)
+                    if _corr_level == "high":
+                        _corr_insight = t(
+                            "opt_frontier_correlation_high", avg=f"{_avg_corr:.2f}",
+                            a=_highest_pair[0], b=_highest_pair[1], pair_corr=f"{_highest_pair[2]:.2f}",
+                        )
+                    elif _corr_level == "moderate":
+                        _corr_insight = t("opt_frontier_correlation_moderate", avg=f"{_avg_corr:.2f}")
+                    else:
+                        _corr_insight = t("opt_frontier_correlation_low", avg=f"{_avg_corr:.2f}")
+                    st.markdown(f"**{t('opt_frontier_correlation_title')}**  \n{_corr_insight}")
+
                 _ef_context_text = (
                     f"{t('opt_current_strategy_label')}: {t_opt_method(optimization_method)}, "
                     f"{t('metric_expected_annual_return')} {exp_ret:.2%}, "
@@ -1129,11 +1231,15 @@ elif opt_workspace == "Backtest & Risk":
     st.session_state[_btk] = bt_view
 
     if bt_view in ("Historical", "Drawdown"):
-        # The equal-weight comparison baseline is only needed by these two
-        # chart sub-views (not by Diagnosis, not by current_portfolio
-        # above) -- computed here rather than unconditionally.
-        equal_weights = {tk: 1.0 / len(weights) for tk in weights.keys()}
-        equal_backtest_df = backtest_portfolio(prices_df, equal_weights, investment_amount)
+        # Reference-strategy lines are only needed by these two chart
+        # sub-views (not by Diagnosis, not by current_portfolio above) --
+        # computed here rather than unconditionally, and shared with
+        # Allocation > Comparison/Frontier via _compute_reference_strategies()
+        # (Issue #41 item D: no more current-strategy-vs-itself self
+        # comparison when the current method IS Equal Weight -- see
+        # _build_backtest_reference_lines()'s docstring).
+        _bt_reference_results = _compute_reference_strategies()
+        _bt_lines = _build_backtest_reference_lines(_bt_reference_results)
 
         if bt_view == "Historical":
             section_header(t("opt_backtest_title"), t("opt_backtest_sub", method=t_opt_method(optimization_method)))
@@ -1142,20 +1248,21 @@ elif opt_workspace == "Backtest & Risk":
                 import plotly.graph_objects as go
                 with chart_card(t("opt_backtest_card")):
                     fig_bt = go.Figure()
-                    fig_bt.add_trace(go.Scatter(
-                        x=backtest_df.index, y=backtest_df["Portfolio Value"],
-                        name=t_opt_method(optimization_method), line=dict(color=COLORS["primary"], width=2.5)
-                    ))
-                    if not equal_backtest_df.empty:
+                    for _label, _df, _color, _dash, _width in _bt_lines:
+                        if _df.empty:
+                            continue
+                        _line_style = dict(color=_color, width=_width)
+                        if _dash:
+                            _line_style["dash"] = _dash
                         fig_bt.add_trace(go.Scatter(
-                            x=equal_backtest_df.index, y=equal_backtest_df["Portfolio Value"],
-                            name=t("chart_equal_weight"), line=dict(color=COLORS["text_muted"], width=1.5, dash="dash")
+                            x=_df.index, y=_df["Portfolio Value"], name=_label, line=dict(**_line_style),
                         ))
-                    fig_bt.update_layout(title=t("chart_portfolio_backtest_vs_equal"),
+                    fig_bt.update_layout(title=t("chart_portfolio_backtest_comparison"),
                                           xaxis_title=t("chart_date"), yaxis_title=t("chart_portfolio_value_usd"),
                                           height=420)
                     st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True, key="opt_backtest_growth")
                     chart_caption(t("opt_backtest_chart_caption"))
+                    st.caption(f"★ {t('opt_current_strategy_label')}")
 
                 bt_metrics = {
                     t("metric_total_return"): f"{backtest_df['Cumulative Return'].iloc[-1]:.2%}",
@@ -1179,31 +1286,33 @@ elif opt_workspace == "Backtest & Risk":
                 import plotly.graph_objects as go
                 with chart_card(t("opt_drawdown_comparison_card")):
                     fig_dd = go.Figure()
-                    dd = drawdown_series(backtest_df["Portfolio Value"]) * 100
-                    fig_dd.add_trace(go.Scatter(x=dd.index, y=dd, fill="tozeroy",
-                                                 name=t_opt_method(optimization_method), line=dict(color=COLORS["danger"], width=1.5)))
-                    if not equal_backtest_df.empty:
-                        dd_eq = drawdown_series(equal_backtest_df["Portfolio Value"]) * 100
-                        fig_dd.add_trace(go.Scatter(x=dd_eq.index, y=dd_eq, fill="tozeroy",
-                                                     name=t("chart_equal_weight"), line=dict(color=COLORS["text_muted"], width=1.5),
-                                                     fillcolor="rgba(148,163,184,0.1)"))
+                    for _label, _df, _color, _dash, _width in _bt_lines:
+                        if _df.empty:
+                            continue
+                        _dd_series = drawdown_series(_df["Portfolio Value"]) * 100
+                        _line_style = dict(color=_color, width=_width)
+                        if _dash:
+                            _line_style["dash"] = _dash
+                        _fill_kwargs = {"fillcolor": "rgba(148,163,184,0.1)"} if _dash else {}
+                        fig_dd.add_trace(go.Scatter(
+                            x=_dd_series.index, y=_dd_series, fill="tozeroy", name=_label,
+                            line=dict(**_line_style), **_fill_kwargs,
+                        ))
                     fig_dd.update_layout(title=t("chart_drawdown_comparison_pct"), xaxis_title=t("chart_date"),
                                           yaxis_title=t("chart_drawdown_pct"), height=420)
                     st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True, key="opt_backtest_drawdown")
                     chart_caption(t("opt_drawdown_chart_caption"))
+                    st.caption(f"★ {t('opt_current_strategy_label')}")
 
-                _dd_mcol1, _dd_mcol2 = st.columns(2)
-                _dd_current = maximum_drawdown(backtest_df['Portfolio Value'])
-                with _dd_mcol1:
-                    st.metric(f"{t_opt_method(optimization_method)} {t('metric_maximum_drawdown')}",
-                               f"{_dd_current:.2%}")
-                _dd_context_text = f"{t_opt_method(optimization_method)} {t('metric_maximum_drawdown')}: {_dd_current:.2%}"
-                with _dd_mcol2:
-                    if not equal_backtest_df.empty:
-                        _dd_equal = maximum_drawdown(equal_backtest_df['Portfolio Value'])
-                        st.metric(f"{t('chart_equal_weight')} {t('metric_maximum_drawdown')}",
-                                   f"{_dd_equal:.2%}")
-                        _dd_context_text += f"; {t('chart_equal_weight')} {t('metric_maximum_drawdown')}: {_dd_equal:.2%}"
+                _dd_cols = st.columns(len(_bt_lines))
+                _dd_context_parts = []
+                for _dd_col, (_label, _df, _color, _dash, _width) in zip(_dd_cols, _bt_lines):
+                    with _dd_col:
+                        if not _df.empty:
+                            _mdd_val = maximum_drawdown(_df["Portfolio Value"])
+                            st.metric(f"{_label} {t('metric_maximum_drawdown')}", f"{_mdd_val:.2%}")
+                            _dd_context_parts.append(f"{_label} {t('metric_maximum_drawdown')}: {_mdd_val:.2%}")
+                _dd_context_text = "; ".join(_dd_context_parts)
                 ai_interpret_button("opt_drawdown_ai_interpret", st.session_state, _dd_context_text)
 
     else:  # Diagnosis (detailed view)

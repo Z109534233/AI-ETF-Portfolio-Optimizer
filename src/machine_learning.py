@@ -159,6 +159,50 @@ def _compute_metrics(y_test, y_pred, y_prob) -> dict:
     return metrics
 
 
+def roc_auc_interpretation_level(roc_auc: float) -> str:
+    """Bucket a ROC AUC value into "below_chance"/"weak"/"moderate" for the
+    Results page's dynamic interpretation (Issue #41 item H). Before this,
+    only a narrow +-0.05-around-0.5 band ("weak") had any interpretation at
+    all -- a result like 0.4356 fell outside it and received none. Every
+    value now gets one:
+
+    - "below_chance": AUC < 0.50 -- the model ranked positive vs negative
+      observations worse than chance on THIS held-out window.
+    - "weak": 0.50 <= AUC <= 0.55 -- little to no discriminatory power,
+      close to random guessing.
+    - "moderate": AUC > 0.55 -- some ranking ability, but still just one
+      test window, not a stable predictive edge.
+
+    Simple PRODUCT UI buckets, not an academic or regulatory AUC standard --
+    same pattern as src.financial_metrics.concentration_level().
+    """
+    if roc_auc < 0.50:
+        return "below_chance"
+    if roc_auc <= 0.55:
+        return "weak"
+    return "moderate"
+
+
+CONFUSION_MATRIX_SKEW_THRESHOLD = 0.65
+
+
+def confusion_matrix_skew_direction(predicted_up: int, total: int,
+                                     threshold: float = CONFUSION_MATRIX_SKEW_THRESHOLD):
+    """Whether the model's predictions on the held-out test set are
+    materially skewed toward one direction (Issue #41 item I). Returns
+    "up"/"down" when `predicted_up / total` (or its complement) is at or
+    above `threshold`, else None (no material skew). `total` <= 0 always
+    returns None rather than dividing by zero."""
+    if total <= 0:
+        return None
+    frac_up = predicted_up / total
+    if frac_up >= threshold:
+        return "up"
+    if (1 - frac_up) >= threshold:
+        return "down"
+    return None
+
+
 def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
                      model_type: str = "Random Forest",
                      test_size: float = 0.2, lookahead: int = 1) -> dict:

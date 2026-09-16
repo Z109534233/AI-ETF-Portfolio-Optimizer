@@ -824,6 +824,31 @@ def setup_summary_bar(parts: list, title: str = None) -> None:
     )
 
 
+def setup_summary_pills(parts: list, title: str = None) -> None:
+    """Opt-in compact-pill variant of setup_summary_bar() -- same inputs
+    (a list of short pre-formatted strings, e.g. "1 Market", "5 ETFs",
+    "USD", "Equal Weight"), rendered as small neutral pills/badges instead
+    of setup_summary_bar()'s muted inline text. Built for pages where a
+    reviewer needs to quickly identify which result is being viewed without
+    re-reading the (often collapsed) settings panel above -- still
+    deliberately smaller/plainer than results_hero(), never a bordered
+    "hero card" of its own, and wraps safely at mobile widths.
+
+    Only meant to be adopted where this extra legibility is actually
+    needed; setup_summary_bar() remains the default for every other page.
+    """
+    if title is None:
+        title = t("opt_setup_summary_title")
+    pills_html = "".join(f'<span class="setup-summary-pill">{p}</span>' for p in parts)
+    st.markdown(
+        '<div class="setup-summary-pills-row">'
+        f'<span class="setup-summary-pills-eyebrow">{title}</span>'
+        f'{pills_html}'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def results_hero(title: str, subtitle: str = None) -> None:
     """Strong, unmistakable visual break between Setup and Results (Issue
     #24 item 3) -- a colored, elevated header block, deliberately much

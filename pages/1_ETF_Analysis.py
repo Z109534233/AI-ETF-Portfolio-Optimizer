@@ -60,6 +60,7 @@ from src.etf_signals import (
     generate_etf_interpretation, has_sufficient_history,
     risk_level_from_vol, expected_return_label_from_ann_ret,
 )
+from src.methodology import validate_etf_analysis_window
 
 st.set_page_config(
     page_title="ETF Analysis | AI ETF Portfolio Optimizer",
@@ -239,6 +240,35 @@ st.markdown(
     '</div>',
     unsafe_allow_html=True,
 )
+
+# ── Methodology & Assumptions (M5) ──────────────────────────────────────────
+# Compact, always-visible (independent of which workspace is open) disclosure
+# of the ACTUAL calculation methodology for this page -- see
+# src/methodology.py's ETF_ANALYSIS_METHODOLOGY, the single source of truth
+# this panel and tests/test_methodology_m5.py both read from. Every runtime
+# value (dates, observation count, benchmark, risk-free rate) is read
+# straight off the already-computed _focus_p/benchmark/risk_free_rate above,
+# never recomputed or guessed, so this can never drift from what the KPIs
+# elsewhere on the page actually show.
+with st.expander(t("etf_methodology_title"), expanded=False):
+    st.caption(t("etf_methodology_subtitle"))
+    _etf_meth_start = _focus_p.index.min().strftime("%Y-%m-%d") if not _focus_p.empty else "—"
+    _etf_meth_end = _focus_p.index.max().strftime("%Y-%m-%d") if not _focus_p.empty else "—"
+    st.markdown(
+        f"- **{t('etf_methodology_history_label')}** — "
+        f"{t('etf_methodology_history_value', ticker=_focus_ticker, start=_etf_meth_start, end=_etf_meth_end, days=len(_focus_p))}\n"
+        f"- **{t('etf_methodology_annualization_label')}** — {t('etf_methodology_annualization_value')}\n"
+        f"- **{t('etf_methodology_benchmark_label')}** — {benchmark}\n"
+        f"- **{t('etf_methodology_rfr_label')}** — {t('etf_methodology_rfr_value', rf=f'{risk_free_rate:.2%}')}\n"
+        f"- **{t('etf_methodology_rfr_usage_label')}** — {t('etf_methodology_rfr_usage_value')}\n"
+        f"- **{t('etf_methodology_data_source_label')}** — {t('etf_methodology_data_source_value')}\n"
+        f"- **{t('etf_methodology_limitation_label')}** — {t('etf_methodology_limitation_value')}"
+    )
+    _etf_meth_validation = validate_etf_analysis_window(len(_focus_p))
+    if _etf_meth_validation["is_valid"]:
+        st.success(t("etf_methodology_validation_pass"))
+    else:
+        st.warning(t("etf_methodology_validation_fail", issues="; ".join(_etf_meth_validation["issues"])))
 
 
 # ── Shared rule-based analysis helpers (no external LLM) -- EXACT same
