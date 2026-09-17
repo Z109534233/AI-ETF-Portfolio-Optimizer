@@ -9,7 +9,7 @@ import contextlib
 import streamlit as st
 
 from src.theme import COLORS, icon_svg
-from src.i18n import t, t_country, t_opt_method, language_selector, get_language
+from src.i18n import t, t_country, t_saved_strategy, language_selector, get_language
 from src.etf_database import get_countries, get_tickers_by_country, get_etf
 from src.data_loader import DEFAULT_ETFS
 from src.financial_metrics import ACTIVE_POSITION_TOLERANCE
@@ -799,6 +799,18 @@ def badge(text: str, variant: str = "neutral") -> str:
     return f'<span class="badge badge-{variant}">{text}</span>'
 
 
+def info_badge(text: str) -> str:
+    """A small blue 'ⓘ' info-style badge -- an opt-in cue for distinguishing
+    an explanatory/methodology block (e.g. Risk Analytics' "Methodology &
+    Assumptions", My Portfolio's "Experiment Details") from a plain
+    st.expander(), WITHOUT globally restyling every expander on the page
+    (Issue #43 item D). Render this directly above the expander via
+    st.markdown(info_badge(...), unsafe_allow_html=True); blue/primary is
+    this app's info/explanation color semantic -- amber stays reserved for
+    genuine caution/warning."""
+    return badge(f"ⓘ {text}", variant="blue")
+
+
 # ── Setup vs Results Visual Hierarchy (Issue #24 items 2/3) ──────────────────
 def setup_summary_bar(parts: list, title: str = None) -> None:
     """Compact, single-line 'Current setup' summary -- replaces a wide,
@@ -1176,12 +1188,30 @@ def status_card(ticker: str, sector: str, status_label: str, status_variant: str
 
 
 # ── Star Rating ───────────────────────────────────────────────────────────────
+# Salience class by star count (Issue #43 item H): stars measure impact/
+# relevance, NOT direction, so this is a single-hue intensity ramp (muted ->
+# amber -> bold amber) -- never green/red, which this app reserves for
+# positive/negative direction elsewhere. Centralized here (one reusable
+# class per salience tier in assets/style.css) so every caller -- news
+# cards, market-impact cards, ETF cards -- gets consistent salience for
+# free instead of ad-hoc per-card inline colors.
+def _star_salience_class(stars: int) -> str:
+    if stars <= 2:
+        return "star-rating-muted"
+    if stars == 3:
+        return "star-rating-medium"
+    return "star-rating-strong"
+
+
 def star_rating_html(stars: int, max_stars: int = 5) -> str:
-    """Render a colored star rating (filled amber stars + muted empty stars)."""
+    """Render a star rating whose filled-star salience scales with `stars`
+    (1-2 muted, 3 medium, 4-5 strong -- see _star_salience_class()); empty
+    stars always stay muted."""
     stars = max(0, min(stars, max_stars))
+    salience = _star_salience_class(stars)
     filled = f'<span class="star-filled">{"★" * stars}</span>' if stars else ""
     empty = f'<span class="star-empty">{"☆" * (max_stars - stars)}</span>' if stars < max_stars else ""
-    return f'<span class="star-rating">{filled}{empty}</span>'
+    return f'<span class="star-rating {salience}">{filled}{empty}</span>'
 
 
 # ── Market Impact Card (Affected Markets, Market Intelligence) ──────────────────
@@ -1313,7 +1343,7 @@ def render_current_portfolio_handoff(empty_title: str, empty_description: str,
             f'({t("handoff_zero_weight_suffix", count=len(zero_holdings))})</span>'
         )
 
-    strategy_label = t_opt_method(portfolio.get("strategy", ""))
+    strategy_label = t_saved_strategy(portfolio.get("strategy", ""))
     amount = portfolio.get("investment_amount")
     amount_text = f"${amount:,.0f}" if amount is not None else "—"
 

@@ -226,6 +226,155 @@ def test_generate_daily_brief_never_crashes_on_fully_empty_input(monkeypatch):
     assert isinstance(result["text"], str) and result["text"]
 
 
+# ── Issue #43 item R: rule_based_brief() must be language-aware ────────────
+
+_FORBIDDEN_ENGLISH_TEMPLATE_PHRASES = (
+    "Today's Portfolio Brief",
+    "No major change detected",
+    "Risk/News Attention",
+    "Positive/Negative",
+)
+
+
+def test_rule_based_brief_zh_tw_no_holdings_state():
+    context = build_brief_context([], [], [], as_of_date="2026-09-14")
+    text = rule_based_brief(context, language="zh-TW")
+    assert "尚無持股" in text
+    for phrase in _FORBIDDEN_ENGLISH_TEMPLATE_PHRASES:
+        assert phrase not in text
+
+
+def test_rule_based_brief_zh_tw_opening_line_has_date_and_counts():
+    context = build_brief_context(_holdings(), _watchlist(), [], as_of_date="2026-09-14")
+    text = rule_based_brief(context, language="zh-TW")
+    assert "2026-09-14" in text
+    assert "2" in text  # 2 holdings (QQQ, BND)
+    assert "2" in text  # 2 watchlist tickers (GLD, QQQ)
+
+
+def test_rule_based_brief_zh_tw_no_major_change():
+    context = build_brief_context(_holdings(), _watchlist(), _news_neutral_only(),
+                                   as_of_date="2026-09-14")
+    text = rule_based_brief(context, language="zh-TW")
+    assert "今日未偵測到重大變化" in text
+    for phrase in _FORBIDDEN_ENGLISH_TEMPLATE_PHRASES:
+        assert phrase not in text
+
+
+def test_rule_based_brief_zh_tw_risk_news_attention_mentions_ticker():
+    context = build_brief_context(_holdings(), _watchlist(), _news_tech_positive(),
+                                   as_of_date="2026-09-14")
+    text = rule_based_brief(context, language="zh-TW")
+    assert "風險／新聞關注" in text
+    assert "QQQ" in text
+    for phrase in _FORBIDDEN_ENGLISH_TEMPLATE_PHRASES:
+        assert phrase not in text
+
+
+def test_rule_based_brief_zh_tw_concentration_check():
+    context = build_brief_context(_holdings(), _watchlist(), [],
+                                   portfolio_risk={"largest_ticker": "QQQ", "largest_weight": 0.7},
+                                   as_of_date="2026-09-14")
+    text = rule_based_brief(context, language="zh-TW")
+    assert "集中度檢查" in text
+    assert "QQQ" in text
+    assert "70.0%" in text
+
+
+def test_rule_based_brief_zh_tw_localized_impact_label_not_raw_english():
+    """impact_label is already localized (src.market_intelligence.impact_label())
+    at build_brief_context() time -- the zh-TW template must use it, never
+    the raw 'Positive'/'Negative' impact value."""
+    import streamlit as st
+    st.session_state["language"] = "zh-TW"
+    context = build_brief_context(_holdings(), _watchlist(), _news_tech_positive(),
+                                   as_of_date="2026-09-14")
+    text = rule_based_brief(context, language="zh-TW")
+    assert "Positive" not in text
+    assert "Negative" not in text
+
+
+def test_rule_based_brief_english_still_english_by_default():
+    context = build_brief_context(_holdings(), _watchlist(), _news_tech_positive(),
+                                   as_of_date="2026-09-14")
+    text = rule_based_brief(context)  # language defaults to "en"
+    assert "Today's Portfolio Brief" in text
+    assert "QQQ" in text
+
+
+# ── Issue #43 item S: AI path language + cache correctness ────────────────
+
+def test_fingerprint_is_sensitive_to_language():
+    context = build_brief_context(_holdings(), _watchlist(), _news_tech_positive(),
+                                   as_of_date="2026-09-14")
+    fp_en = fingerprint_brief_context(context, "en")
+    fp_zh = fingerprint_brief_context(context, "zh-TW")
+    assert fp_en != fp_zh
+
+
+def test_generate_daily_brief_does_not_return_stale_english_after_language_switch(monkeypatch):
+    """Simulates switching the app from en -> zh-TW: the AI cache must miss
+    (different fingerprint) so a fresh, zh-TW-instructed call is made,
+    never a cached English result reused as-is."""
+    monkeypatch.setattr(svc, "is_configured", lambda: True)
+    seen_instructions = []
+
+    def _fake_cached_generate(session_state, cache_key, fp, system, user_content, **kwargs):
+        seen_instructions.append(system)
+        cached = session_state.get(cache_key)
+        if cached and cached.get("fingerprint") == fp:
+            return cached["result"]
+        text = "Traditional Chinese response." if "Traditional Chinese" in system else "English response."
+        result = {"available": True, "text": text, "source": "ai"}
+        session_state[cache_key] = {"fingerprint": fp, "result": result}
+        return result
+
+    monkeypatch.setattr(svc, "cached_generate", _fake_cached_generate)
+
+    context = build_brief_context(_holdings(), _watchlist(), _news_tech_positive(),
+                                   as_of_date="2026-09-14")
+    session_state = {}
+
+    result_en = generate_daily_brief(context, session_state, language="en")
+    assert result_en["text"] == "English response."
+
+    result_zh = generate_daily_brief(context, session_state, language="zh-TW")
+    assert result_zh["text"] == "Traditional Chinese response."
+    assert len(seen_instructions) == 2  # both requests actually reached the (mocked) API
+
+
+def test_mocked_ai_request_contains_correct_language_instruction(monkeypatch):
+    monkeypatch.setattr(svc, "is_configured", lambda: True)
+    captured = {}
+
+    def _fake_cached_generate(session_state, cache_key, fp, system, user_content, **kwargs):
+        captured["system"] = system
+        return {"available": True, "text": "ok", "source": "ai"}
+
+    monkeypatch.setattr(svc, "cached_generate", _fake_cached_generate)
+    context = build_brief_context(_holdings(), _watchlist(), [], as_of_date="2026-09-14")
+
+    generate_daily_brief(context, {}, language="zh-TW")
+    assert "Traditional Chinese" in captured["system"]
+
+    generate_daily_brief(context, {}, language="en")
+    assert "English" in captured["system"]
+
+
+def test_generate_daily_brief_fallback_is_language_correct(monkeypatch):
+    monkeypatch.setattr(svc, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        svc, "cached_generate",
+        lambda *a, **k: {"available": False, "text": None, "source": "rule_based", "error": "boom"},
+    )
+    context = build_brief_context(_holdings(), _watchlist(), _news_tech_positive(),
+                                   as_of_date="2026-09-14")
+    result = generate_daily_brief(context, {}, language="zh-TW")
+    assert result["source"] == "rule_based"
+    assert "風險／新聞關注" in result["text"]
+    assert "Risk/News Attention" not in result["text"]
+
+
 # ── self-check: no unmocked OpenAI/network call anywhere in this file ──────
 
 def test_no_raw_openai_or_generate_text_usage_in_this_file():

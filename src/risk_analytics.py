@@ -154,18 +154,41 @@ STRESS_SCENARIOS = {
         "i18n_key": "risk_scenario_2008", "shock": -0.50,
         "provenance": "historical",
         "note_i18n_key": "risk_scenario_note_2008",
+        # Commonly-cited broad-market peak-to-trough window (Oct 2007 --
+        # Mar 2009). Used ONLY to detect whether the page's currently
+        # selected start_date/end_date actually covers this event's real
+        # price path (Issue #43 item B) -- never fetched automatically.
+        "event_start": "2007-10-01", "event_end": "2009-03-01",
     },
     "covid_2020": {
         "i18n_key": "risk_scenario_covid", "shock": -0.34,
         "provenance": "historical",
         "note_i18n_key": "risk_scenario_note_covid",
+        "event_start": "2020-02-19", "event_end": "2020-03-23",
     },
     "tech_bubble": {
         "i18n_key": "risk_scenario_tech_bubble", "shock": -0.45,
         "provenance": "historical",
         "note_i18n_key": "risk_scenario_note_tech_bubble",
+        "event_start": "2000-03-01", "event_end": "2002-10-01",
     },
 }
+
+
+def scenario_event_covered(scenario: dict, start_date, end_date) -> bool:
+    """True when `scenario`'s known historical event window (event_start/
+    event_end) is fully contained within [start_date, end_date] -- i.e. the
+    page's currently selected dataset actually contains that event's real
+    price path. Always True for hypothetical scenarios (no event window to
+    check) so callers never have to special-case them. `start_date`/
+    `end_date` may be date objects or ISO strings; compared as ISO strings,
+    which sort correctly for calendar dates.
+    """
+    event_start = scenario.get("event_start")
+    event_end = scenario.get("event_end")
+    if not event_start or not event_end:
+        return True
+    return str(start_date) <= event_start and str(end_date) >= event_end
 
 
 # ============================================================================

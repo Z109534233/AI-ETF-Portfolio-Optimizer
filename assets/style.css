@@ -494,9 +494,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .status-card-stars { margin-top: 2px; }
 
 /* ── Star Rating ───────────────────────────────────────────────────────────── */
+/* Salience is a single-hue (amber) intensity ramp, never green/red -- stars
+   measure impact/relevance, not positive/negative direction (Issue #43
+   item H). Empty stars always stay muted regardless of salience tier. */
 .star-rating { font-size: 14px; letter-spacing: 1px; }
 .star-filled { color: var(--warning); }
 .star-empty { color: var(--border-strong); }
+.star-rating-muted .star-filled { color: var(--text-muted); }
+.star-rating-medium .star-filled { color: var(--warning); opacity: 0.85; }
+.star-rating-strong .star-filled { color: var(--warning); font-weight: 700; text-shadow: 0 0 6px rgba(251, 191, 36, 0.45); }
 
 /* ── Market Impact Card (Affected Markets) ───────────────────────────────────── */
 .market-impact-card { min-height: 0; }

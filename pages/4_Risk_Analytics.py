@@ -24,11 +24,11 @@ from src.financial_metrics import (
 )
 from src.risk_analytics import (
     historical_var_cvar, concentration_from_weights, holdings_overlap_matrix,
-    STRESS_SCENARIOS, var_exception_backtest,
+    STRESS_SCENARIOS, var_exception_backtest, scenario_event_covered,
 )
 from src.charts import (
     correlation_heatmap, return_distribution_chart, drawdown_chart,
-    rolling_metrics_chart, apply_dark_theme, CHART_COLORS
+    rolling_metrics_chart, apply_dark_theme,
 )
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
 from src.ui import (
@@ -36,8 +36,9 @@ from src.ui import (
     chart_card, render_footer, error_state, style_signed_columns, chart_caption,
     ai_interpret_button, region_selector, region_etf_options, region_etf_multiselect,
     region_benchmark_selector, render_current_portfolio_handoff, results_hero,
+    info_badge,
 )
-from src.theme import COLORS
+from src.theme import COLORS, color_for_ticker
 from src.i18n import t, t_country
 
 st.set_page_config(
@@ -159,6 +160,22 @@ results_hero(
     t("risk_hero_subtitle", n=len(etf_prices.columns), start=str(start_date), end=str(end_date)),
 )
 
+# ── Scope Notice (Issue #43 item A) ──────────────────────────────────────
+# The risk metrics below are ALWAYS driven by this page's own ETF selection
+# + page-local weight sliders (etf_prices.columns / weights_input) -- NEVER
+# by the "Current Portfolio" handoff preview rendered above. If the two
+# happen to hold a different number of ETFs, that is a scope difference,
+# not a counting bug -- this notice makes the distinction explicit instead
+# of leaving the reader to assume the two sections describe the same
+# analysis. Neither side's weights are silently synced or overwritten.
+if current_portfolio and current_portfolio.get("weights"):
+    st.info(t(
+        "risk_scope_notice_with_current",
+        page_n=len(etf_prices.columns), current_n=len(current_portfolio["weights"]),
+    ))
+else:
+    st.info(t("risk_scope_notice_no_current", page_n=len(etf_prices.columns)))
+
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
 section_header(t("risk_portfolio_metrics_title"))
 
@@ -220,6 +237,12 @@ with st.expander(t("risk_more_metrics_title"), expanded=False):
 # Compact disclosure of the ACTUAL risk methodology -- see
 # src/methodology.py's RISK_METHODOLOGY, the single source of truth this
 # panel and tests/test_methodology_m3.py both read from.
+#
+# A small blue info_badge() cue is rendered directly above this expander
+# only (Issue #43 item D) so it visually reads as an explanation, distinct
+# from the plain "More Risk Metrics" expander above -- without globally
+# restyling every st.expander on the page.
+st.markdown(info_badge(t("risk_methodology_badge_label")), unsafe_allow_html=True)
 with st.expander(t("risk_methodology_title"), expanded=False):
     st.caption(t("risk_methodology_subtitle"))
     if var_cvar_result["available"]:
@@ -458,7 +481,7 @@ with chart_card(t("risk_detail_card")):
                 fig_rc = go.Figure(go.Bar(
                     x=etf_prices.columns.tolist(),
                     y=risk_contrib_pct * 100,
-                    marker_color=CHART_COLORS[:len(etf_prices.columns)],
+                    marker_color=[color_for_ticker(tk) for tk in etf_prices.columns],
                     hovertemplate=f"<b>%{{x}}</b><br>{t('chart_risk_contribution_pct')}: %{{y:.2f}}%<extra></extra>"
                 ))
                 fig_rc.update_layout(title=t("chart_risk_contribution_by_etf"),
@@ -507,13 +530,16 @@ if current_portfolio and current_portfolio.get("weights"):
 # ── Stress Tests ──────────────────────────────────────────────────────────────
 section_header(t("risk_stress_test_title"), t("risk_stress_test_caption"))
 st.caption(t("risk_stress_methodology_note"))
+# Dynamic historical-coverage disclosure (Issue #43 item B): states the
+# ACTUAL selected start_date/end_date, never a hardcoded window -- and,
+# per-scenario below, whether that window actually contains the named
+# historical event's real price path or not. Never fetches older history
+# just to make a scenario "real".
+st.caption(t("risk_stress_window_disclosure", start=str(start_date), end=str(end_date)))
 
 scenario_col = t("risk_col_scenario")
-provenance_col = t("risk_col_provenance")
 shock_col = t("risk_col_market_shock")
-beta_col = t("risk_col_portfolio_beta")
 impact_col = t("risk_col_estimated_impact")
-dollar_impact_col = t("risk_col_impact_10k")
 
 _PROVENANCE_LABEL_KEY = {
     "hypothetical": "risk_provenance_hypothetical",
@@ -521,36 +547,43 @@ _PROVENANCE_LABEL_KEY = {
 }
 
 # Shock magnitudes and scenario identity are UNCHANGED from before this task
-# (see src/risk_analytics.py's STRESS_SCENARIOS docstring) -- this task only
-# adds the Provenance column and methodology disclosure above.
+# (see src/risk_analytics.py's STRESS_SCENARIOS docstring) -- calculations
+# are untouched by the Issue #43 item C table-simplification below.
 if bench_prices is not None:
     b_val = beta(port_prices, bench_prices)
 else:
     b_val = 1.0
 
+# Portfolio beta shown ONCE above the table (Issue #43 item C) instead of
+# being repeated identically on every scenario row.
+st.markdown(f"**{t('risk_stress_beta_line', beta=f'{b_val:.2f}', benchmark=benchmark)}**")
+
 stress_rows = []
 for _scenario in STRESS_SCENARIOS.values():
     market_shock = _scenario["shock"]
     port_impact = market_shock * b_val
-    dollar_impact = port_impact * 10000  # Assume $10,000 portfolio
     stress_rows.append({
         scenario_col: t(_scenario["i18n_key"]),
-        provenance_col: t(_PROVENANCE_LABEL_KEY[_scenario["provenance"]]),
         shock_col: f"{market_shock:.0%}",
-        beta_col: f"{b_val:.2f}",
         impact_col: f"{port_impact:.2%}",
-        dollar_impact_col: f"${dollar_impact:,.0f}",
     })
 
+# Table is exactly Scenario | Market Shock | Estimated Portfolio Impact --
+# Provenance and the fixed "impact on $10,000" figure are no longer
+# repeated as columns; provenance labels and scenario notes are preserved
+# in the per-scenario captions below instead (Issue #43 item C).
 stress_df = pd.DataFrame(stress_rows).set_index(scenario_col)
 with chart_card(t("risk_stress_test_impact_card")):
     st.dataframe(
-        style_signed_columns(stress_df, [impact_col, dollar_impact_col]),
+        style_signed_columns(stress_df, [impact_col]),
         use_container_width=True,
     )
     chart_caption(t("risk_caption_stress_test_table"))
     for _scenario in STRESS_SCENARIOS.values():
-        st.caption(f"**{t(_scenario['i18n_key'])}** ({t(_PROVENANCE_LABEL_KEY[_scenario['provenance']])}) — {t(_scenario['note_i18n_key'])}")
+        _note = t(_scenario['note_i18n_key'])
+        if _scenario["provenance"] == "historical" and not scenario_event_covered(_scenario, start_date, end_date):
+            _note += " " + t("risk_scenario_note_outside_window", start=str(start_date), end=str(end_date))
+        st.caption(f"**{t(_scenario['i18n_key'])}** ({t(_PROVENANCE_LABEL_KEY[_scenario['provenance']])}) — {_note}")
 
 disclaimer_box()
 render_footer()

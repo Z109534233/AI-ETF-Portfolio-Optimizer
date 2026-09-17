@@ -4,6 +4,8 @@ Single source of truth for colors, spacing, and chart styling shared by
 assets/style.css (via st.markdown), src/charts.py (Plotly), and src/ui.py.
 """
 
+import hashlib
+
 # ── Core Palette ────────────────────────────────────────────────────────────
 COLORS = {
     "bg": "#0B1220",            # app background — deep navy
@@ -60,6 +62,30 @@ def color_for(value: float, positive_is_good: bool = True) -> str:
     """Return the design-system green/red for a signed metric value."""
     good = value >= 0 if positive_is_good else value < 0
     return COLORS["success"] if good else COLORS["danger"]
+
+
+def color_for_ticker(ticker: str) -> str:
+    """Deterministic ticker -> CHART_COLORS color, stable across processes,
+    reruns, and input ordering (Issue #43 item P): the same ticker always
+    gets the same color, whether it's the 1st ETF selected in one portfolio
+    or the 4th in another, so two side-by-side allocation donuts never show
+    the same ticker in two different colors. Uses a stable hash (sha256),
+    never Python's built-in hash() -- that function is randomized per
+    process (PYTHONHASHSEED) and would give a different color on every
+    rerun. Any ticker (including custom/unlisted symbols) hashes to a
+    color; there is no "unknown ticker" fallback needed.
+    """
+    digest = hashlib.sha256(ticker.encode("utf-8")).hexdigest()
+    index = int(digest, 16) % len(CHART_COLORS)
+    return CHART_COLORS[index]
+
+
+def colors_for_tickers(tickers) -> list:
+    """Return the deterministic color_for_ticker() color for each ticker in
+    `tickers`, in the given order -- convenience for Plotly `marker.colors`/
+    `line.color` lists that must line up positionally with a chart's own
+    labels/columns."""
+    return [color_for_ticker(tk) for tk in tickers]
 
 
 # Simple inline icon paths (24x24 viewBox, Feather-style strokes).

@@ -984,6 +984,16 @@ TRANSLATIONS = {
         "risk_scenario_note_2008": "近似 2008 年全球金融危機期間廣泛市場（如標普 500）由高點到低點的跌幅，僅為常見引用的估計值。",
         "risk_scenario_note_covid": "近似 2020 年 COVID-19 崩盤期間廣泛市場由高點到低點的跌幅，僅為常見引用的估計值。",
         "risk_scenario_note_tech_bubble": "近似 2000–2002 年科技泡沫破裂期間廣泛市場（如標普 500）由高點到低點的跌幅，僅為常見引用的估計值；那斯達克指數同期跌幅遠大於此。",
+        "risk_stress_window_disclosure": "本頁壓力測試使用您目前選取的歷史資料區間：{start} 至 {end}。",
+        "risk_scenario_note_outside_window": "此事件的實際期間並未包含在您目前選取的資料區間（{start} 至 {end}）內，因此此列僅為以投資組合貝塔值換算的簡化情境，並非該事件實際歷史股價路徑的重建。",
+        "risk_stress_beta_line": "本投資組合 β = {beta}（相對 {benchmark}）",
+
+        # ── Risk Analytics: Scope Notice (Issue #43 item A) ──────────────
+        "risk_scope_notice_with_current": "下方風險指標使用本頁目前選取的 {page_n} 檔 ETF 與本頁權重；上方「使用中的投資組合」是跨頁傳遞的目前投組（{current_n} 檔 ETF）。除非兩邊的 ETF 選擇與權重完全一致，兩者並非同一組分析資料。",
+        "risk_scope_notice_no_current": "下方風險指標使用本頁目前選取的 {page_n} 檔 ETF 與本頁權重；目前沒有跨頁傳遞的「使用中的投資組合」。",
+
+        # ── Risk Analytics: Methodology info cue (Issue #43 item D) ──────
+        "risk_methodology_badge_label": "說明",
 
         # ── Risk Analytics: Setup vs. Results Hierarchy + Chart Captions ──
         "risk_hero_title": "您的投資組合風險概況",
@@ -1413,6 +1423,15 @@ TRANSLATIONS = {
         "hist_meta_asset_universe": "資產範圍",
         "hist_meta_data_as_of": "資料截止日",
         "hist_meta_app_version": "應用程式版本",
+        "hist_legacy_version_notice": "此紀錄建立於 {version}；以下參數是當時儲存的設定，可能與目前版本預設不同。",
+        "hist_experiment_details_badge_label": "說明",
+        "hist_delete_confirm_checkbox": "我確認要刪除「{name}」，此操作無法復原。",
+        "saved_strategy_custom_allocation": "自訂配置",
+        "saved_market_multi": "跨市場（{markets}）",
+        "saved_market_not_recorded": "未記錄",
+        "estimator_return_historical_cagr": "歷史複合年化成長率（CAGR）",
+        "estimator_covariance_sample": "歷史樣本共變異數（年化）",
+        "common_info_badge_label": "說明",
         "hist_set_as_current_btn": "設為目前投資組合",
         "hist_set_as_current_success": "已將「{name}」設為目前投資組合。前往投資模擬器或風險分析即可直接使用。",
         "hist_set_as_current_help": "將此已儲存的投資組合載入為目前投資組合，供投資模擬器、風險分析與投資組合分析助手直接使用，無需重新建立。",
@@ -1566,6 +1585,7 @@ TRANSLATIONS = {
         "mi_placeholder_value": "尚無資料",
         "mi_placeholder_note": "資料來源尚未串接",
         "mi_index_unavailable": "資料暫不可用",
+        "mi_fear_greed_not_connected": "恐懼與貪婪指數目前尚未串接可驗證的資料來源，因此未顯示於上方市場總覽卡片中；未來串接後將自動顯示。",
 
         "mi_no_news_available": "目前沒有可顯示的市場新聞。",
         "mi_impact_positive_label": "正面",
@@ -2625,6 +2645,16 @@ TRANSLATIONS = {
         "risk_scenario_note_2008": "Approximates the broad market's (e.g. S&P 500) commonly-cited peak-to-trough decline during the 2008 Global Financial Crisis -- an approximate, commonly-cited figure.",
         "risk_scenario_note_covid": "Approximates the broad market's commonly-cited peak-to-trough decline during the 2020 COVID-19 crash -- an approximate, commonly-cited figure.",
         "risk_scenario_note_tech_bubble": "Approximates the broad market's (e.g. S&P 500) commonly-cited peak-to-trough decline during the 2000-2002 dot-com bust -- an approximate figure; the Nasdaq Composite itself fell far more over the same period.",
+        "risk_stress_window_disclosure": "This stress test uses your currently selected historical data window: {start} to {end}.",
+        "risk_scenario_note_outside_window": "This event's actual period falls outside your currently selected data window ({start} to {end}), so this row is a simplified beta-scaled estimate only -- not a reconstruction of that event's actual historical price path.",
+        "risk_stress_beta_line": "This portfolio's β = {beta} (vs. {benchmark})",
+
+        # ── Risk Analytics: Scope Notice (Issue #43 item A) ──────────────
+        "risk_scope_notice_with_current": "The risk metrics below use this page's own selection of {page_n} ETF(s) and page-local weights; the \"Current Portfolio\" preview above is the portfolio carried over from another page ({current_n} ETF(s)). Unless both sides have the exact same ETFs and weights, they are not the same analysis data.",
+        "risk_scope_notice_no_current": "The risk metrics below use this page's own selection of {page_n} ETF(s) and page-local weights; there is currently no \"Current Portfolio\" carried over from another page.",
+
+        # ── Risk Analytics: Methodology info cue (Issue #43 item D) ──────
+        "risk_methodology_badge_label": "Explanation",
 
         # ── Risk Analytics: Setup vs. Results Hierarchy + Chart Captions ──
         "risk_hero_title": "Your Portfolio's Risk Profile",
@@ -3055,6 +3085,15 @@ TRANSLATIONS = {
         "hist_meta_asset_universe": "Asset Universe",
         "hist_meta_data_as_of": "Data As Of",
         "hist_meta_app_version": "App Version",
+        "hist_legacy_version_notice": "This record was created with app version {version}; the parameters below are the settings saved at that time and may differ from the current version's defaults.",
+        "hist_experiment_details_badge_label": "Explanation",
+        "hist_delete_confirm_checkbox": "I confirm I want to delete \"{name}\" -- this action cannot be undone.",
+        "saved_strategy_custom_allocation": "Custom Allocation",
+        "saved_market_multi": "Multi-market ({markets})",
+        "saved_market_not_recorded": "Not recorded",
+        "estimator_return_historical_cagr": "Historical CAGR (annualized return)",
+        "estimator_covariance_sample": "Sample covariance (historical, annualized)",
+        "common_info_badge_label": "Explanation",
         "hist_set_as_current_btn": "Set as Current Portfolio",
         "hist_set_as_current_success": "\"{name}\" is now the current portfolio. Go to Investment Simulator or Risk Analytics to use it directly.",
         "hist_set_as_current_help": "Load this saved portfolio as the current portfolio so Investment Simulator, Risk Analytics, and AI Portfolio Analyst can use it directly without rebuilding it.",
@@ -3208,6 +3247,7 @@ TRANSLATIONS = {
         "mi_placeholder_value": "N/A",
         "mi_placeholder_note": "Data source not yet connected",
         "mi_index_unavailable": "Data unavailable",
+        "mi_fear_greed_not_connected": "The Fear & Greed Index has no verified data source connected yet, so it is not shown as a card in the market overview above; it will appear automatically once a real source is wired in.",
 
         "mi_no_news_available": "No market news available.",
         "mi_impact_positive_label": "Positive",
@@ -3515,6 +3555,28 @@ GOAL_STATUS_KEYS = {
     "above_target": "gp_status_above_target",
 }
 
+# Saved-portfolio DISPLAY-ONLY strategy values that are no longer one of the
+# five methods the optimizer dropdown offers (OPTIMIZATION_METHOD_KEYS) --
+# e.g. legacy DB rows saved before a method was retired. Deliberately kept
+# SEPARATE from OPTIMIZATION_METHOD_KEYS (Issue #43 item K): a legacy value
+# must never be re-added to the optimizer's own dropdown, only translated
+# for display wherever a saved portfolio's strategy is shown.
+SAVED_STRATEGY_DISPLAY_KEYS = {
+    "Custom Allocation": "saved_strategy_custom_allocation",
+}
+
+# src/portfolio_optimizer.py's canonical, saved-metadata estimator method
+# strings (pages/2_Portfolio_Optimizer.py's _experiment_metadata) -- display
+# translations only; the stored value itself must stay exactly as saved
+# (Issue #43 item J).
+RETURN_ESTIMATOR_KEYS = {
+    "Historical CAGR (annualized_return)": "estimator_return_historical_cagr",
+}
+
+COVARIANCE_ESTIMATOR_KEYS = {
+    "Sample covariance (historical, annualized)": "estimator_covariance_sample",
+}
+
 
 def _translate_option(value: str, mapping: dict) -> str:
     """Translate a raw option value for display; returns the value unchanged
@@ -3593,6 +3655,54 @@ def t_goal_risk(value: str) -> str:
 
 def t_goal_status(value: str) -> str:
     return _translate_option(value, GOAL_STATUS_KEYS)
+
+
+def t_saved_strategy(value: str) -> str:
+    """Display-only translation for a SAVED portfolio's strategy value
+    (Issue #43 item K), which may be one of the five methods the optimizer
+    dropdown currently offers, OR a legacy value no longer offered there
+    (e.g. 'Custom Allocation' from an older DB row). The five current
+    methods still go through t_opt_method()/OPTIMIZATION_METHOD_KEYS
+    unchanged; legacy values are translated via the separate
+    SAVED_STRATEGY_DISPLAY_KEYS mapping so nothing here ever needs to be
+    (or should be) added back to the optimizer's own dropdown. An
+    unrecognized value falls back to the raw saved string (or "--") rather
+    than crashing.
+    """
+    if not value:
+        return "—"
+    if value in OPTIMIZATION_METHOD_KEYS:
+        return t_opt_method(value)
+    return _translate_option(value, SAVED_STRATEGY_DISPLAY_KEYS)
+
+
+def t_return_estimator(value: str) -> str:
+    return _translate_option(value, RETURN_ESTIMATOR_KEYS) if value else "—"
+
+
+def t_covariance_estimator(value: str) -> str:
+    return _translate_option(value, COVARIANCE_ESTIMATOR_KEYS) if value else "—"
+
+
+def t_market_display(markets) -> str:
+    """Display-only market/region summary for a saved portfolio (Issue #43
+    item L): given a list of raw country strings (e.g. from a portfolio's
+    saved metadata["markets"], or inferred from its holdings' known
+    countries), returns one already-translated string -- the single
+    translated market when there is exactly one, a localized "Multi-market
+    (...)" summary when there is more than one, or a localized "Not
+    recorded" (never a bare "--") when the list is empty/unknown. Never
+    rewrites or infers anything about the underlying saved record itself --
+    purely a display-layer summary of whatever country list the caller
+    already determined.
+    """
+    unique = sorted({m for m in (markets or []) if m})
+    if not unique:
+        return t("saved_market_not_recorded")
+    if len(unique) > 1:
+        return t("saved_market_multi", markets="、".join(t_country(m) for m in unique) if get_language() == "zh-TW"
+                  else ", ".join(t_country(m) for m in unique))
+    return t_country(unique[0])
 
 
 def language_selector() -> None:

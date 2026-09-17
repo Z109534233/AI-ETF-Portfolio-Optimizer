@@ -850,7 +850,12 @@ def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: lis
     headlines = "\n".join(f"- {n['title']}" for n in news_items[:8])
     affected_str = ", ".join(f"{e['ticker']} ({e['sector']}: {e['impact_label']})" for e in affected_etfs) or "N/A"
     language_instruction = (
-        "Respond entirely in Traditional Chinese (zh-TW/繁體中文)."
+        "Respond entirely in Traditional Chinese (zh-TW/繁體中文). Headlines "
+        "are English-language source material and must stay source-faithful "
+        "-- never translate or rewrite a headline's title as if it were the "
+        "original; when you quote or reference a headline's title verbatim, "
+        "wrap it in Chinese quotation marks 「」 so it reads as a clearly "
+        "quoted source title distinct from your own Chinese prose."
         if get_language() == "zh-TW" else "Respond entirely in English."
     )
     return f"""Based on today's headlines and classifications below (already computed by the app -- do not recompute or contradict them), write a "Today's Market Summary" of about 100-200 words covering: the main market events today, overall market sentiment, which sectors are affected, and which ETFs may be affected. Do not predict future prices or give personalised investment advice. {language_instruction}
@@ -878,7 +883,17 @@ def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etf
 
     parts = [t("mi_summary_intro", headline=top_titles[0] if top_titles else "")]
     if len(top_titles) > 1:
-        parts.append(t("mi_summary_more_headlines", headlines="; ".join(top_titles[1:])))
+        # Raw source headlines must stay visually/grammatically distinct
+        # from the surrounding prose rather than reading as an unmarked run
+        # of English words inside a Chinese sentence (Issue #43 item E):
+        # quoted individually, joined with a language-appropriate separator
+        # -- Chinese corner quotes/顿号 for zh-TW, ASCII quotes/semicolons
+        # for English -- and the exact source text is never altered.
+        if get_language() == "zh-TW":
+            quoted_headlines = "、".join(f"「{h}」" for h in top_titles[1:])
+        else:
+            quoted_headlines = "; ".join(f"\"{h}\"" for h in top_titles[1:])
+        parts.append(t("mi_summary_more_headlines", headlines=quoted_headlines))
     parts.append(t(
         "mi_summary_sentiment", tilt=tilt,
         bullish=sentiment["bullish_pct"], bearish=sentiment["bearish_pct"]
