@@ -257,6 +257,51 @@ with st.expander(t("ml_target_definition_label"), expanded=False):
     st.markdown(f"- **{t('ml_data_window_label')}** — "
                 f"{t('ml_data_window_value', train_start=result['train_start'], train_end=result['train_end'], train=result['train_size'], test_start=result['test_start'], test_end=result['test_end'], test=result['test_size'])}")
 
+# ── Walk-Forward Validation (Issue #45 item 7) ───────────────────────────
+# Expanding-window TimeSeriesSplit validation over the PRE-HOLDOUT training
+# region only (src.machine_learning.walk_forward_validation()) -- the final
+# out-of-sample test above is never touched by this. Fold dispersion
+# measures temporal instability, not evidence of future predictability;
+# shown as its own section so it is never confused with the final test
+# metrics above.
+section_header(t("ml_wf_section_title"), t("ml_wf_section_subtitle"))
+_wf = result.get("walk_forward_cv") or {"available": False, "reason": "not computed"}
+if not _wf.get("available"):
+    st.info(t("ml_wf_unavailable", reason=_wf.get("reason", "")))
+else:
+    wcol1, wcol2, wcol3 = st.columns(3)
+    with wcol1:
+        st.markdown(metric_card_html(
+            t("ml_wf_n_folds_label"), str(_wf["n_folds"]), color=COLORS["primary"],
+        ), unsafe_allow_html=True)
+    with wcol2:
+        st.markdown(metric_card_html(
+            t("ml_wf_accuracy_mean_label"),
+            t("ml_wf_mean_std_value", mean=f"{_wf['accuracy_mean']:.2%}", std=f"{_wf['accuracy_std']:.2%}"),
+            color=COLORS["success"],
+        ), unsafe_allow_html=True)
+    with wcol3:
+        if _wf["roc_auc_mean"] is not None:
+            _roc_value = t("ml_wf_mean_std_value", mean=f"{_wf['roc_auc_mean']:.4f}", std=f"{_wf['roc_auc_std']:.4f}")
+        else:
+            _roc_value = t("ml_wf_roc_auc_na")
+        st.markdown(metric_card_html(
+            t("ml_wf_roc_auc_mean_label"), _roc_value, color=COLORS["cyan"],
+        ), unsafe_allow_html=True)
+    st.caption(t("ml_wf_disclaimer"))
+    with st.expander(t("ml_wf_fold_table_label"), expanded=False):
+        _fold_rows = []
+        for _f in _wf["folds"]:
+            _fold_rows.append({
+                t("ml_wf_col_fold"): _f["fold"],
+                t("ml_wf_col_train_range"): f"{_f['train_start']} → {_f['train_end']} ({_f['n_train']})",
+                t("ml_wf_col_val_range"): f"{_f['val_start']} → {_f['val_end']} ({_f['n_val']})",
+                t("ml_wf_col_accuracy"): f"{_f['accuracy']:.2%}",
+                t("ml_wf_col_baseline"): f"{_f['baseline_accuracy']:.2%}",
+                t("ml_wf_col_roc_auc"): f"{_f['roc_auc']:.4f}" if _f["roc_auc"] is not None else "N/A",
+            })
+        st.dataframe(pd.DataFrame(_fold_rows).set_index(t("ml_wf_col_fold")), use_container_width=True)
+
 # ── Methodology & Assumptions (M6) ──────────────────────────────────────────
 # Collapsed, always-visible disclosure of the ACTUAL model/split/evaluation
 # methodology for this page -- see src/methodology.py's
@@ -278,6 +323,7 @@ with st.expander(t("ml_methodology_title"), expanded=False):
         f"{t('ml_data_window_value', train_start=result['train_start'], train_end=result['train_end'], train=result['train_size'], test_start=result['test_start'], test_end=result['test_end'], test=result['test_size'])}\n"
         f"- **{t('ml_methodology_baseline_label')}** — {t('ml_methodology_baseline_value', baseline=_ml_baseline_pct)}\n"
         f"- **{t('ml_methodology_metrics_label')}** — {t('ml_methodology_metrics_value')}\n"
+        f"- **{t('ml_methodology_cv_label')}** — {t('ml_methodology_cv_value')}\n"
         f"- **{t('ml_methodology_absent_label')}** — {t('ml_methodology_absent_value')}\n"
         f"- **{t('ml_methodology_live_trading_label')}** — {t('ml_methodology_live_trading_value')}"
     )

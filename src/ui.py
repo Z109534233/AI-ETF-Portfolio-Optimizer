@@ -110,7 +110,8 @@ def region_etf_options_multi(selected_regions: list) -> list:
 
 
 def multi_region_etf_multiselect(selected_regions: list, etf_options: list, label: str,
-                                  help_text: str = None, n_default: int = 5) -> list:
+                                  help_text: str = None, n_default: int = 5,
+                                  default_override: list = None) -> list:
     """ETF multiselect for the Portfolio Optimizer's multi-country picker
     (Issue #24 item 1). Deliberately NOT region_etf_multiselect() above:
     that helper keys its stored selection PER region string, so switching
@@ -132,10 +133,21 @@ def multi_region_etf_multiselect(selected_regions: list, etf_options: list, labe
     revisiting a previously-seen combination naturally restores Streamlit's
     own stored value for that key, which was always built by this same
     safe pruning logic to begin with.
+
+    `default_override` (Issue #45 item 1), when given AND every one of its
+    tickers is actually present in `etf_options`, replaces `etf_options[:n_default]`
+    as the ONE-TIME initial seed only -- e.g. the shared cross-asset demo
+    portfolio for a fresh United-States-only session, instead of whatever
+    happens to sort first in the raw ETF universe (which previously could
+    be a VOO/VTI/QQQ/SPY-style set with extreme mutual overlap). Has no
+    effect once a master selection already exists in this session.
     """
     master_key = "_selected_etfs_multi_master"
     if master_key not in st.session_state:
-        st.session_state[master_key] = etf_options[:n_default]
+        if default_override and all(tk in etf_options for tk in default_override):
+            st.session_state[master_key] = list(default_override)
+        else:
+            st.session_state[master_key] = etf_options[:n_default]
     carry_over = [tk for tk in st.session_state[master_key] if tk in etf_options]
     if not carry_over and etf_options:
         carry_over = etf_options[:n_default]
@@ -203,7 +215,7 @@ def market_default_benchmark(selected_region: str, all_regions_label: str) -> st
 
 
 def region_benchmark_selector(selected_region: str, etf_options: list, label: str,
-                               help_text: str = None) -> str:
+                               help_text: str = None, exclude: list = None) -> tuple:
     """Shared, market-aware benchmark ETF selector (ETF Analysis + Risk
     Analytics both call this instead of each keeping its own hardcoded
     selectbox). Backed by st.session_state["_benchmark_shadow"][region], a
@@ -214,30 +226,58 @@ def region_benchmark_selector(selected_region: str, etf_options: list, label: st
     not reset a manually-chosen Taiwan benchmark just because you looked at
     the US tab in between (PRODUCT SPEC A2/A4/B16).
 
-    The widget itself is also keyed per-region
-    (key=f"selected_benchmark_{region}"), so Streamlit treats it as a
-    genuinely different widget instance per region -- the same mechanism
-    that already made region_etf_multiselect() region-safe.
+    `exclude` (Issue #45 item 5) removes the given tickers -- typically the
+    caller's own currently-selected portfolio/analysis ETFs -- from the
+    benchmark options wherever at least one non-excluded option remains: a
+    benchmark that IS itself a constituent of the thing being compared
+    against it makes alpha/beta partly self-referential. If every option
+    would be excluded, exclusion is NOT applied (there is no valid external
+    benchmark left to fall back to) rather than leaving no choice at all.
+
+    The widget key incorporates the excluded set so a change in the
+    caller's selection always gets a fresh widget instance instead of
+    mutating an existing keyed widget's `options` -- see
+    multi_region_etf_multiselect()'s docstring for why changing a keyed
+    widget's `options` between reruns without a new key is unsafe.
+
+    Returns (benchmark, was_reset): `was_reset` is True exactly when the
+    previously remembered benchmark for this region was dropped because it
+    became one of `exclude`'s tickers -- callers should show a one-time
+    info note when this happens.
     """
+    exclude_set = set(exclude or [])
+    candidate_options = [tk for tk in etf_options if tk not in exclude_set]
+    exclusion_applied = bool(candidate_options) and len(candidate_options) < len(etf_options)
+    if not candidate_options:
+        candidate_options = etf_options
+
     if "_benchmark_shadow" not in st.session_state:
         st.session_state["_benchmark_shadow"] = {}
     shadow = st.session_state["_benchmark_shadow"]
 
     current = shadow.get(selected_region)
-    if current not in etf_options:
+    was_reset = bool(exclusion_applied and current is not None and current in exclude_set)
+    if current not in candidate_options:
         default = market_default_benchmark(selected_region, t("field_all_regions"))
-        current = default if default in etf_options else (etf_options[0] if etf_options else None)
+        current = default if default in candidate_options else (candidate_options[0] if candidate_options else None)
 
-    label_map = _build_etf_label_map(etf_options)
-    index = etf_options.index(current) if current in etf_options else 0
+    label_map = _build_etf_label_map(candidate_options)
+    index = candidate_options.index(current) if current in candidate_options else 0
+    # Widget key changes ONLY when exclusion actually narrowed the options
+    # this render (preserves the exact original key -- and therefore full
+    # backward compatibility -- for every caller that never passes
+    # `exclude`, or whose exclusion happens to remove nothing/everything).
+    widget_key = f"selected_benchmark_{selected_region}"
+    if exclusion_applied:
+        widget_key += "_ex_" + "-".join(sorted(exclude_set))
     benchmark = st.selectbox(
-        label, options=etf_options, index=index, help=help_text,
+        label, options=candidate_options, index=index, help=help_text,
         format_func=lambda tk: label_map.get(tk, tk),
-        key=f"selected_benchmark_{selected_region}",
+        key=widget_key,
     )
     shadow[selected_region] = benchmark
     st.session_state["_benchmark_shadow"] = shadow
-    return benchmark
+    return benchmark, was_reset
 
 
 def _build_etf_label_map(tickers: list, include_market: bool = False) -> dict:
@@ -647,7 +687,7 @@ def hero_section(composition: list = None, metrics: list = None, is_sample: bool
         btn_secondary = "探索功能"
         preview_title = "投資組合預覽（示範）"
         preview_metrics = ["預期報酬", "波動", "Sharpe"]
-        composition_label = "示範投資組合"
+        composition_label = "等權重示範"
         sample_word = "示範資料"
     else:
         title = "ETF Portfolio Analytics & Quantitative Decision Platform"
@@ -656,7 +696,7 @@ def hero_section(composition: list = None, metrics: list = None, is_sample: bool
         btn_secondary = "Explore Features"
         preview_title = "Portfolio Preview (Demo)"
         preview_metrics = ["Expected Return", "Volatility", "Sharpe"]
-        composition_label = "Demo Portfolio"
+        composition_label = "Equal-Weight Demo"
         sample_word = "Sample Data"
 
     composition = composition or [("VOO", "40%"), ("QQQ", "35%"), ("0050", "25%")]
@@ -1401,18 +1441,15 @@ def ai_interpret_button(cache_key: str, session_state, context_text: str) -> Non
     the metrics passed in `context_text` -- it must never invent a number,
     price, or piece of advice.
 
-    When OpenAI isn't configured, still renders a disabled button (never
-    clickable, never spends a call) plus a caption explaining why -- a
-    silent no-op here would make the whole feature invisible to a user who
-    never sees the button and has no way to know the capability exists or
-    why it's unavailable.
+    When OpenAI isn't configured, this renders NOTHING (Issue #45 item 4):
+    a disabled button plus an "AI unavailable / API key not configured"
+    caption repeated under every chart across the app made the product look
+    broken rather than like a product with an optional AI enrichment. This
+    button is a genuinely optional extra on top of the chart's own
+    chart_caption() (which is never gated on OpenAI) -- silently omitting
+    it when it can't work loses no deterministic information.
     """
     if not _openai_service.is_configured():
-        st.button(
-            t("chart_ask_ai_interpret"), key=f"{cache_key}_btn_disabled", disabled=True,
-            help=t("chart_ai_interpret_unavailable"),
-        )
-        st.caption(t("chart_ai_interpret_unavailable"))
         return
     if st.button(t("chart_ask_ai_interpret"), key=f"{cache_key}_btn"):
         system_prompt = (

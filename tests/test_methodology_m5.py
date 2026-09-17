@@ -1,14 +1,15 @@
 """
-M5 -- ETF Analysis Methodology (Issue #41 item A): deterministic tests.
+M5 -- ETF Analysis Methodology (Issue #41 item A, updated for Issue #45
+item 3's live risk-free-rate service): deterministic tests.
 
 Covers:
   - src/methodology.py's ETF_ANALYSIS_METHODOLOGY metadata and
     validate_etf_analysis_window() in isolation
   - i18n parity (zh-TW / en) for every new etf_methodology_* key
   - the rendered Methodology & Assumptions panel on pages/1_ETF_Analysis.py:
-    it must show the CURRENT runtime risk-free rate, must NOT claim a live
-    Treasury/FRED yield source, and must disclose the actual risk-free-rate
-    usage scope (Sharpe + Sortino, not an unverified claim)
+    it must show the CURRENT runtime risk-free rate and its live/fallback
+    provenance, and must disclose the actual risk-free-rate usage scope
+    (Sharpe + Sortino, not an unverified claim)
 """
 
 import os
@@ -24,6 +25,7 @@ import pytest
 from src.methodology import ETF_ANALYSIS_METHODOLOGY, validate_etf_analysis_window
 from src.i18n import TRANSLATIONS
 from src.financial_metrics import annualized_return
+from src import risk_free_rate as rf_mod
 
 
 def _apptest_from_file(rel_path, **kwargs):
@@ -76,7 +78,7 @@ def _methodology_expander_corpus(at, label):
 def test_methodology_metadata_matches_actual_implementation():
     m = ETF_ANALYSIS_METHODOLOGY
     assert "252" in m["expected_return_and_volatility"]["annualization"]
-    assert "NOT" in m["risk_free_rate"]["nature"] and "Treasury" in m["risk_free_rate"]["nature"]
+    assert "FRED" in m["risk_free_rate"]["nature"] and "fallback" in m["risk_free_rate"]["nature"]
     assert "Sharpe" in m["risk_free_rate"]["usage"] and "Sortino" in m["risk_free_rate"]["usage"]
     assert "auto_adjust=True" in m["price_source"]["adjustment"]
     assert "forecast" in m["limitation"]
@@ -175,8 +177,18 @@ def test_methodology_i18n_keys_exist_in_both_languages():
         assert TRANSLATIONS["en"][key].strip() != ""
 
 
-# ── Rendered panel: honest risk-free-rate disclosure ─────────────────────
-def test_methodology_panel_shows_current_rfr_and_no_treasury_claim(_mock_full_history_download):
+# ── Rendered panel: honest, dynamic risk-free-rate disclosure ────────────
+@pytest.fixture
+def _mock_live_rf(monkeypatch):
+    """Deterministic live FRED observation -- no real network call."""
+    fixed = {
+        "rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
+        "source": "FRED", "status": "live", "reason": None,
+    }
+    monkeypatch.setattr(rf_mod, "get_cached_risk_free_rate", lambda: fixed)
+
+
+def test_methodology_panel_shows_live_fred_provenance(_mock_full_history_download, _mock_live_rf):
     at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     at.session_state["language"] = "en"
     at.run()
@@ -186,19 +198,15 @@ def test_methodology_panel_shows_current_rfr_and_no_treasury_claim(_mock_full_hi
     assert "Methodology & Assumptions" in expander_labels
 
     corpus = _methodology_expander_corpus(at, "Methodology & Assumptions")
-    # Default risk_free_rate slider value is 5.00% -- must be shown verbatim.
-    assert "5.00%" in corpus
-    # Must NOT claim an automatically-fetched Treasury/FRED yield -- the only
-    # permitted mention of "Treasury" is the explicit NEGATION ("does not
-    # automatically sync a live Treasury yield"), never an affirmative
-    # sourcing claim.
-    assert "does not automatically sync a live Treasury yield" in corpus
-    assert "FRED" not in corpus
+    # The slider defaults to the mocked live rate -- shown verbatim.
+    assert "4.11%" in corpus
+    # Must disclose the actual live source/series/as-of date dynamically.
+    assert "FRED" in corpus and "DGS3MO" in corpus and "2026-09-14" in corpus
     # Must disclose the ACTUAL usage scope (Sharpe + Sortino), not vague text.
     assert "Sharpe Ratio" in corpus and "Sortino Ratio" in corpus
 
 
-def test_methodology_panel_zh_tw_no_treasury_claim(_mock_full_history_download):
+def test_methodology_panel_zh_tw_shows_live_fred_provenance(_mock_full_history_download, _mock_live_rf):
     at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
     at.session_state["language"] = "zh-TW"
     at.run()
@@ -208,9 +216,26 @@ def test_methodology_panel_zh_tw_no_treasury_claim(_mock_full_history_download):
     assert "方法論與假設" in expander_labels
 
     corpus = _methodology_expander_corpus(at, "方法論與假設")
-    assert "5.00%" in corpus
-    assert "公債" in corpus and "不會自動同步" in corpus
+    assert "4.11%" in corpus
+    assert "FRED" in corpus and "DGS3MO" in corpus
     assert "夏普比率" in corpus and "Sortino" in corpus
+
+
+def test_methodology_panel_discloses_fallback_status_when_live_fetch_fails(
+    _mock_full_history_download, monkeypatch,
+):
+    fallback = {
+        "rate": 0.05, "observed_date": None, "series_id": "DGS3MO",
+        "source": "FRED", "status": "fallback", "reason": "simulated network failure",
+    }
+    monkeypatch.setattr(rf_mod, "get_cached_risk_free_rate", lambda: fallback)
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = _methodology_expander_corpus(at, "Methodology & Assumptions")
+    assert "5.00%" in corpus
+    assert "fallback" in corpus.lower()
 
 
 def test_methodology_panel_validation_success_with_sufficient_history(_mock_full_history_download):

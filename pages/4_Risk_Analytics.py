@@ -39,7 +39,8 @@ from src.ui import (
     info_badge,
 )
 from src.theme import COLORS, color_for_ticker
-from src.i18n import t, t_country
+from src.i18n import t, t_country, get_language
+from src.risk_free_rate import get_cached_risk_free_rate, format_rate_provenance
 
 st.set_page_config(
     page_title="Risk Analytics | AI ETF Portfolio Optimizer",
@@ -107,8 +108,25 @@ with st.sidebar:
     # Architecture round: fixes the confirmed "Taiwan region + QQQ
     # benchmark" bug, which affected this page too via the exact same
     # hardcoded-DEFAULT_ETFS/index=2 pattern).
-    benchmark = region_benchmark_selector(selected_region, etf_options, t("field_benchmark"))
-    risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, 5.0, 0.25) / 100
+    # Benchmark self-inclusion fix (Issue #45 item 5): a benchmark that IS
+    # itself one of this page's selected ETFs makes alpha/beta partly
+    # self-referential -- exclude the current selection from the benchmark
+    # options wherever an external option remains.
+    benchmark, _benchmark_was_reset = region_benchmark_selector(
+        selected_region, etf_options, t("field_benchmark"), exclude=selected_etfs,
+    )
+    if _benchmark_was_reset:
+        st.caption(t("risk_benchmark_reset_notice", benchmark=benchmark))
+
+    _rf_info = get_cached_risk_free_rate()
+    if "_risk_free_rate_shadow" not in st.session_state:
+        st.session_state["_risk_free_rate_shadow"] = round(_rf_info["rate"] * 100, 2)
+    risk_free_rate = st.slider(
+        t("field_risk_free_rate_pct"), 0.0, 10.0,
+        st.session_state["_risk_free_rate_shadow"], 0.25, key="risk_free_rate_slider",
+    ) / 100
+    st.session_state["_risk_free_rate_shadow"] = risk_free_rate * 100
+    st.caption(format_rate_provenance(_rf_info, get_language()))
 
     default_start, default_end = get_date_range_defaults()
     start_date = st.date_input(t("field_start_date"), value=default_start)
@@ -260,6 +278,7 @@ with st.expander(t("risk_methodology_title"), expanded=False):
         f"- **{t('risk_methodology_mdd_label')}** — {t('risk_methodology_mdd_desc')}\n"
         f"- **{t('risk_methodology_concentration_label')}** — {t('risk_methodology_concentration_desc')}\n"
         f"- **{t('risk_methodology_correlation_label')}** — {t('risk_methodology_correlation_desc')}\n"
+        f"- **{t('risk_methodology_alpha_label')}** — {t('risk_methodology_alpha_desc')}\n"
         f"- **{t('risk_methodology_stress_label')}** — {t('risk_methodology_stress_desc')}"
     )
 
@@ -312,8 +331,17 @@ else:
         ))
         st.markdown(t("risk_var_backtest_no_pass_claim"))
 
-# Benchmark metrics
-if bench_prices is not None and len(bench_prices) > 10:
+# Benchmark metrics -- never computed against a benchmark that is itself
+# one of the page's selected ETFs (Issue #45 item 5): region_benchmark_selector()
+# already excludes the current selection wherever an external option
+# remains, but if every available option in this market IS a selected ETF,
+# `benchmark` falls back to being one anyway -- in that case alpha/beta
+# must be shown as unavailable, never silently computed self-referentially.
+_benchmark_is_constituent = benchmark in etf_prices.columns
+if _benchmark_is_constituent:
+    section_header(t("risk_benchmark_metrics_title"))
+    st.info(t("risk_benchmark_self_reference_unavailable", benchmark=benchmark))
+elif bench_prices is not None and len(bench_prices) > 10:
     b = beta(port_prices, bench_prices)
     a = alpha(port_prices, bench_prices, risk_free_rate)
     te = tracking_error(port_prices, bench_prices)
@@ -324,7 +352,15 @@ if bench_prices is not None and len(bench_prices) > 10:
     with col1:
         st.markdown(metric_card_html(t("metric_beta"), f"{b:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
     with col2:
-        st.markdown(metric_card_html(t("metric_alpha"), f"{a:.2%}", color=COLORS["success"] if a >= 0 else COLORS["danger"]), unsafe_allow_html=True)
+        # Explicitly labeled "annualized" (Issue #45 item 5): this alpha is
+        # computed from ANNUALIZED portfolio/benchmark returns and an
+        # ANNUAL risk-free rate (see RISK_METHODOLOGY["alpha_beta"]/the
+        # Methodology panel below), so an unlabeled "0.09%" figure could
+        # otherwise be misread as a daily figure.
+        st.markdown(metric_card_html(
+            t("metric_alpha_annualized", benchmark=benchmark), f"{a:.2%}",
+            color=COLORS["success"] if a >= 0 else COLORS["danger"],
+        ), unsafe_allow_html=True)
     with col3:
         st.markdown(metric_card_html(t("metric_tracking_error"), f"{te:.2%}", color=COLORS["warning"]), unsafe_allow_html=True)
     with col4:

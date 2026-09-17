@@ -13,6 +13,7 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, confusion_matrix
 )
+from sklearn.model_selection import TimeSeriesSplit
 from src.technical_indicators import create_ml_features
 
 
@@ -203,6 +204,168 @@ def confusion_matrix_skew_direction(predicted_up: int, total: int,
     return None
 
 
+# ============================================================================
+# Walk-Forward / Expanding-Window Cross-Validation (Issue #45 item 7)
+# ============================================================================
+# The final chronological train/test split (time_series_split() above) stays
+# the UNTOUCHED headline out-of-sample holdout -- it is NEVER seen by any
+# fold below. This section only adds expanding-window TimeSeriesSplit
+# validation INSIDE the pre-holdout training region, to measure how stable
+# a model's accuracy/ROC AUC are across several chronological, expanding
+# train/validation windows -- fold dispersion measures temporal instability,
+# it does NOT prove future predictability.
+
+DEFAULT_CV_FOLDS = 5
+MIN_CV_FOLDS = 2
+MIN_FOLD_TRAIN_SIZE = 15
+MIN_FOLD_VAL_SIZE = 5
+
+
+def _fit_and_score_fold(model_type: str, X_train: pd.DataFrame, y_train: pd.Series,
+                         X_val: pd.DataFrame, y_val: pd.Series) -> dict:
+    """Fit ONE model on a single fold's training rows only (the
+    LogisticRegression scaler is fit fresh here, on this fold's training
+    data only -- never on the validation rows or on any other fold's data)
+    and score it on that fold's validation rows. Returns
+    {"accuracy": float, "baseline_accuracy": float, "roc_auc": float or None}.
+    Raises if the model genuinely cannot be fit (e.g. a single class present
+    in y_train) -- callers must catch this and skip the fold rather than
+    fabricate a score.
+    """
+    if model_type == "Logistic Regression":
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train.fillna(0))
+        X_val_scaled = scaler.transform(X_val.fillna(0))
+        model = LogisticRegression(max_iter=1000, C=1.0, random_state=42)
+        model.fit(X_train_scaled, y_train)
+        y_pred = model.predict(X_val_scaled)
+        y_prob = model.predict_proba(X_val_scaled)[:, 1]
+    else:
+        model = RandomForestClassifier(
+            n_estimators=100, max_depth=5, min_samples_leaf=10,
+            random_state=42, n_jobs=-1,
+        )
+        model.fit(X_train.fillna(0), y_train)
+        y_pred = model.predict(X_val.fillna(0))
+        y_prob = model.predict_proba(X_val.fillna(0))[:, 1]
+
+    accuracy = float(accuracy_score(y_val, y_pred))
+    baseline_accuracy = _baseline_majority_class_accuracy(y_train, y_val)
+    roc_auc = None
+    if len(set(y_val)) > 1:
+        try:
+            roc_auc = float(roc_auc_score(y_val, y_prob))
+        except Exception:
+            roc_auc = None
+    return {"accuracy": accuracy, "baseline_accuracy": baseline_accuracy, "roc_auc": roc_auc}
+
+
+def _feasible_fold_count(n: int, n_splits: int) -> bool:
+    """Whether TimeSeriesSplit(n_splits) on `n` pre-holdout rows produces
+    folds that ALL meet the minimum train/validation size thresholds
+    above -- checked directly against the actual split, not estimated, so
+    this can never disagree with what walk_forward_validation() actually
+    does below."""
+    if n < n_splits + 1:
+        return False
+    tss = TimeSeriesSplit(n_splits=n_splits)
+    for train_idx, val_idx in tss.split(np.zeros(n)):
+        if len(train_idx) < MIN_FOLD_TRAIN_SIZE or len(val_idx) < MIN_FOLD_VAL_SIZE:
+            return False
+    return True
+
+
+def _choose_n_splits(n: int, target_splits: int = DEFAULT_CV_FOLDS,
+                      min_splits: int = MIN_CV_FOLDS):
+    """The largest feasible fold count from `min_splits` up to
+    `target_splits` (target 5, reduced safely when the pre-holdout region
+    is too small) -- or None if even `min_splits` folds aren't feasible."""
+    for k in range(min(target_splits, n - 1), min_splits - 1, -1):
+        if k >= min_splits and _feasible_fold_count(n, k):
+            return k
+    return None
+
+
+def walk_forward_validation(X_train: pd.DataFrame, y_train: pd.Series, model_type: str,
+                             target_splits: int = DEFAULT_CV_FOLDS) -> dict:
+    """Expanding-window TimeSeriesSplit validation over the PRE-HOLDOUT
+    training region only (`X_train`/`y_train` -- the final chronological
+    test split is never passed to this function, so it can never leak into
+    a CV fold). Each fold is a chronological, expanding, non-overlapping
+    train -> validation split (TimeSeriesSplit's own guarantee); no
+    shuffling is used anywhere.
+
+    Returns, when at least MIN_CV_FOLDS folds could be fit:
+        {"available": True, "n_folds": int, "folds": [ {fold, train_start,
+         train_end, val_start, val_end, n_train, n_val, accuracy,
+         baseline_accuracy, roc_auc}, ... ],
+         "accuracy_mean": float, "accuracy_std": float,
+         "roc_auc_mean": float or None, "roc_auc_std": float or None,
+         "n_valid_auc_folds": int}
+    or, when there isn't enough pre-holdout data for at least MIN_CV_FOLDS
+    valid chronological folds:
+        {"available": False, "reason": str}
+    Never fabricates statistics for a fold that couldn't actually be fit
+    (e.g. a single class in that fold's training rows) -- such folds are
+    skipped, not scored as 0/NaN.
+    """
+    n = len(X_train)
+    n_splits = _choose_n_splits(n, target_splits, MIN_CV_FOLDS)
+    if n_splits is None:
+        return {
+            "available": False,
+            "reason": (
+                f"insufficient pre-holdout data ({n} row(s)) for at least "
+                f"{MIN_CV_FOLDS} chronological expanding-window folds "
+                f"(each fold needs >= {MIN_FOLD_TRAIN_SIZE} training and "
+                f">= {MIN_FOLD_VAL_SIZE} validation observations)"
+            ),
+        }
+
+    tss = TimeSeriesSplit(n_splits=n_splits)
+    folds = []
+    for fold_num, (train_idx, val_idx) in enumerate(tss.split(X_train), start=1):
+        X_tr, y_tr = X_train.iloc[train_idx], y_train.iloc[train_idx]
+        X_val, y_val = X_train.iloc[val_idx], y_train.iloc[val_idx]
+        try:
+            score = _fit_and_score_fold(model_type, X_tr, y_tr, X_val, y_val)
+        except Exception:
+            # A fold that genuinely cannot be fit (e.g. a single class in
+            # this fold's training rows) is skipped entirely -- never
+            # scored as a fabricated 0/NaN result.
+            continue
+        folds.append({
+            "fold": fold_num,
+            "train_start": str(X_tr.index.min().date()), "train_end": str(X_tr.index.max().date()),
+            "val_start": str(X_val.index.min().date()), "val_end": str(X_val.index.max().date()),
+            "n_train": len(X_tr), "n_val": len(X_val),
+            "accuracy": score["accuracy"], "baseline_accuracy": score["baseline_accuracy"],
+            "roc_auc": score["roc_auc"],
+        })
+
+    if len(folds) < MIN_CV_FOLDS:
+        return {
+            "available": False,
+            "reason": (
+                f"fewer than {MIN_CV_FOLDS} folds could actually be fit "
+                "(e.g. a fold's training rows contained only one class)"
+            ),
+        }
+
+    accuracies = [f["accuracy"] for f in folds]
+    aucs = [f["roc_auc"] for f in folds if f["roc_auc"] is not None]
+    return {
+        "available": True,
+        "n_folds": len(folds),
+        "folds": folds,
+        "accuracy_mean": float(np.mean(accuracies)),
+        "accuracy_std": float(np.std(accuracies, ddof=0)),
+        "roc_auc_mean": float(np.mean(aucs)) if aucs else None,
+        "roc_auc_std": float(np.std(aucs, ddof=0)) if aucs else None,
+        "n_valid_auc_folds": len(aucs),
+    }
+
+
 def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
                      model_type: str = "Random Forest",
                      test_size: float = 0.2, lookahead: int = 1) -> dict:
@@ -246,6 +409,11 @@ def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
         # training set's majority class" on the SAME held-out test set is
         # not demonstrating real directional skill for this ETF/period.
         result["baseline_accuracy"] = round(_baseline_majority_class_accuracy(y_train, y_test), 4)
+        # Walk-forward validation (Issue #45 item 7): expanding-window
+        # TimeSeriesSplit folds over X_train/y_train ONLY -- the final
+        # holdout (X_test/y_test) above is never passed in, so it can never
+        # leak into a CV fold or be used for tuning/CV summaries.
+        result["walk_forward_cv"] = walk_forward_validation(X_train, y_train, model_type)
         result["disclaimer"] = DISCLAIMER
         result["error"] = None
         return result

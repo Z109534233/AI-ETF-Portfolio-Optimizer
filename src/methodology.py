@@ -76,9 +76,13 @@ PORTFOLIO_OPTIMIZATION_METHODOLOGY = {
         ),
         "solver": "scipy.optimize.minimize, method='SLSQP'",
         "risk_free_rate": (
-            "user-configurable annual rate (default 5%), used directly as a "
-            "flat annual rate in the Sharpe ratio numerator -- not compounded "
-            "or converted to a daily rate"
+            "user-configurable annual rate, used directly as a flat annual "
+            "rate in the Sharpe ratio numerator -- not compounded or "
+            "converted to a daily rate. The slider's default value is the "
+            "latest live FRED DGS3MO (3-Month Treasury) observation when "
+            "available (src.risk_free_rate); if a live observation cannot "
+            "be fetched, it falls back to a fixed 5% default with that "
+            "status disclosed, never presented as if it were current"
         ),
         "constraints": (
             "sum(weights) == 1 (fully invested, no cash); per-asset weight "
@@ -268,6 +272,34 @@ RISK_METHODOLOGY = {
         ),
         "unavailable_handling": "a pair is marked unavailable (with a stated reason) rather than scored, whenever either ETF's underlying holdings cannot be retrieved",
     },
+    "alpha_beta": {
+        "beta_formula": (
+            "beta = Cov(portfolio daily returns, benchmark daily returns) / "
+            "Var(benchmark daily returns), estimated over the full selected "
+            "date range's overlapping daily returns"
+        ),
+        "alpha_formula": (
+            "alpha = portfolio_annualized_return - (risk_free_rate + beta * "
+            "(benchmark_annualized_return - risk_free_rate)) -- a CAPM-style "
+            "excess-return residual computed directly from each side's own "
+            "annualized return, NOT an intercept estimated from an actual "
+            "OLS regression of portfolio returns on benchmark returns"
+        ),
+        "annualization": (
+            "both the portfolio and benchmark returns feeding this formula "
+            "are annualized, and risk_free_rate is the page's own annual "
+            "rate assumption -- the resulting alpha is therefore always an "
+            "ANNUALIZED figure, and the UI labels it as such"
+        ),
+        "benchmark_self_inclusion": (
+            "the benchmark selector excludes the page's own currently-"
+            "selected ETFs wherever at least one external option remains, "
+            "so the comparison is not self-referential; if every available "
+            "benchmark option in the current market is itself a selected "
+            "ETF, alpha/beta are shown as unavailable rather than computed "
+            "against a benchmark that is part of the portfolio being measured"
+        ),
+    },
     "stress_scenarios": {
         "calculation": "portfolio_impact = market_shock * portfolio_beta -- a simple linear approximation, not a full historical portfolio reconstruction or factor-model replay",
         "provenance_labeling": (
@@ -409,9 +441,13 @@ ETF_ANALYSIS_METHODOLOGY = {
     },
     "risk_free_rate": {
         "nature": (
-            "a user-set assumption from this page's own sidebar slider "
-            "(default 5%), NOT an automatically fetched Treasury/FRED yield "
-            "or any other live external rate"
+            "a user-adjustable assumption from this page's own sidebar "
+            "slider, defaulted to the latest live FRED DGS3MO (3-Month "
+            "Treasury) observation when available (src.risk_free_rate); "
+            "if a live observation cannot be fetched, the slider falls "
+            "back to a fixed 5% default with that fallback status "
+            "disclosed in a caption, never presented as if it were a "
+            "current live rate. The user can always override the value manually."
         ),
         "usage": (
             "used directly in this page's Sharpe Ratio (the KPI row and "
@@ -482,9 +518,21 @@ MACHINE_LEARNING_METHODOLOGY = {
         "reported": ["Accuracy", "Precision", "Recall", "F1 Score", "ROC AUC (when both classes are present in the test set)", "Confusion Matrix"],
         "computed_on": "the held-out test set only -- the model never sees this data during training",
     },
+    "walk_forward_cv": {
+        "method": (
+            "expanding-window scikit-learn TimeSeriesSplit, run ONLY on the "
+            "PRE-HOLDOUT training region (the same X_train/y_train the final "
+            "model is fit on) -- the final chronological holdout above is "
+            "never used for CV and is never seen by any fold"
+        ),
+        "folds": "target 5 folds, reduced automatically when there is not enough pre-holdout data for that many chronological folds; if fewer than 2 valid folds are possible, the page shows an explicit unavailable state instead of fabricated statistics",
+        "preprocessing": "each fold's LogisticRegression StandardScaler is re-fit on that fold's own training rows only; RandomForest has no scaler to fit",
+        "shuffling": "none -- folds are chronological and expanding, never shuffled",
+        "purpose": "fold-to-fold dispersion in Accuracy/ROC AUC measures TEMPORAL INSTABILITY of the model across different historical windows -- it does not prove, and is never described as proving, future predictability",
+        "not_used_for": "hyperparameter tuning -- fixed hyperparameters are still used for both model types; this CV is diagnostic-only",
+    },
     "absent_from_pipeline": {
-        "hyperparameter_tuning": "none -- fixed hyperparameters are used for both model types, no grid/random search or cross-validation is performed",
-        "cross_validation": "none -- a single chronological train/test split, not k-fold or walk-forward cross-validation",
+        "hyperparameter_tuning": "none -- fixed hyperparameters are used for both model types, no grid/random search is performed",
         "transaction_costs": "not modeled -- no bid-ask spread, commission, or market-impact cost is subtracted from any reported metric",
     },
     "live_trading_validity": (

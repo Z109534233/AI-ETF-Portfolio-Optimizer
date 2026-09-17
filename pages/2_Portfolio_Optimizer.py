@@ -56,6 +56,8 @@ from src.utils import (
     load_css, page_header, disclaimer_box, dataframe_to_csv,
     weights_to_dataframe, get_date_range_defaults, metric_card_html
 )
+from src.demo_portfolio import DIVERSIFIED_DEMO_TICKERS
+from src.risk_free_rate import get_cached_risk_free_rate, format_rate_provenance
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
@@ -137,10 +139,23 @@ with st.expander(t("opt_edit_settings_title"), expanded=(st.session_state.get("o
     # countries. Removing a country automatically prunes any ETF that
     # belonged exclusively to it (see multi_region_etf_multiselect()'s
     # docstring) while keeping every other already-selected ETF intact.
+    # Initial demo default (Issue #45 item 1): a fresh United-States-only
+    # session starts from the shared cross-asset demo portfolio (VOO/VXUS/
+    # BND/GLD/TLT) instead of whatever sorts first in the raw US ETF
+    # universe -- which could otherwise be a VOO/VTI/QQQ/SPY-style set with
+    # extreme mutual overlap. Only applies to the ONE-TIME initial seed
+    # (see multi_region_etf_multiselect()'s docstring); the user remains
+    # completely free to pick any ETF afterward, and any other region
+    # combination is unaffected.
+    _demo_default = (
+        DIVERSIFIED_DEMO_TICKERS if selected_regions == ["United States"] else None
+    )
     selected_etfs = multi_region_etf_multiselect(
         selected_regions, etf_options, t("field_select_etfs"),
-        help_text=t("opt_select_etfs_help"), n_default=5,
+        help_text=t("opt_select_etfs_help"), n_default=5, default_override=_demo_default,
     )
+    if _demo_default and set(selected_etfs) == set(DIVERSIFIED_DEMO_TICKERS):
+        st.caption(t("opt_demo_portfolio_caption"))
     with st.expander(t("field_add_custom_etf"), expanded=False):
         _ctk, _ctv = _shadow_default("opt_custom_ticker", "")
         custom_ticker = st.text_input(
@@ -289,9 +304,11 @@ with st.expander(t("opt_edit_settings_title"), expanded=(st.session_state.get("o
         end_date = st.date_input(t("field_end_date"), value=_ev, key="opt_end_date")
         st.session_state[_ek] = end_date
 
-        _fk, _fv = _shadow_default("opt_risk_free_rate", 5.0)
+        _rf_info = get_cached_risk_free_rate()
+        _fk, _fv = _shadow_default("opt_risk_free_rate", round(_rf_info["rate"] * 100, 2))
         risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, _fv, 0.25, key="opt_risk_free_rate_slider") / 100
         st.session_state[_fk] = risk_free_rate * 100
+        st.caption(format_rate_provenance(_rf_info, get_language()))
 
         _nsk, _nsv = _shadow_default("opt_n_simulations", 5000)
         n_simulations = st.slider(t("opt_mc_simulations"), 1000, 10000, _nsv, 500, key="opt_n_simulations_slider")
@@ -603,10 +620,14 @@ _experiment_metadata = {
     "base_currency": base_currency,
     "currency_adjusted": bool(st.session_state.get("opt_fx_result") and st.session_state["opt_fx_result"]["currency_adjusted"]),
     "risk_free_rate": risk_free_rate,
+    "risk_free_rate_source": _rf_info["source"],
+    "risk_free_rate_series": _rf_info["series_id"],
+    "risk_free_rate_observed_date": _rf_info["observed_date"],
+    "risk_free_rate_status": _rf_info["status"],
     "min_weight": min_weight,
     "max_weight": max_weight,
     "allow_short": allow_short,
-    "expected_return_estimator": "Historical CAGR (annualized_return)",
+    "expected_return_estimator": "Arithmetic Mean Daily Return (annualized x252)",
     "covariance_estimator": "Sample covariance (historical, annualized)",
     "strategy": optimization_method,
     "asset_universe": list(weights.keys()),
@@ -649,6 +670,26 @@ with scol3:
     st.markdown(metric_card_html(t("metric_diversification_ratio"), f"{div_ratio:.2f}", color=COLORS["purple"]), unsafe_allow_html=True)
 chart_caption(t("opt_kpi_row_caption"))
 
+# ── Numerical Robustness Warning (Issue #45 item 1) ──────────────────────
+# Computed from the RAW covariance matrix BEFORE any regularization (see
+# run_optimization()/covariance_diagnostics()) -- a severe reading means
+# the selected ETFs carry little independent information from each other,
+# so a bounds-hugging (corner) solution reflects that redundancy rather
+# than the solver "randomly" choosing a corner. Existing solver
+# convergence/error handling (optimizer_failed above) is untouched.
+_cov_diag = result.get("covariance_diagnostics")
+_cov_diag_level = result.get("covariance_diagnostics_level")
+if _cov_diag and _cov_diag_level in ("severe", "moderate"):
+    _cond_str = f"{_cov_diag['condition_number']:.2e}" if _cov_diag["condition_number"] is not None else t("opt_covariance_cond_unavailable")
+    _avg_corr_str = f"{_cov_diag['avg_pairwise_correlation']:.2%}" if _cov_diag["avg_pairwise_correlation"] is not None else "N/A"
+    _cov_msg_kwargs = dict(
+        rank=_cov_diag["rank"], n=_cov_diag["n_assets"], cond=_cond_str, avg_corr=_avg_corr_str,
+    )
+    if _cov_diag_level == "severe":
+        st.warning(t("opt_covariance_warning_severe", **_cov_msg_kwargs))
+    else:
+        st.info(t("opt_covariance_info_moderate", **_cov_msg_kwargs))
+
 # ── Methodology & Assumptions (M1) ──────────────────────────────────────────
 # Compact, always-visible (independent of which workspace is open) disclosure
 # of the ACTUAL calculation methodology -- see src/methodology.py, the single
@@ -687,15 +728,26 @@ with st.expander(t("opt_methodology_title"), expanded=False):
         )
     else:
         _fx_currency_line = t("opt_fx_not_needed", base=base_currency)
+    if _cov_diag:
+        _cov_cond_str = f"{_cov_diag['condition_number']:.2e}" if _cov_diag["condition_number"] is not None else t("opt_covariance_cond_unavailable")
+        _cov_avg_corr_str = f"{_cov_diag['avg_pairwise_correlation']:.2%}" if _cov_diag["avg_pairwise_correlation"] is not None else "N/A"
+        _cov_diag_line = t(
+            "opt_methodology_covariance_diag_value",
+            rank=_cov_diag["rank"], n=_cov_diag["n_assets"], cond=_cov_cond_str, avg_corr=_cov_avg_corr_str,
+        )
+    else:
+        _cov_diag_line = t("opt_covariance_cond_unavailable")
     st.markdown(
         f"- **{t('opt_methodology_return_label')}** — {t('opt_methodology_return_desc')}\n"
         f"- **{t('opt_methodology_covariance_label')}** — {t('opt_methodology_covariance_desc')}\n"
+        f"- **{t('opt_methodology_covariance_diag_label')}** — {_cov_diag_line}\n"
         f"- **{t('opt_methodology_history_label')}** — "
         f"{t('opt_methodology_history_value', start=_hist_start, end=_hist_end, days=len(prices_df))}\n"
         f"- **{t('opt_methodology_optimizer_label')}** — {_optimizer_desc}\n"
         f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
         f"{t('opt_methodology_backtest_desc')}\n"
-        f"- **{t('opt_methodology_rfr_label')}** — {t('opt_methodology_rfr_value', rf=f'{risk_free_rate:.2%}')}\n"
+        f"- **{t('opt_methodology_rfr_label')}** — "
+        f"{t('opt_methodology_rfr_value', rf=f'{risk_free_rate:.2%}', provenance=format_rate_provenance(_rf_info, get_language()))}\n"
         f"- **{t('opt_fx_methodology_label')}** — {_fx_currency_line}"
     )
     _validation = result.get("validation")

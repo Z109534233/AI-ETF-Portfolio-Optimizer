@@ -40,12 +40,12 @@ def _render_interpret_key2():
     ui_mod.ai_interpret_button("test_key2", st.session_state, "ctx")
 
 
-def test_ai_interpret_button_renders_disabled_state_when_not_configured(monkeypatch):
-    """Issue #24 follow-up: a silent no-op made the whole feature invisible
-    when OpenAI isn't configured. It must now render a visibly disabled
-    button (so the user can see the capability exists) plus a caption
-    explaining why -- but still never spend an API call just from
-    rendering."""
+def test_ai_interpret_button_renders_nothing_when_not_configured(monkeypatch):
+    """Issue #45 item 4: repeating a disabled button + "AI unavailable /
+    API key not configured" caption under every chart across the app made
+    the product look broken rather than like a product with an optional AI
+    enrichment. When OpenAI isn't configured, this control must render
+    NOTHING at all (no button, no caption) and never spend an API call."""
     monkeypatch.setattr(openai_service, "is_configured", lambda: False)
     calls = {"n": 0}
     monkeypatch.setattr(openai_service, "cached_generate", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1))
@@ -53,8 +53,8 @@ def test_ai_interpret_button_renders_disabled_state_when_not_configured(monkeypa
     at = AppTest.from_function(_render_interpret_key1)
     at.run()
     assert at.exception == []
-    assert len(at.button) == 1
-    assert at.button[0].disabled is True
+    assert len(at.button) == 0
+    assert len(at.caption) == 0
     assert calls["n"] == 0
 
 

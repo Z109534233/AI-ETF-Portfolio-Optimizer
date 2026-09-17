@@ -27,6 +27,7 @@ from src.openai_service import is_configured as openai_is_configured
 from src.news import fetch_market_news
 from src.charts import allocation_donut_chart
 from src.utils import load_css, page_header, disclaimer_box, metric_card_html, get_date_range_defaults
+from src.risk_free_rate import get_cached_risk_free_rate
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header, chart_card, render_footer,
     region_selector, region_etf_options, region_etf_multiselect,
@@ -185,6 +186,7 @@ if analyse_btn or st.session_state.ai_result is None:
 
         if use_custom:
             if portfolio_prices is not None and len(portfolio_prices) > 1:
+                _ai_rf_rate = get_cached_risk_free_rate()["rate"]
                 portfolio_for_context = {
                     "strategy": "Custom",
                     "market": st.session_state.get("selected_region"),
@@ -193,7 +195,7 @@ if analyse_btn or st.session_state.ai_result is None:
                     "investment_amount": investment_amount,
                     "expected_return": annualized_return(portfolio_prices),
                     "volatility": annualized_volatility(portfolio_prices),
-                    "sharpe_ratio": sharpe_ratio(portfolio_prices, 0.05),
+                    "sharpe_ratio": sharpe_ratio(portfolio_prices, _ai_rf_rate),
                     "max_drawdown": maximum_drawdown(portfolio_prices),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                 }
