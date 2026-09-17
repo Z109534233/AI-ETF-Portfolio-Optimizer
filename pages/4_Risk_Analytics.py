@@ -126,7 +126,7 @@ with st.sidebar:
         st.session_state["_risk_free_rate_shadow"], 0.25, key="risk_free_rate_slider",
     ) / 100
     st.session_state["_risk_free_rate_shadow"] = risk_free_rate * 100
-    st.caption(format_rate_provenance(_rf_info, get_language()))
+    st.caption(format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))
 
     default_start, default_end = get_date_range_defaults()
     start_date = st.date_input(t("field_start_date"), value=default_start)

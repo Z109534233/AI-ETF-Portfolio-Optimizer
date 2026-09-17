@@ -43,6 +43,10 @@ def _fake_download(tickers, start_date, end_date, price_field="Close"):
     return pd.DataFrame(data, index=dates)
 
 
+def _fake_download_with_status(tickers, start_date, end_date, price_field="Close"):
+    return _fake_download(tickers, start_date, end_date, price_field), False
+
+
 FIXED_RF = {
     "rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
     "source": "FRED", "status": "live", "reason": None,
@@ -54,6 +58,11 @@ def mocked_inputs(monkeypatch):
     import src.data_loader as data_loader_mod
     import src.risk_free_rate as rf_mod
     monkeypatch.setattr(data_loader_mod, "download_etf_data", _fake_download)
+    # app.py (Home) reads download_etf_data_with_status() specifically (see
+    # Issue #46 review item 1 -- it needs the explicit is_sample_data flag
+    # download_etf_data() alone can't provide), so this must be mocked too
+    # or Home falls through to a real (network-dependent) call.
+    monkeypatch.setattr(data_loader_mod, "download_etf_data_with_status", _fake_download_with_status)
     monkeypatch.setattr(rf_mod, "get_cached_risk_free_rate", lambda: FIXED_RF)
 
 

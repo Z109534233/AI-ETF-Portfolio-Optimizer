@@ -129,20 +129,52 @@ def get_cached_risk_free_rate() -> dict:
     return get_risk_free_rate()
 
 
-def format_rate_provenance(rf: dict, lang: str = "en") -> str:
+def is_manual_override(rf: dict, selected_rate: float) -> bool:
+    """True if `selected_rate` (decimal, e.g. a page's risk-free-rate
+    slider value) differs from the fetched/fallback `rf['rate']` at the
+    slider's own display precision (2 decimal places as a percentage).
+
+    Every page's slider is initialized to `round(rf['rate'] * 100, 2)`, so
+    an untouched slider compares equal here; moving it away from that
+    initial value (the only way a page's risk_free_rate can differ from
+    rf['rate']) is what makes the assumption a manual override rather than
+    the live/fallback FRED value (Issue #46 review item 2)."""
+    return round(selected_rate * 100, 2) != round(rf["rate"] * 100, 2)
+
+
+def format_rate_provenance(rf: dict, lang: str = "en", selected_rate: float = None) -> str:
     """Compact, dynamic provenance string for methodology/sidebar captions,
     e.g. "X.XX% · FRED DGS3MO · YYYY-MM-DD" when live (the actual rate and
     date are whatever `rf` holds -- never hard-coded here), or an explicit
-    fallback disclosure when the live fetch failed."""
+    fallback disclosure when the live fetch failed.
+
+    `selected_rate` (decimal) is the ACTUAL rate a page will use (e.g. its
+    risk-free-rate slider's current value) after the user may have moved it
+    away from the fetched/fallback default it was initialized to. When
+    given and it differs from `rf['rate']` (see is_manual_override()), the
+    returned caption states the assumption is a manual override -- NOT
+    FRED-sourced -- and shows the FRED reference rate/date separately, so a
+    moved slider is never captioned as if it were still the live FRED
+    value (Issue #46 review item 2)."""
     pct = f"{rf['rate'] * 100:.2f}%"
     if rf.get("status") == "live" and rf.get("observed_date"):
-        return f"{pct} · {rf['source']} {rf['series_id']} · {rf['observed_date']}"
-    if lang == "zh-TW":
-        return f"{pct}（預設備用值，無法取得即時 {rf['series_id']} 資料）"
-    return f"{pct} (fallback default -- live {rf['series_id']} data unavailable)"
+        fred_desc = f"{pct} · {rf['source']} {rf['series_id']} · {rf['observed_date']}"
+    elif lang == "zh-TW":
+        fred_desc = f"{pct}（預設備用值，無法取得即時 {rf['series_id']} 資料）"
+    else:
+        fred_desc = f"{pct} (fallback default -- live {rf['series_id']} data unavailable)"
+
+    if selected_rate is not None and is_manual_override(rf, selected_rate):
+        selected_pct = f"{selected_rate * 100:.2f}%"
+        if lang == "zh-TW":
+            return f"{selected_pct}（使用者手動調整，非即時 FRED 數值；FRED 參考值：{fred_desc}）"
+        return f"{selected_pct} (manually overridden -- not FRED-sourced; FRED reference: {fred_desc})"
+
+    return fred_desc
 
 
 __all__ = [
     "FRED_SERIES_ID", "FRED_SOURCE_NAME", "DEFAULT_FALLBACK_RATE",
     "get_risk_free_rate", "get_cached_risk_free_rate", "format_rate_provenance",
+    "is_manual_override",
 ]

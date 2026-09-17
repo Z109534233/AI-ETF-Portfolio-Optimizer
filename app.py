@@ -9,7 +9,7 @@ import os
 # Ensure src is importable
 sys.path.insert(0, os.path.dirname(__file__))
 
-from src.data_loader import download_etf_data, DEFAULT_ETFS
+from src.data_loader import download_etf_data_with_status, DEFAULT_ETFS
 from src.etf_database import get_all_tickers, get_countries
 from src.data_cleaner import clean_price_data
 from src.portfolio_optimizer import run_optimization
@@ -83,13 +83,24 @@ if not demo_etfs:
     demo_etfs = resolve_demo_tickers(DEFAULT_ETFS)
 
 with st.spinner(t("home_loading_market_data")):
-    raw_prices = download_etf_data(demo_etfs, str(start_date), str(end_date))
+    # download_etf_data_with_status() (not download_etf_data()) is required
+    # here: a full-fallback simulated DataFrame is never empty, so an
+    # `.empty` check alone cannot detect it -- Issue #46 review flagged this
+    # as a real sample-data-disclosure gap (simulated numbers could render
+    # as if live).
+    raw_prices, _using_sample_data = download_etf_data_with_status(demo_etfs, str(start_date), str(end_date))
 
-_using_sample_data = raw_prices.empty
-if _using_sample_data:
-    st.warning(t("home_live_data_unavailable"))
+if raw_prices.empty and not _using_sample_data:
+    # Defensive-only: download_etf_data_with_status() only returns an empty,
+    # non-sample DataFrame when `tickers` itself was empty, which demo_etfs
+    # never is here (see the `if not demo_etfs` guard above) -- kept so this
+    # can never crash on downstream indexing into an empty DataFrame.
     from src.data_loader import _generate_sample_data
     raw_prices = _generate_sample_data(demo_etfs, str(start_date), str(end_date))
+    _using_sample_data = True
+
+if _using_sample_data:
+    st.warning(t("home_live_data_unavailable"))
 
 prices = clean_price_data(raw_prices)
 etf_prices = prices[[tk for tk in demo_etfs if tk in prices.columns]]

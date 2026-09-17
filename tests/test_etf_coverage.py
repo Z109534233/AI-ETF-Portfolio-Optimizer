@@ -17,7 +17,9 @@ import pytest
 from src.etf_coverage import load_coverage_snapshot, coverage_display_stat, coverage_unavailable_caption
 
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
-from scripts.audit_etf_price_coverage import build_snapshot, attempt_fetch  # noqa: E402
+from scripts.audit_etf_price_coverage import (  # noqa: E402
+    build_snapshot, attempt_fetch, is_snapshot_complete, select_remaining_tickers,
+)
 
 
 def _write_snapshot(tmp_path, data):
@@ -142,6 +144,127 @@ def test_build_snapshot_never_treats_transient_error_as_unsupported_proof():
     snapshot = build_snapshot(tickers_with_market, results, universe_size=1, complete=True)
     assert snapshot["ticker_status"]["AAA"] == "transient_error"
     assert snapshot["unavailable_count"] == 1
+
+
+# ── is_snapshot_complete() / select_remaining_tickers() (Issue #46 review
+# item 3: transient_error must never count as a resolved/COMPLETE result,
+# and --resume must keep retrying it). ──────────────────────────────────────
+
+def test_is_snapshot_complete_false_when_a_ticker_has_transient_error():
+    """A snapshot with an unresolved transient_error must never be
+    reported as COMPLETE -- that status is not proof the ticker is
+    unsupported, just that one attempt failed."""
+    all_tickers = ["AAA", "BBB", "CCC"]
+    results = {"AAA": "available", "BBB": "no_data", "CCC": "transient_error"}
+    assert is_snapshot_complete(all_tickers, results) is False
+
+
+def test_is_snapshot_complete_false_when_a_ticker_was_never_attempted():
+    all_tickers = ["AAA", "BBB"]
+    results = {"AAA": "available"}
+    assert is_snapshot_complete(all_tickers, results) is False
+
+
+def test_is_snapshot_complete_true_when_every_ticker_has_a_conclusive_status():
+    all_tickers = ["AAA", "BBB", "CCC"]
+    results = {"AAA": "available", "BBB": "no_data", "CCC": "available"}
+    assert is_snapshot_complete(all_tickers, results) is True
+
+
+def test_select_remaining_tickers_includes_never_attempted():
+    all_tickers = ["AAA", "BBB", "CCC"]
+    results = {"AAA": "available"}
+    assert select_remaining_tickers(all_tickers, results) == ["BBB", "CCC"]
+
+
+def test_select_remaining_tickers_includes_transient_error_for_retry():
+    """Regression for Issue #46 review item 3: previously --resume computed
+    `remaining = [tk for tk in all_tickers if tk not in results]`, which
+    treated a stored transient_error the same as a conclusive result and
+    never retried it -- a transient failure could get stuck in the
+    snapshot forever."""
+    all_tickers = ["AAA", "BBB", "CCC", "DDD"]
+    results = {"AAA": "available", "BBB": "transient_error", "CCC": "no_data"}
+    assert select_remaining_tickers(all_tickers, results) == ["BBB", "DDD"]
+
+
+def test_select_remaining_tickers_excludes_conclusive_statuses():
+    all_tickers = ["AAA", "BBB"]
+    results = {"AAA": "available", "BBB": "no_data"}
+    assert select_remaining_tickers(all_tickers, results) == []
+
+
+def test_main_resume_retries_stored_transient_errors_and_reaches_complete(tmp_path, monkeypatch):
+    """End-to-end deterministic regression: a --resume run over a snapshot
+    that still has a stored transient_error must retry that ticker (not
+    skip it), and once every ticker resolves conclusively, the snapshot
+    must flip to COMPLETE -- never COMPLETE while a transient_error/
+    not_attempted ticker remains unresolved."""
+    import json
+    import scripts.audit_etf_price_coverage as audit_mod
+
+    fake_universe = ["AAA", "BBB", "CCC"]
+    monkeypatch.setattr(audit_mod, "get_all_tickers", lambda: fake_universe)
+    monkeypatch.setattr(audit_mod, "get_country", lambda tk: "United States")
+    monkeypatch.setattr(audit_mod, "to_yahoo_symbol", lambda tk: tk)
+
+    out_path = str(tmp_path / "price_coverage_summary.json")
+
+    # First run (non-resume): AAA succeeds, BBB has a transient failure,
+    # CCC is never reached (limit=2).
+    _first_attempts = {"AAA": "available", "BBB": "transient_error"}
+    monkeypatch.setattr(audit_mod, "attempt_fetch", lambda sym, days: _first_attempts[sym])
+    audit_mod.main(["--start", "0", "--limit", "2", "--sleep", "0", "--out", out_path])
+
+    with open(out_path, "r", encoding="utf-8") as f:
+        snap1 = json.load(f)
+    assert snap1["status"] == "PARTIAL"
+    assert snap1["ticker_status"] == {"AAA": "available", "BBB": "transient_error"}
+
+    # Second run (--resume): must retry BBB's transient_error (not skip it)
+    # AND pick up CCC, which was never attempted.
+    _second_attempts = {"BBB": "available", "CCC": "no_data"}
+    monkeypatch.setattr(audit_mod, "attempt_fetch", lambda sym, days: _second_attempts[sym])
+    audit_mod.main(["--resume", "--limit", "10", "--sleep", "0", "--out", out_path])
+
+    with open(out_path, "r", encoding="utf-8") as f:
+        snap2 = json.load(f)
+    assert snap2["ticker_status"] == {"AAA": "available", "BBB": "available", "CCC": "no_data"}
+    assert snap2["status"] == "COMPLETE"
+
+
+def test_main_resume_stays_partial_while_a_transient_error_remains_unresolved(tmp_path, monkeypatch):
+    """If a retried ticker fails again with transient_error, the snapshot
+    must stay PARTIAL, not flip to COMPLETE just because every ticker has
+    now been *attempted* at least once."""
+    import json
+    import scripts.audit_etf_price_coverage as audit_mod
+
+    fake_universe = ["AAA", "BBB"]
+    monkeypatch.setattr(audit_mod, "get_all_tickers", lambda: fake_universe)
+    monkeypatch.setattr(audit_mod, "get_country", lambda tk: "United States")
+    monkeypatch.setattr(audit_mod, "to_yahoo_symbol", lambda tk: tk)
+
+    out_path = str(tmp_path / "price_coverage_summary.json")
+
+    monkeypatch.setattr(audit_mod, "attempt_fetch", lambda sym, days: "transient_error")
+    audit_mod.main(["--start", "0", "--limit", "10", "--sleep", "0", "--out", out_path])
+
+    with open(out_path, "r", encoding="utf-8") as f:
+        snap1 = json.load(f)
+    assert snap1["status"] == "PARTIAL"
+
+    # Resume: BBB still fails transiently, AAB now resolves.
+    def _retry(sym, days):
+        return "available" if sym == "AAA" else "transient_error"
+
+    monkeypatch.setattr(audit_mod, "attempt_fetch", _retry)
+    audit_mod.main(["--resume", "--limit", "10", "--sleep", "0", "--out", out_path])
+
+    with open(out_path, "r", encoding="utf-8") as f:
+        snap2 = json.load(f)
+    assert snap2["ticker_status"] == {"AAA": "available", "BBB": "transient_error"}
+    assert snap2["status"] == "PARTIAL"
 
 
 def test_attempt_fetch_returns_no_data_for_empty_frame(monkeypatch):

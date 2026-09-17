@@ -48,6 +48,33 @@ DEFAULT_SNAPSHOT_PATH = os.path.join(
 DEFAULT_LOOKBACK_DAYS = 10
 PROVIDER_NAME = "Yahoo Finance (yfinance)"
 
+# A transient_error is never proof of anything about a ticker -- just that
+# one attempt failed (timeout, rate limit, connection error). Statuses in
+# this tuple must remain retryable across --resume runs, and a snapshot may
+# never be labeled COMPLETE while any registered ticker is still at one of
+# these statuses (Issue #46 review item 3).
+RETRYABLE_STATUSES = ("transient_error",)
+
+
+def is_snapshot_complete(all_tickers: list, results: dict) -> bool:
+    """True only when every ticker in the full registered universe has an
+    attempted, non-retryable (conclusive) status. A ticker still sitting at
+    transient_error -- or never attempted at all -- means the audit has NOT
+    conclusively determined that ticker's availability yet, so the snapshot
+    must not be labeled COMPLETE (a caller like Home must never show
+    'Verified Price Coverage X / Y' while some of those Y observations were
+    never conclusively resolved)."""
+    return all(tk in results and results[tk] not in RETRYABLE_STATUSES for tk in all_tickers)
+
+
+def select_remaining_tickers(all_tickers: list, results: dict) -> list:
+    """Tickers a --resume run still needs to attempt: every never-attempted
+    ticker, PLUS every ticker whose last attempt ended in a retryable
+    (transient_error) status. Without this, --resume would treat
+    transient_error the same as a conclusive result and never retry it,
+    letting a snapshot get stuck reporting unresolved failures forever."""
+    return [tk for tk in all_tickers if tk not in results or results[tk] in RETRYABLE_STATUSES]
+
 
 def attempt_fetch(yahoo_symbol: str, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> str:
     """One ticker's fetch attempt against the live provider. Returns
@@ -140,18 +167,21 @@ def main(argv=None):
     existing = load_existing_snapshot(args.out) if args.resume else None
     results = dict(existing.get("ticker_status", {})) if existing else {}
 
-    remaining = [tk for tk in all_tickers if tk not in results]
+    # --resume retries never-attempted tickers AND ones still stuck at a
+    # retryable transient_error from a prior run; a fresh (non-resume) run
+    # just walks the requested --start/--limit slice of the full universe.
+    remaining = select_remaining_tickers(all_tickers, results)
     batch = remaining[:args.limit] if args.resume else all_tickers[args.start:args.start + args.limit]
 
     for ticker in batch:
-        if ticker in results:
+        if ticker in results and results[ticker] not in RETRYABLE_STATUSES:
             continue
         yahoo_symbol = to_yahoo_symbol(ticker)
         results[ticker] = attempt_fetch(yahoo_symbol, args.lookback_days)
         if args.sleep > 0:
             time.sleep(args.sleep)
 
-    complete = all(tk in results for tk in all_tickers)
+    complete = is_snapshot_complete(all_tickers, results)
     snapshot = build_snapshot(tickers_with_market, results, universe_size, complete, args.lookback_days)
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

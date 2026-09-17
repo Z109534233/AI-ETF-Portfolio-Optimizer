@@ -3736,7 +3736,14 @@ def test_wsr_j_no_redundant_market_data_downloads_between_workspaces():
     from unittest.mock import patch
     import src.data_loader as dl_mod
 
-    dl_mod.download_etf_data.clear()  # start from a clean st.cache_data slate
+    # download_etf_data() now delegates to the separately-cached
+    # download_etf_data_with_status() (Issue #46 review item 1) -- clearing
+    # only download_etf_data()'s own cache leaves that inner cache warm, so
+    # a prior test's identical-args call can still short-circuit this one
+    # without ever reaching _download_single_ticker. Both must be cleared
+    # to start from a genuinely clean slate.
+    dl_mod.download_etf_data.clear()
+    dl_mod.download_etf_data_with_status.clear()
     call_count = {"n": 0}
     real_fetch = dl_mod._download_single_ticker
 

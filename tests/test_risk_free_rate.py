@@ -116,6 +116,54 @@ def test_format_rate_provenance_fallback_discloses_status():
     assert "5.00%" in text_zh and "無法取得" in text_zh
 
 
+def test_is_manual_override_false_when_selected_rate_matches_fetched_default():
+    rf = {"rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
+          "source": "FRED", "status": "live", "reason": None}
+    # Mirrors how every page's slider initializes: round(rf["rate"] * 100, 2) / 100.
+    untouched_slider_value = round(rf["rate"] * 100, 2) / 100
+    assert rf_mod.is_manual_override(rf, untouched_slider_value) is False
+
+
+def test_is_manual_override_true_when_slider_moved_away_from_fetched_rate():
+    rf = {"rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
+          "source": "FRED", "status": "live", "reason": None}
+    assert rf_mod.is_manual_override(rf, 0.06) is True
+
+
+def test_format_rate_provenance_matching_selected_rate_shows_fred_only_no_override_language():
+    rf = {"rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
+          "source": "FRED", "status": "live", "reason": None}
+    text = rf_mod.format_rate_provenance(rf, "en", selected_rate=0.0411)
+    assert "FRED" in text
+    assert "override" not in text.lower()
+
+
+def test_format_rate_provenance_discloses_manual_override_when_selected_rate_differs():
+    """Regression for Issue #46 review item 2: a slider moved away from the
+    fetched DGS3MO rate must be captioned as a manual override, not as if
+    it were still the live FRED value -- with the FRED reference rate/date
+    still shown for context."""
+    rf = {"rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
+          "source": "FRED", "status": "live", "reason": None}
+    text_en = rf_mod.format_rate_provenance(rf, "en", selected_rate=0.07)
+    assert "7.00%" in text_en
+    assert "overridden" in text_en.lower()
+    assert "4.11%" in text_en and "FRED" in text_en and "DGS3MO" in text_en and "2026-09-14" in text_en
+
+    text_zh = rf_mod.format_rate_provenance(rf, "zh-TW", selected_rate=0.07)
+    assert "7.00%" in text_zh
+    assert "手動" in text_zh
+    assert "4.11%" in text_zh
+
+
+def test_format_rate_provenance_without_selected_rate_is_unchanged():
+    """Backward-compatible: callers that don't pass selected_rate (e.g.
+    Home, which has no slider) keep the original FRED-only caption."""
+    rf = {"rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
+          "source": "FRED", "status": "live", "reason": None}
+    assert rf_mod.format_rate_provenance(rf, "en") == rf_mod.format_rate_provenance(rf, "en", selected_rate=None)
+
+
 def test_cross_page_cached_helper_returns_one_consistent_rate_object(monkeypatch):
     monkeypatch.setattr(rf_mod, "_http_get_fred_csv", lambda timeout=5.0: FAKE_CSV_WITH_MISSING_ROWS)
     rf_mod.get_cached_risk_free_rate.clear()

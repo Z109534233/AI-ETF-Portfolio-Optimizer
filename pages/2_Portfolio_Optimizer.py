@@ -57,7 +57,7 @@ from src.utils import (
     weights_to_dataframe, get_date_range_defaults, metric_card_html
 )
 from src.demo_portfolio import DIVERSIFIED_DEMO_TICKERS
-from src.risk_free_rate import get_cached_risk_free_rate, format_rate_provenance
+from src.risk_free_rate import get_cached_risk_free_rate, format_rate_provenance, is_manual_override
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
@@ -308,7 +308,7 @@ with st.expander(t("opt_edit_settings_title"), expanded=(st.session_state.get("o
         _fk, _fv = _shadow_default("opt_risk_free_rate", round(_rf_info["rate"] * 100, 2))
         risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, _fv, 0.25, key="opt_risk_free_rate_slider") / 100
         st.session_state[_fk] = risk_free_rate * 100
-        st.caption(format_rate_provenance(_rf_info, get_language()))
+        st.caption(format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))
 
         _nsk, _nsv = _shadow_default("opt_n_simulations", 5000)
         n_simulations = st.slider(t("opt_mc_simulations"), 1000, 10000, _nsv, 500, key="opt_n_simulations_slider")
@@ -619,11 +619,23 @@ _experiment_metadata = {
     "markets": list(selected_regions),
     "base_currency": base_currency,
     "currency_adjusted": bool(st.session_state.get("opt_fx_result") and st.session_state["opt_fx_result"]["currency_adjusted"]),
+    # Issue #46 review item 2: the slider lets a user move risk_free_rate
+    # away from the fetched/fallback _rf_info["rate"] it was initialized
+    # to -- when that happens the actual assumption is a manual override,
+    # not a FRED-sourced value, and must be recorded as such rather than
+    # silently persisting the FRED source/date/status as if it still
+    # described risk_free_rate. The FRED reference rate is kept separately
+    # (risk_free_rate_fred_reference_rate) so the live/fallback context is
+    # never lost even when overridden.
     "risk_free_rate": risk_free_rate,
+    "risk_free_rate_is_manual_override": is_manual_override(_rf_info, risk_free_rate),
+    "risk_free_rate_fred_reference_rate": _rf_info["rate"],
     "risk_free_rate_source": _rf_info["source"],
     "risk_free_rate_series": _rf_info["series_id"],
     "risk_free_rate_observed_date": _rf_info["observed_date"],
-    "risk_free_rate_status": _rf_info["status"],
+    "risk_free_rate_status": (
+        "manual_override" if is_manual_override(_rf_info, risk_free_rate) else _rf_info["status"]
+    ),
     "min_weight": min_weight,
     "max_weight": max_weight,
     "allow_short": allow_short,
@@ -747,7 +759,7 @@ with st.expander(t("opt_methodology_title"), expanded=False):
         f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
         f"{t('opt_methodology_backtest_desc')}\n"
         f"- **{t('opt_methodology_rfr_label')}** — "
-        f"{t('opt_methodology_rfr_value', rf=f'{risk_free_rate:.2%}', provenance=format_rate_provenance(_rf_info, get_language()))}\n"
+        f"{t('opt_methodology_rfr_value', rf=f'{risk_free_rate:.2%}', provenance=format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))}\n"
         f"- **{t('opt_fx_methodology_label')}** — {_fx_currency_line}"
     )
     _validation = result.get("validation")

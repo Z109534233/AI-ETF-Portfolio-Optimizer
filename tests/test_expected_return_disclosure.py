@@ -79,6 +79,15 @@ def test_home_demo_shows_the_same_estimator_caveat(monkeypatch):
         )
 
     monkeypatch.setattr(data_loader_mod, "download_etf_data", _fake_download)
+    # app.py (Home) reads download_etf_data_with_status() specifically
+    # (Issue #46 review item 1), so mock it too -- otherwise this test
+    # would silently fall through to a real network call.
+    monkeypatch.setattr(
+        data_loader_mod, "download_etf_data_with_status",
+        lambda tickers, start_date, end_date, price_field="Close": (
+            _fake_download(tickers, start_date, end_date, price_field), False,
+        ),
+    )
     monkeypatch.setattr(rf_mod, "get_cached_risk_free_rate", lambda: {
         "rate": 0.04, "observed_date": "2026-01-01", "series_id": "DGS3MO",
         "source": "FRED", "status": "live", "reason": None,
