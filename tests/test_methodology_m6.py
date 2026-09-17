@@ -68,9 +68,15 @@ def test_methodology_metadata_matches_actual_implementation():
     assert "none" in m["split"]["shuffling"].lower()
     assert "TRAINING set" in m["baseline"]["definition"]
     assert "no fundamental" in m["features"]["absent_inputs"].lower()
-    assert "none" in m["absent_from_pipeline"]["cross_validation"].lower()
+    assert "none" in m["absent_from_pipeline"]["hyperparameter_tuning"].lower()
     assert "not modeled" in m["absent_from_pipeline"]["transaction_costs"]
     assert "not evidence of live-trading validity" in m["live_trading_validity"]
+    # Walk-forward CV (Issue #45 item 7) is now IMPLEMENTED, on the
+    # pre-holdout region only -- methodology metadata must say so accurately.
+    assert "expanding" in m["walk_forward_cv"]["method"].lower()
+    assert "pre-holdout" in m["walk_forward_cv"]["method"].lower()
+    assert "temporal instability" in m["walk_forward_cv"]["purpose"].lower() or \
+        "temporal" in m["walk_forward_cv"]["purpose"].lower()
 
 
 # ── validate_ml_split() ──────────────────────────────────────────────────
@@ -101,8 +107,14 @@ def test_methodology_i18n_keys_exist_in_both_languages():
         "ml_methodology_baseline_label", "ml_methodology_baseline_value",
         "ml_methodology_metrics_label", "ml_methodology_metrics_value",
         "ml_methodology_absent_label", "ml_methodology_absent_value",
+        "ml_methodology_cv_label", "ml_methodology_cv_value",
         "ml_methodology_live_trading_label", "ml_methodology_live_trading_value",
         "ml_methodology_validation_pass", "ml_methodology_validation_fail",
+        "ml_wf_section_title", "ml_wf_section_subtitle", "ml_wf_unavailable",
+        "ml_wf_n_folds_label", "ml_wf_accuracy_mean_label", "ml_wf_roc_auc_mean_label",
+        "ml_wf_mean_std_value", "ml_wf_roc_auc_na", "ml_wf_disclaimer",
+        "ml_wf_fold_table_label", "ml_wf_col_fold", "ml_wf_col_train_range",
+        "ml_wf_col_val_range", "ml_wf_col_accuracy", "ml_wf_col_baseline", "ml_wf_col_roc_auc",
     ]
     for key in new_keys:
         assert key in TRANSLATIONS["zh-TW"], f"missing zh-TW translation for {key}"

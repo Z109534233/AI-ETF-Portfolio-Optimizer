@@ -143,7 +143,7 @@ TRANSLATIONS = {
         "feature_machine_learning_title": "機器學習",
         "feature_machine_learning_desc": "使用邏輯斯迴歸與隨機森林進行 ETF 漲跌方向預測的教學展示。",
         "feature_ai_advisor_title": "投資組合分析助手",
-        "feature_ai_advisor_desc": "透過 OpenAI GPT 產生 AI 投資組合說明，若未設定 API 金鑰則自動改用規則式分析。",
+        "feature_ai_advisor_desc": "以規則式分析說明投資組合結果，並可選擇加入 OpenAI API 金鑰以取得 AI 輔助的自然語言說明。",
         "feature_portfolio_history_title": "投資組合紀錄",
         "feature_portfolio_history_desc": "在本機 SQLite 資料庫中儲存、檢視、比較與管理投資組合，並支援 CSV 匯出。",
 
@@ -159,6 +159,7 @@ TRANSLATIONS = {
         "metric_cvar_95": "條件風險值（CVaR）95%",
         "metric_beta": "貝塔值",
         "metric_alpha": "阿爾法值",
+        "metric_alpha_annualized": "年化 Alpha（相對 {benchmark}）",
         "metric_tracking_error": "追蹤誤差",
         "metric_information_ratio": "資訊比率",
         "metric_downside_deviation": "下行波動率",
@@ -300,7 +301,6 @@ TRANSLATIONS = {
         "disclaimer_projections_hypothetical": "所有預測結果均為假設情境，並具有不確定性。",
         "chart_caption_prefix": "圖表解讀：",
         "chart_ask_ai_interpret": "請 AI 解讀",
-        "chart_ai_interpret_unavailable": "AI 解讀目前無法使用（尚未設定 OpenAI API 金鑰）；以上圖表解讀已足以理解此結果。",
         "results_hero_eyebrow": "結果",
         "opt_allocation_donut_caption": "圓餅圖顯示最終配置中每個 ETF 佔投資組合的權重百分比；切片越大代表該持股在整體投資組合中的比重越高。",
         "opt_allocation_table_caption": "此表格列出每檔 ETF 的權重百分比，以及依投資金額換算的實際配置金額。",
@@ -463,7 +463,7 @@ TRANSLATIONS = {
         "etf_ai_interpretation_title": "AI 解讀",
         "etf_ai_interpretation_btn": "AI 解讀",
         "etf_ai_interpretation_desc": "以下方已計算完成的量化數值為基礎，由 AI 進一步說明訊號之間的關聯與落差（AI 不會重新計算或創造任何數字）。",
-        "etf_ai_interpretation_unavailable": "AI 解讀目前無法使用，以下為規則式量化洞察。",
+        "etf_ai_interpretation_unavailable": "規則式量化洞察（非 AI 生成）：",
         "etf_analytical_summary_title": "ETF 分析摘要",
         "etf_comparison_notes_title": "比較說明",
         "etf_portfolio_view_summary_title": "投資組合觀點總結",
@@ -548,7 +548,7 @@ TRANSLATIONS = {
         "etf_methodology_annualization_value": "年化報酬率採用 CAGR（複合年成長率）計算：以「期末可用價格 ÷ 期初可用價格」開 (252 ÷ 可用交易日數) 次方後減一，而非每日簡單報酬率平均值 ×252 的近似算法；年化波動度為每日報酬率標準差 ×√252。",
         "etf_methodology_benchmark_label": "目前選定的比較基準",
         "etf_methodology_rfr_label": "無風險利率假設",
-        "etf_methodology_rfr_value": "目前無風險利率假設為 {rf}，由使用者於側邊欄設定；本系統不會自動同步即時公債殖利率或其他外部利率來源。",
+        "etf_methodology_rfr_value": "目前無風險利率假設為 {rf}（{provenance}）。滑桿預設值取自即時 FRED DGS3MO 三個月期公債殖利率；若無法取得即時資料，則改用備用預設值並明確標示為備用值，絕不佯裝為即時資料。使用者仍可於側邊欄自行調整此數值。",
         "etf_methodology_rfr_usage_label": "無風險利率的實際使用範圍",
         "etf_methodology_rfr_usage_value": "此頁面的夏普比率（KPI 卡片與 Quant Score 內部計算）使用此無風險利率；「比較」與「深度分析」工作區所顯示的 Sortino 比率同樣以此無風險利率作為超額報酬基準。",
         "etf_methodology_data_source_label": "資料來源與價格調整",
@@ -746,7 +746,9 @@ TRANSLATIONS = {
         "opt_methodology_title": "方法論與假設",
         "opt_methodology_subtitle": "本投資組合的預期報酬、風險與最佳權重實際上是如何計算的",
         "opt_methodology_return_label": "預期報酬",
-        "opt_methodology_return_desc": "以每日簡單報酬率（收盤價，已依股息／拆股調整）計算算術平均值，並以 ×252 個交易日年化。任何 ETF 在其實際首個有效交易日之前，絕不會被回填數據。",
+        "opt_methodology_return_desc": "以每日簡單報酬率（收盤價，已依股息／拆股調整）計算算術平均值，並以 ×252 個交易日年化。此估計方法對歷史樣本雜訊敏感、估計誤差較大，是本最佳化引擎中最脆弱、最敏感的假設之一——尤其「最大夏普比率」，其最佳權重可能因預期報酬估計值的微小變動而大幅改變。目前**未**使用縮減估計（shrinkage）或 Black-Litterman 模型；未來版本可能導入，但本版本尚未實作。任何 ETF 在其實際首個有效交易日之前，絕不會被回填數據。",
+        "opt_methodology_covariance_diag_label": "共變異數矩陣診斷",
+        "opt_methodology_covariance_diag_value": "原始（正規化前）共變異數矩陣：秩 {rank}/{n}；條件數 {cond}；平均兩兩報酬相關係數 {avg_corr}。",
         "opt_methodology_covariance_label": "共變異數／風險",
         "opt_methodology_covariance_desc": "以每日報酬率的樣本共變異數（pandas .cov()）計算，並以 ×252 年化。對角線加上極小的 1e-8 微調項僅為確保矩陣在最佳化時可解，並非 Ledoit-Wolf 或其他任何收縮估計方法。",
         "opt_methodology_history_label": "歷史資料區間",
@@ -761,7 +763,11 @@ TRANSLATIONS = {
         "opt_methodology_backtest_value": "固定配置歷史回測",
         "opt_methodology_backtest_desc": "系統將「目前這次最佳化」產生的單一權重組合，套用於整段歷史價格區間以計算假設性價值路徑。這並非逐步向前（walk-forward）回測——權重從未依各歷史時點當時可得的資料重新最佳化，因此並不代表這個策略在實際時間中會如何被選擇與再平衡。",
         "opt_methodology_rfr_label": "無風險利率假設",
-        "opt_methodology_rfr_value": "目前使用者設定的無風險利率為 {rf}，屬於分析假設，本系統不會自動同步即時公債殖利率。此利率用於上方 KPI 卡片顯示的夏普比率計算，以及「最大夏普比率」方法的最佳化目標函數；對於等權重配置、最低波動率、風險平價與目標報酬率等其餘方法，其最佳化目標函數本身並不使用這項假設。",
+        "opt_methodology_rfr_value": "目前無風險利率假設為 {rf}（{provenance}）。滑桿預設值取自即時 FRED DGS3MO 三個月期公債殖利率；若無法取得即時資料，則改用備用預設值並明確標示為備用值。此利率用於上方 KPI 卡片顯示的夏普比率計算，以及「最大夏普比率」方法的最佳化目標函數；對於等權重配置、最低波動率、風險平價與目標報酬率等其餘方法，其最佳化目標函數本身並不使用這項假設。使用者仍可自行調整此數值。",
+        "opt_demo_portfolio_caption": "跨資產示範組合：美股（VOO）、國際股票（VXUS）、美國綜合債券（BND）、黃金（GLD）與長天期美國公債（TLT），刻意涵蓋五種不同資產類別以示範跨資產分散效果，並非投資建議。",
+        "opt_covariance_warning_severe": "⚠️ 所選 ETF 的報酬序列高度共線／病態（共變異數矩陣秩 {rank}/{n}，條件數 {cond}，平均兩兩相關係數 {avg_corr}）。當資產彼此高度重疊、缺乏獨立資訊時，最佳化解可能落在權重上下限的角落解——若求解本身收斂成功，這反映的是資產間高度重疊，而非最佳化程式「隨機」選擇了角落解，也不代表這是不合理的計算結果，但這樣的配置在實務上可能不穩定。建議加入資產類別更分散的 ETF（例如債券、黃金、國際股票）以改善分散效果。",
+        "opt_covariance_info_moderate": "ℹ️ 所選 ETF 的報酬相關性偏高（平均兩兩相關係數 {avg_corr}，條件數 {cond}），分散效果有限。",
+        "opt_covariance_cond_unavailable": "無法計算",
         "opt_methodology_validation_pass": "最佳化後驗證通過：權重總和為 100%、符合設定的限制條件，且顯示的報酬率／波動率／夏普比率與這些權重在數值上一致。",
         "opt_methodology_validation_fail": "最佳化後驗證發現不一致之處：{issues}",
 
@@ -902,6 +908,8 @@ TRANSLATIONS = {
         "risk_portfolio_metrics_title": "投資組合風險指標",
         "risk_benchmark_metrics_title": "基準相對指標",
         "risk_benchmark_metrics_sub": "相對於 {benchmark}",
+        "risk_benchmark_reset_notice": "先前記住的基準已是所選 ETF 之一，已自動改為外部基準 {benchmark}，以避免與投資組合自我比較。",
+        "risk_benchmark_self_reference_unavailable": "此市場中所有可選基準皆已是目前選擇的 ETF（{benchmark}），沒有有效的外部基準可比較，因此不計算 Alpha／Beta，以避免自我參照的比較。",
         "risk_charts_title": "風險圖表",
         "risk_detail_card": "風險詳情",
         "risk_tab_drawdown": "回撤分析",
@@ -963,6 +971,8 @@ TRANSLATIONS = {
         "risk_methodology_concentration_desc": "最大持股、前 N 大集中度、有效持股數與有效配置 ETF 數，一律以「投資組合最佳化」產生的目前投資組合權重計算，而非本頁另行設定的權重。",
         "risk_methodology_correlation_label": "相關性 vs. 持股重疊",
         "risk_methodology_correlation_desc": "報酬相關性衡量價格連動程度；持股重疊衡量底層持股的實際重複程度。兩者不應混為一談：報酬高度相關不代表持股重疊，持股高度重疊也不保證報酬同步。",
+        "risk_methodology_alpha_label": "Alpha／Beta",
+        "risk_methodology_alpha_desc": "Beta 為投資組合與基準每日報酬的共變異數除以基準報酬變異數；Alpha 採 CAPM 超額報酬殘差公式：年化報酬 − [無風險利率 + Beta × (基準年化報酬 − 無風險利率)]，並非以實際迴歸估計出的截距項。由於採用年化的投資組合／基準報酬與年化無風險利率，此處顯示的 Alpha 一律為「年化」數值。基準選項會排除目前頁面所選的 ETF，避免與投資組合自我比較；若某市場所有可選基準皆為已選 ETF，則不計算 Alpha／Beta。",
         "risk_methodology_stress_label": "壓力測試",
         "risk_methodology_stress_desc": "投資組合影響 = 市場衝擊 × 投資組合貝塔值，屬簡化線性估算，並非完整的歷史情境重建。",
         "risk_correlation_heatmap_caption": "熱力圖顏色代表兩檔 ETF 每日報酬之間的相關係數（-1 到 1）；顏色越深代表兩者走勢越同步，接近 0 代表走勢較不相關。",
@@ -1045,6 +1055,24 @@ TRANSLATIONS = {
         "ml_data_window_label": "資料區間（樣本外驗證揭露）",
         "ml_data_window_value": "訓練期間：{train_start} 至 {train_end}（{train} 筆）｜ 測試期間（樣本外）：{test_start} 至 {test_end}（{test} 筆）。上方所有效能指標僅計算於測試期間，模型從未見過這段期間的任何資料。",
 
+        # ── Machine Learning: Walk-Forward Validation (Issue #45 item 7) ───
+        "ml_wf_section_title": "滾動驗證",
+        "ml_wf_section_subtitle": "在最終測試集之前的訓練資料範圍內，以逐步擴張視窗方式重複切分／訓練／驗證，觀察模型表現的穩定度",
+        "ml_wf_unavailable": "滾動驗證目前無法顯示：{reason}",
+        "ml_wf_n_folds_label": "有效折數",
+        "ml_wf_accuracy_mean_label": "平均準確率（折）",
+        "ml_wf_roc_auc_mean_label": "平均 ROC AUC（折）",
+        "ml_wf_mean_std_value": "{mean}（± {std}）",
+        "ml_wf_roc_auc_na": "無足夠折可計算",
+        "ml_wf_disclaimer": "折與折之間準確率／ROC AUC 的差異，反映的是模型在不同歷史區間上的穩定度，並不代表對未來走勢的預測能力。最終測試集（樣本外）的結果與此處的滾動驗證結果分開呈現，絕不互相取代。",
+        "ml_wf_fold_table_label": "各折明細",
+        "ml_wf_col_fold": "折次",
+        "ml_wf_col_train_range": "訓練期間",
+        "ml_wf_col_val_range": "驗證期間",
+        "ml_wf_col_accuracy": "準確率",
+        "ml_wf_col_baseline": "多數類別基準",
+        "ml_wf_col_roc_auc": "ROC AUC",
+
         # ── Machine Learning: Methodology & Assumptions (M6) ──────────────
         "ml_methodology_title": "方法論與假設",
         "ml_methodology_subtitle": "此頁面的模型類型、資料切分與評估方式實際上是如何運作的",
@@ -1057,7 +1085,9 @@ TRANSLATIONS = {
         "ml_methodology_metrics_label": "評估指標",
         "ml_methodology_metrics_value": "準確率、精確率、召回率、F1 分數，以及測試集同時包含兩種類別時的 ROC AUC；以上全部僅計算於測試集（樣本外）。",
         "ml_methodology_absent_label": "此流程中未包含的項目",
-        "ml_methodology_absent_value": "未進行超參數調校或交叉驗證（採用固定參數的單一時間序列切分）；未考慮交易成本（買賣價差、手續費、市場衝擊）；未使用基本面或新聞資料作為輸入。",
+        "ml_methodology_absent_value": "未進行超參數調校（模型與滾動驗證皆採用固定參數）；未考慮交易成本（買賣價差、手續費、市場衝擊）；未使用基本面或新聞資料作為輸入。",
+        "ml_methodology_cv_label": "滾動驗證（Walk-Forward Cross-Validation）",
+        "ml_methodology_cv_value": "在最終測試集切分之前的訓練資料範圍內，採用逐步擴張視窗的時間序列交叉驗證（scikit-learn TimeSeriesSplit，目標 5 折，資料不足時自動減少）；每一折的邏輯迴歸標準化皆僅以該折自身的訓練資料重新配適，最終測試集從未出現在任何一折的訓練或驗證資料中。折與折之間準確率／ROC AUC 的分散程度，反映的是模型在不同歷史區間的穩定性，並不代表對未來的預測能力。",
         "ml_methodology_live_trading_label": "實盤有效性",
         "ml_methodology_live_trading_value": "此結果僅反映單一模型於單一歷史樣本外測試窗口、單一標的之表現，並非實盤交易有效性的證明；不同標的、日期區間或未來期間的結果可能有顯著差異。",
         "ml_methodology_validation_pass": "驗證通過：訓練期間與測試期間依時間先後排列且互不重疊。",
@@ -1132,10 +1162,11 @@ TRANSLATIONS = {
         "ai_inputs_changed_regenerate": "⚠️ 輸入設定已變更（ETF、權重、投入金額或投資人設定），下方分析為先前設定所產生。請點選「產生 AI 分析」以取得符合目前設定的結果。",
         "ai_subtitle": "以自然語言說明投資組合的優勢、風險與分散程度。",
         "ai_mode_info": (
-            "**AI 分析模式**：尚未設定 OpenAI API 金鑰，將以規則式分析產生內容。"
-            "如需啟用 AI 驅動分析，請於 Streamlit 密鑰設定中加入 `OPENAI_API_KEY`。"
+            "**目前模式：規則式分析** — 以下內容由既有的量化結果透過決定性規則產生，"
+            "非 AI 生成。可選擇加入 `OPENAI_API_KEY` 以啟用 AI 輔助分析（僅用於文字說明，"
+            "不會改變任何已計算的數字）。"
         ),
-        "ai_mode_success": "AI 驅動分析目前可以使用。",
+        "ai_mode_success": "**目前模式：AI 輔助分析** — AI 僅用於說明下列已計算完成的結果，不會產生或改變任何數字。",
         "ai_generation_failed_fallback": "AI 分析目前無法使用（{error}），已改用規則式分析。",
         "ai_disclaimer_banner": "**重要提醒**：本系統內容僅供教學與研究展示使用，不構成任何投資建議。過去績效不代表未來結果。",
         "ai_sidebar_config": "投資組合設定",
@@ -1430,6 +1461,7 @@ TRANSLATIONS = {
         "saved_market_multi": "跨市場（{markets}）",
         "saved_market_not_recorded": "未記錄",
         "estimator_return_historical_cagr": "歷史複合年化成長率（CAGR）",
+        "estimator_return_arithmetic_mean": "每日報酬算術平均值（年化 ×252）",
         "estimator_covariance_sample": "歷史樣本共變異數（年化）",
         "common_info_badge_label": "說明",
         "hist_set_as_current_btn": "設為目前投資組合",
@@ -1802,7 +1834,7 @@ TRANSLATIONS = {
         "feature_machine_learning_title": "Machine Learning",
         "feature_machine_learning_desc": "Educational ML demonstration using Logistic Regression and Random Forest for ETF direction prediction.",
         "feature_ai_advisor_title": "AI Portfolio Analyst",
-        "feature_ai_advisor_desc": "AI-powered portfolio explanation using OpenAI GPT with rule-based fallback when API key is not configured.",
+        "feature_ai_advisor_desc": "Rule-based explanation of portfolio results, with optional OpenAI-assisted natural-language explanation when an API key is configured.",
         "feature_portfolio_history_title": "Portfolio History",
         "feature_portfolio_history_desc": "Save, view, compare, and manage portfolios stored in a local SQLite database with CSV export.",
 
@@ -1818,6 +1850,7 @@ TRANSLATIONS = {
         "metric_cvar_95": "CVaR (95%)",
         "metric_beta": "Beta",
         "metric_alpha": "Alpha",
+        "metric_alpha_annualized": "Annualized Alpha (vs {benchmark})",
         "metric_tracking_error": "Tracking Error",
         "metric_information_ratio": "Information Ratio",
         "metric_downside_deviation": "Downside Deviation",
@@ -1960,7 +1993,6 @@ TRANSLATIONS = {
         "disclaimer_projections_hypothetical": "All projections are hypothetical and involve uncertainty.",
         "chart_caption_prefix": "What this shows:",
         "chart_ask_ai_interpret": "Ask AI to interpret",
-        "chart_ai_interpret_unavailable": "AI interpretation is currently unavailable (no OpenAI API key configured) -- the caption above already explains this result.",
         "results_hero_eyebrow": "Results",
         "opt_allocation_donut_caption": "This donut chart shows each ETF's share of the final allocation as a percentage of the whole portfolio; a larger slice means a larger weight in the overall mix.",
         "opt_allocation_table_caption": "This table lists each ETF's weight percentage and its actual dollar allocation based on the investment amount.",
@@ -2123,7 +2155,7 @@ TRANSLATIONS = {
         "etf_ai_interpretation_title": "AI Interpretation",
         "etf_ai_interpretation_btn": "AI Interpretation",
         "etf_ai_interpretation_desc": "Uses the already-computed quantitative values below to explain, in natural language, how the signals relate to and diverge from each other (the AI never recalculates or invents a number).",
-        "etf_ai_interpretation_unavailable": "AI Interpretation is currently unavailable -- showing rule-based quant insights instead.",
+        "etf_ai_interpretation_unavailable": "Rule-Based Quant Insight (not AI-generated):",
         "etf_analytical_summary_title": "ETF Analytical Summary",
         "etf_comparison_notes_title": "Comparison Notes",
         "etf_portfolio_view_summary_title": "Portfolio View Summary",
@@ -2208,7 +2240,7 @@ TRANSLATIONS = {
         "etf_methodology_annualization_value": "Annualized return uses CAGR (compound annual growth rate): (last usable price / first usable price) ^ (252 / number of usable trading days) − 1 -- not a mean-daily-return ×252 approximation; annualized volatility is the daily-return standard deviation ×√252.",
         "etf_methodology_benchmark_label": "Currently Selected Benchmark",
         "etf_methodology_rfr_label": "Risk-Free Rate Assumption",
-        "etf_methodology_rfr_value": "The current risk-free rate assumption is {rf}, set by you in the sidebar; this system does not automatically sync a live Treasury yield or any other external rate.",
+        "etf_methodology_rfr_value": "The current risk-free rate assumption is {rf} ({provenance}). The slider defaults to the latest live FRED DGS3MO (3-Month Treasury) yield when available; if a live observation cannot be fetched, it falls back to a disclosed default value, never presented as if it were current. You can still override this value in the sidebar.",
         "etf_methodology_rfr_usage_label": "Where the Risk-Free Rate Is Actually Used",
         "etf_methodology_rfr_usage_value": "This page's Sharpe Ratio (the KPI card and the Quant Score's internal calculation) uses this risk-free rate; the Sortino Ratio shown in the Compare and Deep Analysis workspaces also uses this same risk-free rate as its excess-return baseline.",
         "etf_methodology_data_source_label": "Data Source & Price Adjustment",
@@ -2406,7 +2438,9 @@ TRANSLATIONS = {
         "opt_methodology_title": "Methodology & Assumptions",
         "opt_methodology_subtitle": "How this portfolio's expected return, risk, and optimal weights are actually calculated",
         "opt_methodology_return_label": "Expected Return",
-        "opt_methodology_return_desc": "Arithmetic mean of daily simple returns (Close price, split/dividend-adjusted), annualized ×252 trading days. No ETF is ever filled before its own first valid trading date.",
+        "opt_methodology_return_desc": "Arithmetic mean of daily simple returns (Close price, split/dividend-adjusted), annualized x252 trading days. This estimator is sensitive to historical sample noise and carries high estimation error -- it is one of this optimizer's most fragile, most sensitive assumptions: optimized weights (especially Maximum Sharpe) can change substantially from small changes in the expected-return estimate. Shrinkage or Black-Litterman estimation is **NOT** currently implemented; a future version may add one. No ETF is ever filled before its own first valid trading date.",
+        "opt_methodology_covariance_diag_label": "Covariance Matrix Diagnostics",
+        "opt_methodology_covariance_diag_value": "Raw (pre-regularization) covariance matrix: rank {rank}/{n}; condition number {cond}; average pairwise return correlation {avg_corr}.",
         "opt_methodology_covariance_label": "Covariance / Risk",
         "opt_methodology_covariance_desc": "Sample covariance of daily returns (pandas .cov()), annualized ×252. A small 1e-8 diagonal ridge is added only to keep the matrix solvable during optimization -- this is not Ledoit-Wolf or any other shrinkage estimator.",
         "opt_methodology_history_label": "Historical Window",
@@ -2421,7 +2455,11 @@ TRANSLATIONS = {
         "opt_methodology_backtest_value": "Fixed-Allocation Historical Backtest",
         "opt_methodology_backtest_desc": "The CURRENT optimized weights are applied unchanged across the entire historical window shown. This is NOT a walk-forward backtest -- weights are never re-optimized using only data available as of each historical date, so it does not reflect how the strategy would actually have been selected and rebalanced in real time.",
         "opt_methodology_rfr_label": "Risk-Free Rate Assumption",
-        "opt_methodology_rfr_value": "The current user-set risk-free rate is {rf}, an analysis assumption -- this system does not automatically sync a live Treasury yield. It is used in the Sharpe ratio shown in the KPI cards above and in the Maximum Sharpe Ratio method's optimization objective; the optimization objective for Equal Weight, Minimum Volatility, Risk Parity, and Target Return does not use this assumption.",
+        "opt_methodology_rfr_value": "The current risk-free rate assumption is {rf} ({provenance}). The slider defaults to the latest live FRED DGS3MO (3-Month Treasury) yield when available; if a live observation cannot be fetched, it falls back to a disclosed default value. It is used in the Sharpe ratio shown in the KPI cards above and in the Maximum Sharpe Ratio method's optimization objective; the optimization objective for Equal Weight, Minimum Volatility, Risk Parity, and Target Return does not use this assumption. You can still override this value manually.",
+        "opt_demo_portfolio_caption": "Cross-asset demonstration portfolio: US equities (VOO), international equities (VXUS), US aggregate bonds (BND), gold (GLD), and long-term US Treasuries (TLT) -- five distinct asset classes chosen to demonstrate diversification mechanics across asset classes; this is not investment advice.",
+        "opt_covariance_warning_severe": "⚠️ The selected ETFs' return series are highly collinear / ill-conditioned (covariance matrix rank {rank}/{n}, condition number {cond}, average pairwise correlation {avg_corr}). When assets are this redundant and share little independent information, an optimizer solution sitting at the weight bounds reflects that overlap -- if it converged, this is not the solver \"randomly\" picking a corner, nor an invalid result, but it can be economically unstable in practice. Consider adding ETFs from more distinct asset classes (e.g. bonds, gold, international equities) to improve diversification.",
+        "opt_covariance_info_moderate": "ℹ️ The selected ETFs' returns are moderately correlated (average pairwise correlation {avg_corr}, condition number {cond}), which limits diversification benefit.",
+        "opt_covariance_cond_unavailable": "not computable",
         "opt_methodology_validation_pass": "Post-optimization validation passed: weights sum to 100%, respect the configured bounds, and the displayed return/volatility/Sharpe ratio are numerically consistent with these weights.",
         "opt_methodology_validation_fail": "Post-optimization validation found an inconsistency: {issues}",
 
@@ -2563,6 +2601,8 @@ TRANSLATIONS = {
         "risk_portfolio_metrics_title": "Portfolio Risk Metrics",
         "risk_benchmark_metrics_title": "Benchmark-Relative Metrics",
         "risk_benchmark_metrics_sub": "vs. {benchmark}",
+        "risk_benchmark_reset_notice": "The previously remembered benchmark was itself one of the selected ETFs, so it was automatically reset to an external benchmark ({benchmark}) to avoid comparing the portfolio against itself.",
+        "risk_benchmark_self_reference_unavailable": "Every available benchmark option in this market is already one of the currently selected ETFs ({benchmark}) -- there is no valid external benchmark to compare against, so Alpha/Beta are not computed rather than shown as a self-referential comparison.",
         "risk_charts_title": "Risk Charts",
         "risk_detail_card": "Risk Detail",
         "risk_tab_drawdown": "Drawdown",
@@ -2624,6 +2664,8 @@ TRANSLATIONS = {
         "risk_methodology_concentration_desc": "Largest position, Top-N concentration, effective holdings, and active ETF count are always computed from the CURRENT portfolio's weights from Portfolio Optimizer, never from this page's own separately-configured weights.",
         "risk_methodology_correlation_label": "Correlation vs. Holdings Overlap",
         "risk_methodology_correlation_desc": "Return correlation measures how prices move together; holdings overlap measures how much the underlying positions actually repeat. The two are never conflated: high return correlation does not imply holdings overlap, and high holdings overlap does not guarantee returns move in lockstep.",
+        "risk_methodology_alpha_label": "Alpha / Beta",
+        "risk_methodology_alpha_desc": "Beta is Cov(portfolio daily returns, benchmark daily returns) / Var(benchmark daily returns). Alpha uses a CAPM excess-return residual formula: annualized return - [risk-free rate + beta x (benchmark annualized return - risk-free rate)] -- NOT an intercept estimated from an actual regression. Because it uses annualized portfolio/benchmark returns and an annual risk-free rate, the Alpha shown here is always an ANNUALIZED figure. Benchmark options exclude this page's own currently-selected ETFs to avoid comparing the portfolio against itself; if every available benchmark in a market is already a selected ETF, Alpha/Beta are not computed.",
         "risk_methodology_stress_label": "Stress Tests",
         "risk_methodology_stress_desc": "Portfolio impact = market shock × portfolio beta, a simplified linear approximation -- not a full historical scenario reconstruction.",
         "risk_correlation_heatmap_caption": "Heatmap color shows the correlation coefficient (-1 to 1) between each pair of ETFs' daily returns; darker/stronger color means the two move more in sync, near 0 means their moves are largely unrelated.",
@@ -2706,6 +2748,24 @@ TRANSLATIONS = {
         "ml_data_window_label": "Data Window (Out-of-Sample Disclosure)",
         "ml_data_window_value": "Training period: {train_start} to {train_end} ({train} obs) | Test period (out-of-sample): {test_start} to {test_end} ({test} obs). Every performance metric above is computed on the test period only -- the model never saw this data during training.",
 
+        # ── Machine Learning: Walk-Forward Validation (Issue #45 item 7) ───
+        "ml_wf_section_title": "Walk-Forward Validation",
+        "ml_wf_section_subtitle": "Repeated expanding-window split/train/validate over the training region BEFORE the final test set, to see how stable the model's performance is",
+        "ml_wf_unavailable": "Walk-forward validation is unavailable: {reason}",
+        "ml_wf_n_folds_label": "Valid Folds",
+        "ml_wf_accuracy_mean_label": "Mean Accuracy (folds)",
+        "ml_wf_roc_auc_mean_label": "Mean ROC AUC (folds)",
+        "ml_wf_mean_std_value": "{mean} (± {std})",
+        "ml_wf_roc_auc_na": "not enough folds to compute",
+        "ml_wf_disclaimer": "Fold-to-fold differences in Accuracy/ROC AUC measure the model's stability across different historical windows -- they are not evidence of future predictability. The final (out-of-sample) test result above and this walk-forward validation are shown separately and never substitute for one another.",
+        "ml_wf_fold_table_label": "Per-Fold Detail",
+        "ml_wf_col_fold": "Fold",
+        "ml_wf_col_train_range": "Train Range",
+        "ml_wf_col_val_range": "Validation Range",
+        "ml_wf_col_accuracy": "Accuracy",
+        "ml_wf_col_baseline": "Majority-Class Baseline",
+        "ml_wf_col_roc_auc": "ROC AUC",
+
         # ── Machine Learning: Methodology & Assumptions (M6) ──────────────
         "ml_methodology_title": "Methodology & Assumptions",
         "ml_methodology_subtitle": "How this page's model type, data split, and evaluation actually work",
@@ -2718,7 +2778,9 @@ TRANSLATIONS = {
         "ml_methodology_metrics_label": "Evaluation Metrics",
         "ml_methodology_metrics_value": "Accuracy, Precision, Recall, F1 Score, and ROC AUC (when the test set contains both classes) -- all computed on the held-out test set only.",
         "ml_methodology_absent_label": "Not Included in This Pipeline",
-        "ml_methodology_absent_value": "No hyperparameter tuning or cross-validation is performed (a single fixed-parameter chronological split is used); transaction costs (spread, commissions, market impact) are not modeled; no fundamental or news data is used as input.",
+        "ml_methodology_absent_value": "No hyperparameter tuning is performed (both the model and the walk-forward validation below use fixed parameters); transaction costs (spread, commissions, market impact) are not modeled; no fundamental or news data is used as input.",
+        "ml_methodology_cv_label": "Walk-Forward Cross-Validation",
+        "ml_methodology_cv_value": "An expanding-window time-series cross-validation (scikit-learn TimeSeriesSplit, target 5 folds, reduced automatically when data is insufficient) is run on the training region BEFORE the final test split above; each fold's Logistic Regression scaler is re-fit on that fold's own training rows only, and the final held-out test set is never included in any fold's training or validation data. Dispersion in Accuracy/ROC AUC across folds measures the model's TEMPORAL STABILITY across different historical windows -- it does not prove future predictability.",
         "ml_methodology_live_trading_label": "Live-Trading Validity",
         "ml_methodology_live_trading_value": "This result reflects a single model evaluated on a single historical out-of-sample window for a single ticker -- it is not evidence of live-trading validity; results may differ substantially for a different ticker, date range, or future period.",
         "ml_methodology_validation_pass": "Validation passed: the training and test windows are chronological and non-overlapping.",
@@ -2793,11 +2855,12 @@ TRANSLATIONS = {
         "ai_inputs_changed_regenerate": "⚠️ Inputs have changed (ETFs, weights, investment amount, or investor profile) since this analysis was generated. The result below reflects the PREVIOUS settings. Click **Generate AI Analysis** to regenerate for the current settings.",
         "ai_subtitle": "Explain portfolio strengths, risks, and diversification in plain language.",
         "ai_mode_info": (
-            "**AI Analysis Mode**: OpenAI API key not configured. "
-            "The advisor will use rule-based analysis. "
-            "To enable AI-powered analysis, add `OPENAI_API_KEY` to your Streamlit secrets."
+            "**Current mode: Rule-Based Analysis** — the content below is generated by "
+            "deterministic rules applied to the app's own already-computed results, not by an "
+            "AI model. Add `OPENAI_API_KEY` to enable AI-assisted analysis (used only to "
+            "explain the results in prose -- it never changes any computed number)."
         ),
-        "ai_mode_success": "AI-powered analysis is available.",
+        "ai_mode_success": "**Current mode: AI-Assisted Analysis** — AI is used only to explain the already-computed results below; it never generates or changes any number.",
         "ai_generation_failed_fallback": "AI analysis unavailable ({error}). Using rule-based analysis instead.",
         "ai_disclaimer_banner": "**Important**: This content is for educational purposes only and does not constitute financial advice. Past performance does not guarantee future results.",
         "ai_sidebar_config": "Portfolio Configuration",
@@ -3092,6 +3155,7 @@ TRANSLATIONS = {
         "saved_market_multi": "Multi-market ({markets})",
         "saved_market_not_recorded": "Not recorded",
         "estimator_return_historical_cagr": "Historical CAGR (annualized return)",
+        "estimator_return_arithmetic_mean": "Arithmetic Mean Daily Return (annualized x252)",
         "estimator_covariance_sample": "Sample covariance (historical, annualized)",
         "common_info_badge_label": "Explanation",
         "hist_set_as_current_btn": "Set as Current Portfolio",
@@ -3570,7 +3634,13 @@ SAVED_STRATEGY_DISPLAY_KEYS = {
 # translations only; the stored value itself must stay exactly as saved
 # (Issue #43 item J).
 RETURN_ESTIMATOR_KEYS = {
+    # "Historical CAGR" is INACCURATE for this app's actual estimator (see
+    # run_optimization() -- it uses the arithmetic mean of daily returns
+    # annualized by x252, not a CAGR) -- kept only so portfolios saved
+    # before Issue #45 still display a translated (if inaccurate) label
+    # instead of falling back to the raw English key string.
     "Historical CAGR (annualized_return)": "estimator_return_historical_cagr",
+    "Arithmetic Mean Daily Return (annualized x252)": "estimator_return_arithmetic_mean",
 }
 
 COVARIANCE_ESTIMATOR_KEYS = {

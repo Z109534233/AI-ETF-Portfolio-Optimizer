@@ -9,7 +9,8 @@ from scipy.optimize import minimize
 import streamlit as st
 from src.financial_metrics import (
     portfolio_return, portfolio_volatility, portfolio_sharpe,
-    covariance_matrix, diversification_ratio
+    covariance_matrix, diversification_ratio,
+    covariance_diagnostics, covariance_diagnostics_level,
 )
 from src.methodology import validate_optimization_result
 
@@ -419,6 +420,17 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             "trading history."
         )
 
+    # Numerical robustness diagnostics (Issue #45 item 1) -- computed from
+    # the RAW covariance matrix BEFORE the regularization ridge term just
+    # below, so this reflects the actual selected assets' data, not a
+    # numerically-patched version of it. Surfaced to the page so a corner
+    # (bounds-hugging) Maximum Sharpe solution among redundant/collinear
+    # assets can be explained as an economically-unstable but statistically
+    # valid outcome, not silently presented as if the assets were genuinely
+    # diversifying, nor overstated as the covariance matrix being "singular".
+    _cov_diagnostics = covariance_diagnostics(prices_df)
+    _cov_diagnostics_level = covariance_diagnostics_level(_cov_diagnostics)
+
     # Regularize covariance matrix to avoid singularity
     cov_array += np.eye(n) * 1e-8
 
@@ -493,6 +505,8 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             "diversification_ratio": float(div_ratio),
             "method": method,
             "validation": validation,
+            "covariance_diagnostics": _cov_diagnostics,
+            "covariance_diagnostics_level": _cov_diagnostics_level,
             "error": (
                 f"{method} optimization did not converge for this data/settings; "
                 "showing Equal Weight as a fallback."

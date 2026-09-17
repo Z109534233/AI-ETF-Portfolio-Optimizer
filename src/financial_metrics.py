@@ -248,6 +248,80 @@ def covariance_matrix(prices_df: pd.DataFrame, periods_per_year: int = 252) -> p
     return cov.reindex(index=prices_df.columns, columns=prices_df.columns)
 
 
+ILL_CONDITIONED_THRESHOLD = 1e10  # raw covariance condition number at/above this -> "severe"
+MODERATE_CONDITION_THRESHOLD = 1e6  # at/above this (but below the severe threshold) -> "moderate"
+HIGH_AVG_CORRELATION_THRESHOLD = 0.95  # avg pairwise return correlation at/above this -> "severe"
+MODERATE_AVG_CORRELATION_THRESHOLD = 0.85  # at/above this (but below the severe threshold) -> "moderate"
+
+
+def covariance_diagnostics(prices_df: pd.DataFrame) -> dict:
+    """Numerical-robustness diagnostics of the RAW covariance matrix
+    (Issue #45 item 1) -- computed from covariance_matrix() BEFORE any
+    ridge/regularization term is added, so this reflects the actual data,
+    not a numerically-patched version of it.
+
+    Returns {"n_assets": int, "rank": int, "is_rank_deficient": bool,
+    "condition_number": float or None, "avg_pairwise_correlation": float or
+    None}. `condition_number` is None when it cannot be computed (e.g. a
+    non-finite matrix) rather than a fabricated inf/nan value. A high
+    condition number or near-collinear return correlation means the
+    selected assets carry little independent information from each other
+    -- this is described as "ill-conditioned"/"near-collinear", never
+    unconditionally as "singular", since the matrix may still be technically
+    invertible.
+    """
+    cov = covariance_matrix(prices_df)
+    cov_array = cov.values
+    n = cov_array.shape[0]
+    avg_corr = average_pairwise_correlation(prices_df)
+    if n == 0 or not np.isfinite(cov_array).all():
+        return {
+            "n_assets": n, "rank": 0, "is_rank_deficient": True,
+            "condition_number": None, "avg_pairwise_correlation": avg_corr,
+        }
+    rank = int(np.linalg.matrix_rank(cov_array))
+    try:
+        cond = float(np.linalg.cond(cov_array))
+        if not np.isfinite(cond):
+            cond = None
+    except np.linalg.LinAlgError:
+        cond = None
+    return {
+        "n_assets": n,
+        "rank": rank,
+        "is_rank_deficient": rank < n,
+        "condition_number": cond,
+        "avg_pairwise_correlation": avg_corr,
+    }
+
+
+def covariance_diagnostics_level(diag: dict) -> str:
+    """Bucket covariance_diagnostics() output into "severe"/"moderate"/"ok"
+    for a Portfolio Optimizer warning/info panel. Deterministic PRODUCT UI
+    thresholds (see the *_THRESHOLD constants above), not an academic or
+    regulatory numerical-stability standard -- same pattern as
+    concentration_level()/correlation_diversification_level() below.
+
+    - "severe": rank-deficient, OR condition number >= ILL_CONDITIONED_THRESHOLD,
+      OR average pairwise correlation >= HIGH_AVG_CORRELATION_THRESHOLD.
+    - "moderate": condition number >= MODERATE_CONDITION_THRESHOLD or average
+      pairwise correlation >= MODERATE_AVG_CORRELATION_THRESHOLD (but not
+      "severe").
+    - "ok": none of the above.
+    """
+    if diag.get("is_rank_deficient"):
+        return "severe"
+    cond = diag.get("condition_number")
+    avg_corr = diag.get("avg_pairwise_correlation")
+    if (cond is not None and cond >= ILL_CONDITIONED_THRESHOLD) or (
+            avg_corr is not None and avg_corr >= HIGH_AVG_CORRELATION_THRESHOLD):
+        return "severe"
+    if (cond is not None and cond >= MODERATE_CONDITION_THRESHOLD) or (
+            avg_corr is not None and avg_corr >= MODERATE_AVG_CORRELATION_THRESHOLD):
+        return "moderate"
+    return "ok"
+
+
 def diversification_ratio(weights: np.ndarray, cov_matrix: np.ndarray) -> float:
     """
     Diversification Ratio: weighted average volatility / portfolio volatility.

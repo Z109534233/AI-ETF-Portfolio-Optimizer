@@ -193,6 +193,9 @@ def test_risk_methodology_i18n_keys_exist_in_both_languages():
         "risk_col_provenance", "risk_provenance_hypothetical", "risk_provenance_historical",
         "risk_stress_methodology_note", "risk_scenario_note_hypothetical",
         "risk_scenario_note_2008", "risk_scenario_note_covid", "risk_scenario_note_tech_bubble",
+        "risk_methodology_alpha_label", "risk_methodology_alpha_desc",
+        "risk_benchmark_reset_notice", "risk_benchmark_self_reference_unavailable",
+        "metric_alpha_annualized",
     ]
     for key in new_keys:
         assert key in TRANSLATIONS["zh-TW"], f"missing zh-TW translation for {key}"

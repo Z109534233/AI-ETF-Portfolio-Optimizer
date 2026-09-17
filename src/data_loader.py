@@ -81,6 +81,62 @@ def _download_single_ticker(ticker: str, start_date: str, end_date: str,
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def download_etf_data_with_status(tickers: list, start_date: str, end_date: str, price_field: str = "Close"):
+    """
+    Same as download_etf_data() below, but returns a (DataFrame, is_sample_data)
+    tuple instead of just the DataFrame.
+
+    Callers that must reliably disclose simulated/fallback data to the user
+    (Issue #45/#46 review: Home's sample-data banner) need this instead of
+    download_etf_data() -- the plain DataFrame return is indistinguishable
+    from live data via `.empty` once every ticker has failed, because the
+    simulated fallback data is never actually empty.
+
+    Returns (df, is_sample_data) where is_sample_data is True only when
+    *every* requested ticker failed to download and df is therefore fully
+    simulated sample data (see _generate_sample_data()).
+    """
+    if not tickers:
+        return pd.DataFrame(), False
+
+    series = {}
+    failed = []
+
+    for ticker in tickers:
+        col = _download_single_ticker(ticker, start_date, end_date, price_field)
+        if col is None:
+            failed.append(ticker)
+        else:
+            series[ticker] = col
+
+    if not series:
+        # Every single ticker failed -- fall back to simulated sample data
+        # so the rest of the app remains usable (e.g. offline development).
+        st.warning(
+            f"Could not download live data for any requested ticker "
+            f"({', '.join(tickers)}). This is commonly caused by Yahoo "
+            "Finance rate-limiting on Streamlit Cloud, an invalid ticker "
+            "symbol, or a date range with no trading data. Using simulated "
+            "sample data instead."
+        )
+        return _generate_sample_data(tickers, start_date, end_date), True
+
+    df = pd.DataFrame(series)
+    df.index = pd.to_datetime(df.index)
+    df = df.dropna(how="all")
+
+    if failed:
+        st.warning(
+            f"No data returned for: {', '.join(failed)}. This usually means "
+            "Yahoo Finance had no data for that symbol/date range, or (on "
+            "Streamlit Cloud) is temporarily rate-limiting requests. "
+            "These tickers were excluded from the analysis."
+        )
+
+    return df, False
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def download_etf_data(tickers: list, start_date: str, end_date: str, price_field: str = "Close") -> pd.DataFrame:
     """
     Download historical price data for a list of ETF tickers.
@@ -107,44 +163,13 @@ def download_etf_data(tickers: list, start_date: str, end_date: str, price_field
     -- callers must check which of their requested tickers are actually
     present in the returned columns. Falls back to fully simulated sample
     data only if *every* requested ticker fails to download.
+
+    NOTE: a fully-simulated-fallback result is NOT distinguishable from
+    live data via `.empty` (it is never empty) -- callers that need to
+    reliably know whether sample data was used must call
+    download_etf_data_with_status() instead.
     """
-    if not tickers:
-        return pd.DataFrame()
-
-    series = {}
-    failed = []
-
-    for ticker in tickers:
-        col = _download_single_ticker(ticker, start_date, end_date, price_field)
-        if col is None:
-            failed.append(ticker)
-        else:
-            series[ticker] = col
-
-    if not series:
-        # Every single ticker failed -- fall back to simulated sample data
-        # so the rest of the app remains usable (e.g. offline development).
-        st.warning(
-            f"Could not download live data for any requested ticker "
-            f"({', '.join(tickers)}). This is commonly caused by Yahoo "
-            "Finance rate-limiting on Streamlit Cloud, an invalid ticker "
-            "symbol, or a date range with no trading data. Using simulated "
-            "sample data instead."
-        )
-        return _generate_sample_data(tickers, start_date, end_date)
-
-    df = pd.DataFrame(series)
-    df.index = pd.to_datetime(df.index)
-    df = df.dropna(how="all")
-
-    if failed:
-        st.warning(
-            f"No data returned for: {', '.join(failed)}. This usually means "
-            "Yahoo Finance had no data for that symbol/date range, or (on "
-            "Streamlit Cloud) is temporarily rate-limiting requests. "
-            "These tickers were excluded from the analysis."
-        )
-
+    df, _ = download_etf_data_with_status(tickers, start_date, end_date, price_field)
     return df
 
 

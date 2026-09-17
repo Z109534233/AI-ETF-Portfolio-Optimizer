@@ -50,6 +50,7 @@ from src.ui import (
     region_selector, region_etf_options, region_etf_multiselect, region_benchmark_selector,
     hero_metric_panel, insight_panel,
 )
+from src.risk_free_rate import get_cached_risk_free_rate, format_rate_provenance
 from src.i18n import (
     t, t_country, get_language, t_portfolio_view, t_trend_signal,
     t_etf_risk_level, t_etf_return_label, t_etf_verdict_return,
@@ -124,10 +125,18 @@ with st.sidebar:
         # Market-aware benchmark selector (Global ETF Universe + Benchmark
         # Architecture round): region-keyed, so a benchmark can never be a
         # ticker unavailable in the current market -- see src/ui.py.
-        benchmark = region_benchmark_selector(
+        benchmark, _ = region_benchmark_selector(
             selected_region, etf_options, t("field_benchmark_etf"), help_text=t("etf_benchmark_help"),
         )
-        risk_free_rate = st.slider(t("field_risk_free_rate_pct"), 0.0, 10.0, 5.0, 0.25) / 100
+        _rf_info = get_cached_risk_free_rate()
+        if "_etf_risk_free_rate_shadow" not in st.session_state:
+            st.session_state["_etf_risk_free_rate_shadow"] = round(_rf_info["rate"] * 100, 2)
+        risk_free_rate = st.slider(
+            t("field_risk_free_rate_pct"), 0.0, 10.0,
+            st.session_state["_etf_risk_free_rate_shadow"], 0.25, key="etf_risk_free_rate_slider",
+        ) / 100
+        st.session_state["_etf_risk_free_rate_shadow"] = risk_free_rate * 100
+        st.caption(format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))
 
     render_sidebar_footer()
 
@@ -259,7 +268,8 @@ with st.expander(t("etf_methodology_title"), expanded=False):
         f"{t('etf_methodology_history_value', ticker=_focus_ticker, start=_etf_meth_start, end=_etf_meth_end, days=len(_focus_p))}\n"
         f"- **{t('etf_methodology_annualization_label')}** — {t('etf_methodology_annualization_value')}\n"
         f"- **{t('etf_methodology_benchmark_label')}** — {benchmark}\n"
-        f"- **{t('etf_methodology_rfr_label')}** — {t('etf_methodology_rfr_value', rf=f'{risk_free_rate:.2%}')}\n"
+        f"- **{t('etf_methodology_rfr_label')}** — "
+        f"{t('etf_methodology_rfr_value', rf=f'{risk_free_rate:.2%}', provenance=format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))}\n"
         f"- **{t('etf_methodology_rfr_usage_label')}** — {t('etf_methodology_rfr_usage_value')}\n"
         f"- **{t('etf_methodology_data_source_label')}** — {t('etf_methodology_data_source_value')}\n"
         f"- **{t('etf_methodology_limitation_label')}** — {t('etf_methodology_limitation_value')}"

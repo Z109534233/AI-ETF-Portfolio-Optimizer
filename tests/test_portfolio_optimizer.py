@@ -3736,7 +3736,14 @@ def test_wsr_j_no_redundant_market_data_downloads_between_workspaces():
     from unittest.mock import patch
     import src.data_loader as dl_mod
 
-    dl_mod.download_etf_data.clear()  # start from a clean st.cache_data slate
+    # download_etf_data() now delegates to the separately-cached
+    # download_etf_data_with_status() (Issue #46 review item 1) -- clearing
+    # only download_etf_data()'s own cache leaves that inner cache warm, so
+    # a prior test's identical-args call can still short-circuit this one
+    # without ever reaching _download_single_ticker. Both must be cleared
+    # to start from a genuinely clean slate.
+    dl_mod.download_etf_data.clear()
+    dl_mod.download_etf_data_with_status.clear()
     call_count = {"n": 0}
     real_fetch = dl_mod._download_single_ticker
 
@@ -4265,15 +4272,23 @@ def test_rr_f2_optimizer_page_uses_pills_variant():
 
 
 # ── item G: explicit risk-free-rate methodology bullet ───────────────────
-def test_rr_g1_methodology_states_current_rfr_and_scope():
+def test_rr_g1_methodology_states_current_rfr_and_scope(monkeypatch):
+    # Issue #45 item 3: the rf default is now live-fetched (FRED DGS3MO),
+    # so this test mocks a deterministic value rather than asserting
+    # today's actual live rate (which a test must never hard-code).
+    import src.risk_free_rate as rf_mod
+    fixed = {"rate": 0.0411, "observed_date": "2026-09-14", "series_id": "DGS3MO",
+             "source": "FRED", "status": "live", "reason": None}
+    monkeypatch.setattr(rf_mod, "get_cached_risk_free_rate", lambda: fixed)
+
     at = _setup_ef_page(lang="en")
     exc = at.exception[0] if at.exception else None
     check("RR-G1.no_exception", exc is None, str(exc))
     if exc:
         return
     corpus = "\n".join(m.value for m in at.markdown)
-    check("RR-G1.shows_current_rfr_5pct", "5.00%" in corpus, "")
-    check("RR-G1.states_not_synced_to_treasury", "does not automatically sync a live Treasury yield" in corpus, "")
+    check("RR-G1.shows_current_rfr_mocked_rate", "4.11%" in corpus, "")
+    check("RR-G1.states_live_fred_provenance", "FRED" in corpus and "DGS3MO" in corpus, "")
     check("RR-G1.scopes_to_sharpe_and_max_sharpe_objective",
           "Maximum Sharpe Ratio method's optimization objective" in corpus, "")
     check("RR-G1.does_not_imply_effect_on_other_objectives",
