@@ -557,6 +557,139 @@ def backtest_portfolio(prices_df: pd.DataFrame, weights: dict,
     return result
 
 
+DEFAULT_BOOTSTRAP_SEED = 42
+DEFAULT_N_BOOTSTRAP = 200
+# Minimum successful (converged) bootstrap solves required before summary
+# percentile statistics are reported -- below this, a 5th/95th percentile
+# estimate is too noisy to be meaningful, so no summary is fabricated from
+# too few points (Issue #50).
+MIN_BOOTSTRAP_SUCCESSES_FOR_SUMMARY = 20
+
+
+def _bootstrap_weight_summary_stats(weights_matrix: np.ndarray, tickers: list) -> dict:
+    """Per-ETF summary statistics (median, IQR, 5th/95th percentile, min/max)
+    of successful bootstrap weight draws. `weights_matrix` has shape
+    (n_successful, n_assets), one row per successful resample."""
+    summary = {}
+    for i, ticker in enumerate(tickers):
+        col = weights_matrix[:, i]
+        p5, p25, p50, p75, p95 = np.percentile(col, [5, 25, 50, 75, 95])
+        summary[ticker] = {
+            "median": float(p50),
+            "p25": float(p25),
+            "p75": float(p75),
+            "iqr": float(p75 - p25),
+            "p5": float(p5),
+            "p95": float(p95),
+            "min": float(col.min()),
+            "max": float(col.max()),
+        }
+    return summary
+
+
+def bootstrap_max_sharpe_weight_stability(
+    returns_df: pd.DataFrame,
+    risk_free_rate: float = 0.05,
+    min_weight: float = 0.0,
+    max_weight: float = 1.0,
+    allow_short: bool = False,
+    n_bootstrap: int = DEFAULT_N_BOOTSTRAP,
+    seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> dict:
+    """Bootstrap sensitivity analysis of Maximum Sharpe Ratio weights
+    (Issue #50), motivated by Michaud (1989), "The Markowitz Optimization
+    Enigma: Is 'Optimized' Optimal?", Financial Analysts Journal, on
+    mean-variance optimization's sensitivity to input estimation error.
+    This is a general-purpose bootstrap sensitivity check only -- it does
+    NOT implement Michaud's patented/proprietary "Resampled Efficiency"
+    method, nor any other proprietary resampled-efficient-frontier method.
+
+    `returns_df` is the historical DAILY RETURN matrix already aligned
+    across the selected assets (same convention as run_optimization()'s
+    `prices_df.pct_change(fill_method=None).dropna(how="all")`).
+
+    Each of `n_bootstrap` resamples draws `len(returns_df)` calendar ROWS
+    jointly with replacement (the same day's return across every asset is
+    kept together) -- never resampling each asset's column independently
+    -- so same-day cross-asset dependence (the correlation structure) is
+    preserved in every resample. For each resample, mean daily returns and
+    annualized covariance are computed with the SAME conventions as
+    run_optimization() (arithmetic mean; sample covariance x252; a 1e-8
+    diagonal ridge for numerical solvability), and the SAME
+    optimize_max_sharpe() objective is re-solved with the current
+    `risk_free_rate`/`min_weight`/`max_weight`/`allow_short`.
+
+    A resample whose SLSQP solve does not converge is skipped entirely --
+    never replaced with an equal-weight fallback -- so the returned
+    distribution only ever contains genuine optimized solutions.
+
+    Returns a dict with:
+      - "tickers": list[str]
+      - "attempted": int (always == n_bootstrap)
+      - "successful": int (count of converged solves actually included)
+      - "seed": int, "n_bootstrap": int (echoed inputs, for UI/reproducibility)
+      - "weights_by_ticker": {ticker: [w1, w2, ...]} -- one entry per
+        SUCCESSFUL resample, aligned across tickers by position
+      - "summary": {ticker: {median, p25, p75, iqr, p5, p95, min, max}} or
+        None when `successful` < MIN_BOOTSTRAP_SUCCESSES_FOR_SUMMARY (never
+        a summary fabricated from too few solves)
+    """
+    tickers = list(returns_df.columns)
+    n_assets = len(tickers)
+    n_days = len(returns_df)
+    returns_values = returns_df.values
+    rng = np.random.default_rng(seed)
+
+    successful_rows = []
+    for _ in range(n_bootstrap):
+        # Joint row resampling: ONE set of row indices is drawn and applied
+        # to every asset column together, so a resampled "day" always keeps
+        # every asset's actual same-day return -- this is what preserves
+        # cross-asset dependence. Resampling each column with its own
+        # independent random indices would destroy that dependence instead.
+        row_idx = rng.integers(0, n_days, size=n_days)
+        sample = returns_values[row_idx, :]
+
+        mean_returns = sample.mean(axis=0)
+        cov = np.atleast_2d(np.cov(sample, rowvar=False)) * 252
+        if cov.shape != (n_assets, n_assets):
+            continue
+        cov = cov + np.eye(n_assets) * 1e-8
+        if not np.isfinite(mean_returns).all() or not np.isfinite(cov).all():
+            continue
+
+        try:
+            weights, converged = optimize_max_sharpe(
+                mean_returns, cov, risk_free_rate, min_weight, max_weight, allow_short
+            )
+        except (np.linalg.LinAlgError, ValueError):
+            continue
+        if not converged:
+            continue
+        successful_rows.append(weights)
+
+    successful = len(successful_rows)
+    weights_matrix = np.array(successful_rows) if successful_rows else np.zeros((0, n_assets))
+    weights_by_ticker = {
+        ticker: weights_matrix[:, i].tolist() if successful else []
+        for i, ticker in enumerate(tickers)
+    }
+    summary = (
+        _bootstrap_weight_summary_stats(weights_matrix, tickers)
+        if successful >= MIN_BOOTSTRAP_SUCCESSES_FOR_SUMMARY else None
+    )
+
+    return {
+        "tickers": tickers,
+        "attempted": n_bootstrap,
+        "successful": successful,
+        "seed": seed,
+        "n_bootstrap": n_bootstrap,
+        "weights_by_ticker": weights_by_ticker,
+        "summary": summary,
+    }
+
+
 REFERENCE_STRATEGY_METHODS = ("Equal Weight", "Maximum Sharpe Ratio", "Minimum Volatility")
 
 

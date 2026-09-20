@@ -762,6 +762,11 @@ TRANSLATIONS = {
         "opt_methodology_short_note_off": "",
         "opt_methodology_backtest_label": "回測類型",
         "opt_methodology_backtest_value": "固定配置歷史回測",
+        # Localized sentence-ending punctuation appended directly after
+        # opt_methodology_backtest_value -- kept as its own key (not
+        # hardcoded inline) so a Chinese label is never followed by a
+        # half-width English period (Issue #50).
+        "opt_methodology_backtest_sep": "。",
         "opt_methodology_backtest_desc": "系統將「目前這次最佳化」產生的單一權重組合，套用於整段歷史價格區間以計算假設性價值路徑。這並非逐步向前（walk-forward）回測——權重從未依各歷史時點當時可得的資料重新最佳化，因此並不代表這個策略在實際時間中會如何被選擇與再平衡。",
         "opt_methodology_rfr_label": "無風險利率假設",
         "opt_methodology_rfr_value": "目前無風險利率假設為 {provenance}。滑桿預設值取自即時 FRED DGS3MO 三個月期公債殖利率；若無法取得即時資料，則改用 Yahoo Finance ^IRX 次要代理指標，再無法取得時才改用備用預設值並明確標示為備用值。此利率用於上方 KPI 卡片顯示的夏普比率計算，以及「最大夏普比率」方法的最佳化目標函數；對於等權重配置、最低波動率、風險平價與目標報酬率等其餘方法，其最佳化目標函數本身並不使用這項假設。使用者仍可自行調整此數值。",
@@ -771,6 +776,33 @@ TRANSLATIONS = {
         "opt_covariance_cond_unavailable": "無法計算",
         "opt_methodology_validation_pass": "最佳化後驗證通過：權重總和為 100%、符合設定的限制條件，且顯示的報酬率／波動率／夏普比率與這些權重在數值上一致。",
         "opt_methodology_validation_fail": "最佳化後驗證發現不一致之處：{issues}",
+
+        # ── Portfolio Optimizer: Bootstrap Weight Stability (Issue #50) ──
+        # On-demand sensitivity analysis, only offered for Maximum Sharpe
+        # Ratio -- see bootstrap_max_sharpe_weight_stability() in
+        # src/portfolio_optimizer.py, the single source of truth this panel
+        # and tests/test_bootstrap_weight_stability.py both read from.
+        "opt_bootstrap_title": "Bootstrap 權重穩定度",
+        "opt_bootstrap_explanation": "此分析以歷史每日報酬列進行 200 次聯合重抽樣，並在每次樣本上重新執行相同的最大夏普比率最佳化。權重分布越寬，代表配置對樣本估計誤差越敏感；這不是未來報酬預測，也不代表某一檔 ETF 本身「錯誤」。",
+        "opt_bootstrap_button": "分析權重穩定度",
+        "opt_bootstrap_running": "正在執行 200 次 Bootstrap 重抽樣最佳化……",
+        "opt_bootstrap_seed_note": "使用固定亂數種子 {seed}，對歷史每日報酬列進行 {n} 次聯合重抽樣（同一天所有 ETF 的報酬一起被抽出），確保結果可重現。",
+        "opt_bootstrap_success_ratio": "成功收斂次數：{successful} / {attempted}",
+        "opt_bootstrap_chart_title": "各 ETF 的 Bootstrap 權重分布",
+        "opt_bootstrap_table_col_etf": "ETF",
+        "opt_bootstrap_table_col_median": "中位數",
+        "opt_bootstrap_table_col_p25": "第 25 百分位",
+        "opt_bootstrap_table_col_p75": "第 75 百分位",
+        "opt_bootstrap_table_col_iqr": "四分位距（IQR）",
+        "opt_bootstrap_table_col_p5": "第 5 百分位",
+        "opt_bootstrap_table_col_p95": "第 95 百分位",
+        "opt_bootstrap_table_col_min": "最小值",
+        "opt_bootstrap_table_col_max": "最大值",
+        "opt_bootstrap_insufficient_note": "成功收斂的重抽樣次數過少（{successful} / {attempted}），不足以計算可靠的統計摘要，因此未顯示摘要數據。",
+        "opt_bootstrap_interpretation_title": "如何解讀這項分析",
+        "opt_bootstrap_interpretation_note": "權重分布越寬，代表此配置對預期報酬／共變異數估計誤差越敏感。若集中的點估計搭配健康的共變異數條件數，這可作為「角落解並非導因於共變異數矩陣病態」的證據，但本分析並不能單獨證明角落解僅由預期報酬（μ）的估計誤差造成，僅為與此假設一致的敏感度證據。樣本內夏普比率較高，並不代表樣本外的權重會更穩定。本分析屬於自助法（Bootstrap）敏感度分析，並非未來報酬預測。",
+        "opt_bootstrap_michaud_citation": "本分析的研究動機源自 Michaud, R. O. (1989)，《The Markowitz Optimization Enigma: Is 'Optimized' Optimal?》，Financial Analysts Journal，該文探討均值-變異數最佳化對輸入估計誤差的敏感性。本功能並未實作 Michaud 的「Resampled Efficiency（重抽樣效率前緣）」專利／專屬方法，僅為一般性、非專屬的自助法權重穩定度檢視。",
+        "opt_bootstrap_max_sharpe_only_note": "此分析僅適用於「最大夏普比率」方法，因為只有此方法的角落解會受到預期報酬估計誤差的顯著影響。",
 
         # ── Investment Simulator Page ────────────────────────────────────
         "sim_title": "投資模擬",
@@ -2455,6 +2487,7 @@ TRANSLATIONS = {
         "opt_methodology_short_note_off": "",
         "opt_methodology_backtest_label": "Backtest Type",
         "opt_methodology_backtest_value": "Fixed-Allocation Historical Backtest",
+        "opt_methodology_backtest_sep": ". ",
         "opt_methodology_backtest_desc": "The CURRENT optimized weights are applied unchanged across the entire historical window shown. This is NOT a walk-forward backtest -- weights are never re-optimized using only data available as of each historical date, so it does not reflect how the strategy would actually have been selected and rebalanced in real time.",
         "opt_methodology_rfr_label": "Risk-Free Rate Assumption",
         "opt_methodology_rfr_value": "The current risk-free rate assumption is {provenance}. The slider defaults to the latest live FRED DGS3MO (3-Month Treasury) yield when available; if a live observation cannot be fetched, it falls back to a secondary Yahoo Finance ^IRX proxy, and only then to a disclosed default value. It is used in the Sharpe ratio shown in the KPI cards above and in the Maximum Sharpe Ratio method's optimization objective; the optimization objective for Equal Weight, Minimum Volatility, Risk Parity, and Target Return does not use this assumption. You can still override this value manually.",
@@ -2464,6 +2497,29 @@ TRANSLATIONS = {
         "opt_covariance_cond_unavailable": "not computable",
         "opt_methodology_validation_pass": "Post-optimization validation passed: weights sum to 100%, respect the configured bounds, and the displayed return/volatility/Sharpe ratio are numerically consistent with these weights.",
         "opt_methodology_validation_fail": "Post-optimization validation found an inconsistency: {issues}",
+
+        # ── Portfolio Optimizer: Bootstrap Weight Stability (Issue #50) ──
+        "opt_bootstrap_title": "Bootstrap Weight Stability",
+        "opt_bootstrap_explanation": "This analysis performs 200 joint resamples of the historical daily-return rows, re-running the same Maximum Sharpe Ratio optimization on each resample. Wider weight dispersion means the allocation is more sensitive to sample estimation error; this is not a forecast of future returns, and it does not mean any single ETF is itself \"wrong.\"",
+        "opt_bootstrap_button": "Analyze Weight Stability",
+        "opt_bootstrap_running": "Running 200 bootstrap resample optimizations...",
+        "opt_bootstrap_seed_note": "Uses a fixed random seed of {seed} across {n} joint resamples of the historical daily-return rows (every ETF's return on a given day is resampled together), so results are reproducible.",
+        "opt_bootstrap_success_ratio": "Successful convergences: {successful} / {attempted}",
+        "opt_bootstrap_chart_title": "Bootstrap Weight Distribution by ETF",
+        "opt_bootstrap_table_col_etf": "ETF",
+        "opt_bootstrap_table_col_median": "Median",
+        "opt_bootstrap_table_col_p25": "25th Percentile",
+        "opt_bootstrap_table_col_p75": "75th Percentile",
+        "opt_bootstrap_table_col_iqr": "IQR",
+        "opt_bootstrap_table_col_p5": "5th Percentile",
+        "opt_bootstrap_table_col_p95": "95th Percentile",
+        "opt_bootstrap_table_col_min": "Min",
+        "opt_bootstrap_table_col_max": "Max",
+        "opt_bootstrap_insufficient_note": "Too few resamples converged ({successful} / {attempted}) to compute a reliable summary, so summary statistics are not shown.",
+        "opt_bootstrap_interpretation_title": "How to Read This Analysis",
+        "opt_bootstrap_interpretation_note": "Wider weight dispersion means this allocation is more sensitive to expected-return/covariance estimation noise. A concentrated point estimate alongside a healthy covariance condition number is evidence that a corner solution need not be caused by covariance-matrix ill-conditioning -- but this analysis alone does not prove the corner solution is caused solely by expected-return (mu) estimation error; it is only sensitivity evidence consistent with that explanation. A higher in-sample Sharpe ratio does not imply more stable out-of-sample weights. This is a bootstrap sensitivity analysis, not a forecast of future returns.",
+        "opt_bootstrap_michaud_citation": "This analysis is motivated by Michaud, R. O. (1989), \"The Markowitz Optimization Enigma: Is 'Optimized' Optimal?\", Financial Analysts Journal, which examines mean-variance optimization's sensitivity to input estimation error. This feature does NOT implement Michaud's patented/proprietary \"Resampled Efficiency\" method -- it is a general-purpose, non-proprietary bootstrap weight-stability check only.",
+        "opt_bootstrap_max_sharpe_only_note": "This analysis only applies to the Maximum Sharpe Ratio method, since only that method's corner solutions are materially affected by expected-return estimation error.",
 
         # ── Investment Simulator Page ────────────────────────────────────
         "sim_title": "Investment Simulator",

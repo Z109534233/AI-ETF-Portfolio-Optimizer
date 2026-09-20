@@ -212,7 +212,7 @@ def test_methodology_i18n_keys_exist_in_both_languages():
         "opt_methodology_optimizer_desc_equal_weight", "opt_methodology_optimizer_desc_risk_parity",
         "opt_methodology_short_note_on", "opt_methodology_short_note_off",
         "opt_methodology_backtest_label", "opt_methodology_backtest_value",
-        "opt_methodology_backtest_desc",
+        "opt_methodology_backtest_sep", "opt_methodology_backtest_desc",
         "opt_methodology_validation_pass", "opt_methodology_validation_fail",
     ]
     for key in new_keys:
