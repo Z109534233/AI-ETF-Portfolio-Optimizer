@@ -189,12 +189,18 @@ _platform_lang = get_language()
 # size, never a proven, verified count of tickers with actual live price
 # coverage (that separate, low-emphasis stat is added below ONLY when a
 # real audit snapshot exists -- see src.etf_coverage).
+# Feature-module count excludes Home itself (Issue #48 item 4): Home is
+# navigation, not one of the platform's analysis/feature modules, so this
+# must be len(NAV_ITEMS) - 1 to stay consistent with the "Why Choose This
+# Platform" section below (1 featured + 7 supporting items = 8), never the
+# raw len(NAV_ITEMS) (which includes Home and would show 9).
+_feature_module_count = len(NAV_ITEMS) - 1
 if _platform_lang == "zh-TW":
     _platform_stats_title = "平台統計"
     _platform_stats = [
         (str(len(get_all_tickers())), "ETF 清單規模"),
         (str(len(get_countries())), "涵蓋市場"),
-        (str(len(NAV_ITEMS)), "分析模組"),
+        (str(_feature_module_count), "功能模組"),
         ("2", "支援語言"),
     ]
 else:
@@ -202,7 +208,7 @@ else:
     _platform_stats = [
         (str(len(get_all_tickers())), "Registered ETF Universe"),
         (str(len(get_countries())), "Markets"),
-        (str(len(NAV_ITEMS)), "Analysis Modules"),
+        (str(_feature_module_count), "Feature Modules"),
         ("2", "Languages"),
     ]
 
