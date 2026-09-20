@@ -115,6 +115,63 @@ PORTFOLIO_OPTIMIZATION_METHODOLOGY = {
 
 
 # ============================================================================
+# Bootstrap Weight Stability (Issue #50)
+# ============================================================================
+# Describes src/portfolio_optimizer.py's
+# bootstrap_max_sharpe_weight_stability() as actually implemented -- see
+# that function for the code this metadata must always match.
+
+BOOTSTRAP_WEIGHT_STABILITY_METHODOLOGY = {
+    "scope": "Maximum Sharpe Ratio only -- this method's corner solutions are the ones materially affected by expected-return estimation error",
+    "on_demand": "runs only when the user clicks the button; never runs automatically on page load or rerun",
+    "resampling": (
+        "n_bootstrap resamples (default 200) of the historical DAILY RETURN "
+        "matrix; each resample draws entire calendar ROWS jointly with "
+        "replacement, so every asset's return on a given resampled day is "
+        "kept together -- never resampling each asset's column "
+        "independently, which would destroy the actual cross-asset "
+        "dependence structure"
+    ),
+    "per_resample_estimation": (
+        "arithmetic mean of the resampled daily returns and sample "
+        "covariance x252 (same conventions as run_optimization()), with the "
+        "same 1e-8 diagonal ridge for numerical solvability"
+    ),
+    "objective": "the SAME optimize_max_sharpe() objective, with the current risk_free_rate/min_weight/max_weight/allow_short forwarded unchanged",
+    "failed_solves": "a resample whose SLSQP solve does not converge is skipped entirely -- never replaced with an equal-weight fallback in the reported distribution",
+    "determinism": "a fixed default seed (42) via numpy.random.default_rng, surfaced in the UI, so results are reproducible for the same inputs; a different seed produces a different (but still reproducible) resample path",
+    "summary_statistics": (
+        "median, 25th/75th percentile, IQR, 5th/95th percentile, and min/max "
+        "of the successful bootstrap weight draws per ETF; no summary is "
+        "shown when fewer than MIN_BOOTSTRAP_SUCCESSES_FOR_SUMMARY (20) "
+        "resamples converge"
+    ),
+    "interpretation": {
+        "dispersion": "wide bootstrap dispersion means the allocation is sensitive to expected-return/covariance estimation noise",
+        "covariance_vs_mean": (
+            "a concentrated point estimate alongside a healthy covariance "
+            "condition number is evidence that a corner solution need not "
+            "be caused by covariance-matrix ill-conditioning -- it is NOT "
+            "proof that expected-return (mu) estimation error alone caused "
+            "the corner solution, only sensitivity evidence consistent with "
+            "that explanation"
+        ),
+        "in_sample_sharpe": "a higher in-sample Sharpe ratio does not imply more stable out-of-sample weights",
+        "not_a_forecast": "this is a bootstrap SENSITIVITY analysis of the optimizer's inputs, not a forecast of future returns or weights",
+    },
+    "citation": (
+        "motivated by Michaud, R. O. (1989), \"The Markowitz Optimization "
+        "Enigma: Is 'Optimized' Optimal?\", Financial Analysts Journal, on "
+        "mean-variance optimization's sensitivity to input estimation "
+        "error -- this feature does NOT implement Michaud's patented/"
+        "proprietary \"Resampled Efficiency\" method or any other "
+        "proprietary resampled-efficient-frontier method; it is a "
+        "general-purpose, non-proprietary bootstrap weight-stability check"
+    ),
+}
+
+
+# ============================================================================
 # M2 -- Simulation & Backtest Methodology
 # ============================================================================
 # Describes src/simulator.py as actually implemented -- see

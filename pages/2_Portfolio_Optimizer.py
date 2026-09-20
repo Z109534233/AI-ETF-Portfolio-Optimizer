@@ -38,7 +38,8 @@ from src.etf_database import to_yahoo_symbol, rename_yahoo_columns, get_etf
 from src.fx import convert_prices_to_base_currency
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
-    compute_efficient_frontier, build_backtest_reference_plan
+    compute_efficient_frontier, build_backtest_reference_plan,
+    bootstrap_max_sharpe_weight_stability, DEFAULT_BOOTSTRAP_SEED, DEFAULT_N_BOOTSTRAP,
 )
 from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
@@ -50,7 +51,8 @@ from src.risk_analytics import holdings_overlap_matrix
 from src.report_generator import generate_portfolio_report
 from src.charts import (
     efficient_frontier_chart, allocation_donut_chart,
-    portfolio_growth_chart, drawdown_chart, apply_dark_theme
+    portfolio_growth_chart, drawdown_chart, apply_dark_theme,
+    bootstrap_weight_stability_box_chart,
 )
 from src.utils import (
     load_css, page_header, disclaimer_box, dataframe_to_csv,
@@ -756,8 +758,8 @@ with st.expander(t("opt_methodology_title"), expanded=False):
         f"- **{t('opt_methodology_history_label')}** — "
         f"{t('opt_methodology_history_value', start=_hist_start, end=_hist_end, days=len(prices_df))}\n"
         f"- **{t('opt_methodology_optimizer_label')}** — {_optimizer_desc}\n"
-        f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
-        f"{t('opt_methodology_backtest_desc')}\n"
+        f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}"
+        f"{t('opt_methodology_backtest_sep')}{t('opt_methodology_backtest_desc')}\n"
         f"- **{t('opt_methodology_rfr_label')}** — "
         f"{t('opt_methodology_rfr_value', provenance=format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))}\n"
         f"- **{t('opt_fx_methodology_label')}** — {_fx_currency_line}"
@@ -768,6 +770,87 @@ with st.expander(t("opt_methodology_title"), expanded=False):
             st.success(t("opt_methodology_validation_pass"))
         else:
             st.warning(t("opt_methodology_validation_fail", issues="; ".join(_validation.get("issues", []))))
+
+# ── Bootstrap Weight Stability (Issue #50) ──────────────────────────────────
+# On-demand sensitivity analysis, offered ONLY for Maximum Sharpe Ratio --
+# this is the only method whose corner (bounds-hugging) solutions are
+# materially driven by expected-return estimation error (see
+# src/portfolio_optimizer.py's bootstrap_max_sharpe_weight_stability() and
+# src/methodology.py's BOOTSTRAP_WEIGHT_STABILITY_METHODOLOGY, the single
+# source of truth this panel and tests/test_bootstrap_weight_stability.py
+# both read from). Kept strictly behind a button -- 200 extra SLSQP solves
+# must never run on an ordinary page rerun -- and cached in session_state
+# keyed on every input that fully determines the result (asset selection /
+# returns window / risk-free rate / bounds / short flag / seed / n_bootstrap,
+# via the same `run_inputs` fingerprint already used to invalidate opt_result),
+# so re-opening the expander or an unrelated rerun never silently recomputes it.
+if optimization_method == "Maximum Sharpe Ratio":
+    with st.expander(t("opt_bootstrap_title"), expanded=False):
+        st.caption(t("opt_bootstrap_explanation"))
+        st.caption(t("opt_bootstrap_max_sharpe_only_note"))
+
+        if "opt_bootstrap_result" not in st.session_state:
+            st.session_state.opt_bootstrap_result = None
+        if "opt_bootstrap_inputs" not in st.session_state:
+            st.session_state.opt_bootstrap_inputs = None
+
+        _bootstrap_inputs = run_inputs + (DEFAULT_BOOTSTRAP_SEED, DEFAULT_N_BOOTSTRAP)
+        if st.button(t("opt_bootstrap_button"), key="opt_bootstrap_run_btn"):
+            if st.session_state.opt_bootstrap_inputs != _bootstrap_inputs:
+                with st.spinner(t("opt_bootstrap_running")):
+                    _bootstrap_returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
+                    st.session_state.opt_bootstrap_result = bootstrap_max_sharpe_weight_stability(
+                        _bootstrap_returns_df, risk_free_rate=risk_free_rate,
+                        min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
+                        n_bootstrap=DEFAULT_N_BOOTSTRAP, seed=DEFAULT_BOOTSTRAP_SEED,
+                    )
+                    st.session_state.opt_bootstrap_inputs = _bootstrap_inputs
+
+        # Only show a result that was actually computed from the CURRENT
+        # inputs -- e.g. a stale result from before the user changed the
+        # sidebar settings is never displayed as if it still applied.
+        _bootstrap_result = (
+            st.session_state.opt_bootstrap_result
+            if st.session_state.opt_bootstrap_inputs == _bootstrap_inputs else None
+        )
+        if _bootstrap_result is not None:
+            st.caption(t(
+                "opt_bootstrap_seed_note",
+                seed=_bootstrap_result["seed"], n=_bootstrap_result["n_bootstrap"],
+            ))
+            st.plotly_chart(
+                bootstrap_weight_stability_box_chart(_bootstrap_result["weights_by_ticker"]),
+                use_container_width=True, key="opt_bootstrap_box_chart",
+            )
+            st.markdown(t(
+                "opt_bootstrap_success_ratio",
+                successful=_bootstrap_result["successful"], attempted=_bootstrap_result["attempted"],
+            ))
+            _bootstrap_summary = _bootstrap_result["summary"]
+            if _bootstrap_summary is None:
+                st.warning(t(
+                    "opt_bootstrap_insufficient_note",
+                    successful=_bootstrap_result["successful"], attempted=_bootstrap_result["attempted"],
+                ))
+            else:
+                _bootstrap_summary_rows = [
+                    {
+                        t("opt_bootstrap_table_col_etf"): _tkr,
+                        t("opt_bootstrap_table_col_median"): f"{_bootstrap_summary[_tkr]['median']:.2%}",
+                        t("opt_bootstrap_table_col_p25"): f"{_bootstrap_summary[_tkr]['p25']:.2%}",
+                        t("opt_bootstrap_table_col_p75"): f"{_bootstrap_summary[_tkr]['p75']:.2%}",
+                        t("opt_bootstrap_table_col_iqr"): f"{_bootstrap_summary[_tkr]['iqr']:.2%}",
+                        t("opt_bootstrap_table_col_p5"): f"{_bootstrap_summary[_tkr]['p5']:.2%}",
+                        t("opt_bootstrap_table_col_p95"): f"{_bootstrap_summary[_tkr]['p95']:.2%}",
+                        t("opt_bootstrap_table_col_min"): f"{_bootstrap_summary[_tkr]['min']:.2%}",
+                        t("opt_bootstrap_table_col_max"): f"{_bootstrap_summary[_tkr]['max']:.2%}",
+                    }
+                    for _tkr in _bootstrap_result["tickers"]
+                ]
+                st.dataframe(pd.DataFrame(_bootstrap_summary_rows), hide_index=True, use_container_width=True)
+                st.markdown(f"**{t('opt_bootstrap_interpretation_title')}**")
+                st.caption(t("opt_bootstrap_interpretation_note"))
+                st.caption(t("opt_bootstrap_michaud_citation"))
 
 # ── Shared Portfolio Diagnosis rendering helpers (used by both Overview's
 # compact snapshot and Backtest & Risk's detailed view -- PRODUCT SPEC
