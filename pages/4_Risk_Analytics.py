@@ -35,8 +35,8 @@ from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state, style_signed_columns, chart_caption,
     ai_interpret_button, region_selector, region_etf_options, region_etf_multiselect,
-    region_benchmark_selector, render_current_portfolio_handoff, results_hero,
-    info_badge,
+    index_benchmark_for_region, index_benchmark_label, render_current_portfolio_handoff,
+    results_hero, info_badge,
 )
 from src.theme import COLORS, color_for_ticker
 from src.i18n import t, t_country, get_language
@@ -103,20 +103,20 @@ with st.sidebar:
             if total_w > 0:
                 weights_input = {k: v / total_w for k, v in weights_input.items()}
 
-    # Market-aware benchmark selector -- see the identical fix + rationale
-    # in pages/1_ETF_Analysis.py (Global ETF Universe + Benchmark
-    # Architecture round: fixes the confirmed "Taiwan region + QQQ
-    # benchmark" bug, which affected this page too via the exact same
-    # hardcoded-DEFAULT_ETFS/index=2 pattern).
-    # Benchmark self-inclusion fix (Issue #45 item 5): a benchmark that IS
-    # itself one of this page's selected ETFs makes alpha/beta partly
-    # self-referential -- exclude the current selection from the benchmark
-    # options wherever an external option remains.
-    benchmark, _benchmark_was_reset = region_benchmark_selector(
-        selected_region, etf_options, t("field_benchmark"), exclude=selected_etfs,
-    )
-    if _benchmark_was_reset:
-        st.caption(t("risk_benchmark_reset_notice", benchmark=benchmark))
+    # External market-index benchmark (Issue #48 item 3): unlike
+    # region_benchmark_selector() (still used by ETF Analysis), the
+    # benchmark here is a FIXED external index, never drawn from the
+    # page's own selectable ETF universe. This closes the "SPY excluded ->
+    # falls back to whatever ETF sorts first (e.g. SCHD)" bug: an index
+    # ticker is never one of `selected_etfs`, so it is never excluded and
+    # never needs an ETF fallback at all. "All Regions" has no single
+    # sensible index and is deliberately left undefined -- see
+    # index_benchmark_for_region()'s docstring in src/ui.py.
+    benchmark = index_benchmark_for_region(selected_region)
+    if benchmark:
+        st.caption(f"{t('field_benchmark')}: {index_benchmark_label(benchmark, get_language())}")
+    else:
+        st.caption(f"{t('field_benchmark')}: {t('risk_benchmark_index_scope_undefined')}")
 
     _rf_info = get_cached_risk_free_rate()
     if "_risk_free_rate_shadow" not in st.session_state:
@@ -141,10 +141,10 @@ if not selected_etfs:
 
 # ── Data Loading ──────────────────────────────────────────────────────────────
 with st.spinner(t("msg_downloading_market_data")):
-    all_tickers = list(set(selected_etfs + [benchmark]))
+    all_tickers = list(set(selected_etfs + ([benchmark] if benchmark else [])))
     # Map each display ticker to its actual Yahoo Finance-fetchable symbol
     # (e.g. "0050" -> "0050.TW"). Tickers not in the ETF database (including
-    # the US-only benchmark) pass through unchanged.
+    # the ^GSPC/^TWII/^FTSE index benchmark) pass through unchanged.
     yahoo_tickers = [to_yahoo_symbol(tk) for tk in all_tickers]
     raw_prices = download_etf_data(yahoo_tickers, str(start_date), str(end_date))
 
@@ -155,7 +155,11 @@ if raw_prices.empty:
 prices = clean_price_data(raw_prices)
 prices = rename_yahoo_columns(prices)
 etf_prices = prices[[tk for tk in selected_etfs if tk in prices.columns]]
-bench_prices = prices[benchmark].dropna() if benchmark in prices.columns else None
+bench_prices = prices[benchmark].dropna() if benchmark and benchmark in prices.columns else None
+# Human-readable "S&P 500 Index (^GSPC)"-style label used everywhere the
+# benchmark identity is shown to the user (Issue #48 item 3) -- an index
+# ticker alone would read as just another ETF symbol.
+benchmark_label = index_benchmark_label(benchmark, get_language()) if benchmark else t("risk_benchmark_index_scope_undefined")
 
 if etf_prices.empty:
     error_state(t("msg_no_price_data_title"), t("msg_no_price_data_desc"))
@@ -331,23 +335,26 @@ else:
         ))
         st.markdown(t("risk_var_backtest_no_pass_claim"))
 
-# Benchmark metrics -- never computed against a benchmark that is itself
-# one of the page's selected ETFs (Issue #45 item 5): region_benchmark_selector()
-# already excludes the current selection wherever an external option
-# remains, but if every available option in this market IS a selected ETF,
-# `benchmark` falls back to being one anyway -- in that case alpha/beta
-# must be shown as unavailable, never silently computed self-referentially.
-_benchmark_is_constituent = benchmark in etf_prices.columns
-if _benchmark_is_constituent:
+# Benchmark metrics -- computed ONLY against the fixed external market
+# index (Issue #48 item 3), never against a selectable ETF, so there is no
+# self-inclusion case to guard against here (an index ticker is never one
+# of `selected_etfs`). If the region has no defined index, or the index
+# couldn't be downloaded, benchmark metrics are shown as unavailable with
+# a clear reason -- never silently substituted with an ETF from the
+# selectable universe.
+if benchmark is None:
     section_header(t("risk_benchmark_metrics_title"))
-    st.info(t("risk_benchmark_self_reference_unavailable", benchmark=benchmark))
-elif bench_prices is not None and len(bench_prices) > 10:
+    st.info(t("risk_benchmark_index_scope_undefined"))
+elif bench_prices is None or len(bench_prices) <= 10:
+    section_header(t("risk_benchmark_metrics_title"))
+    st.info(t("risk_benchmark_index_unavailable", benchmark=benchmark_label))
+else:
     b = beta(port_prices, bench_prices)
     a = alpha(port_prices, bench_prices, risk_free_rate)
     te = tracking_error(port_prices, bench_prices)
     ir = information_ratio(port_prices, bench_prices)
 
-    section_header(t("risk_benchmark_metrics_title"), t("risk_benchmark_metrics_sub", benchmark=benchmark))
+    section_header(t("risk_benchmark_metrics_title"), t("risk_benchmark_metrics_sub", benchmark=benchmark_label))
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(metric_card_html(t("metric_beta"), f"{b:.2f}", color=COLORS["primary"]), unsafe_allow_html=True)
@@ -358,7 +365,7 @@ elif bench_prices is not None and len(bench_prices) > 10:
         # Methodology panel below), so an unlabeled "0.09%" figure could
         # otherwise be misread as a daily figure.
         st.markdown(metric_card_html(
-            t("metric_alpha_annualized", benchmark=benchmark), f"{a:.2%}",
+            t("metric_alpha_annualized", benchmark=benchmark_label), f"{a:.2%}",
             color=COLORS["success"] if a >= 0 else COLORS["danger"],
         ), unsafe_allow_html=True)
     with col3:
@@ -424,12 +431,12 @@ with chart_card(t("risk_detail_card")):
                                                name=f"{t('chart_beta')} ({window}d)",
                                                line=dict(color=COLORS["primary"], width=2)))
                 fig_beta.add_hline(y=1.0, line_dash="dash", line_color=COLORS["text_muted"], opacity=0.6)
-                fig_beta.update_layout(title=t("chart_rolling_beta_window", benchmark=benchmark, window=window),
+                fig_beta.update_layout(title=t("chart_rolling_beta_window", benchmark=benchmark_label, window=window),
                                         xaxis_title=t("chart_date"), yaxis_title=t("chart_beta"))
                 st.plotly_chart(apply_dark_theme(fig_beta), use_container_width=True, key="risk_rolling_beta")
                 chart_caption(t("risk_caption_rolling_beta"))
                 _beta_context = (
-                    f"Rolling {window}-day beta of {col_sel} vs {benchmark}: "
+                    f"Rolling {window}-day beta of {col_sel} vs {benchmark_label}: "
                     f"latest {rolling_beta.iloc[-1]:.2f}, average {rolling_beta.mean():.2f}, "
                     f"range {rolling_beta.min():.2f} to {rolling_beta.max():.2f}."
                 )
@@ -592,7 +599,7 @@ else:
 
 # Portfolio beta shown ONCE above the table (Issue #43 item C) instead of
 # being repeated identically on every scenario row.
-st.markdown(f"**{t('risk_stress_beta_line', beta=f'{b_val:.2f}', benchmark=benchmark)}**")
+st.markdown(f"**{t('risk_stress_beta_line', beta=f'{b_val:.2f}', benchmark=benchmark_label)}**")
 
 stress_rows = []
 for _scenario in STRESS_SCENARIOS.values():

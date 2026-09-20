@@ -194,7 +194,7 @@ def test_risk_methodology_i18n_keys_exist_in_both_languages():
         "risk_stress_methodology_note", "risk_scenario_note_hypothetical",
         "risk_scenario_note_2008", "risk_scenario_note_covid", "risk_scenario_note_tech_bubble",
         "risk_methodology_alpha_label", "risk_methodology_alpha_desc",
-        "risk_benchmark_reset_notice", "risk_benchmark_self_reference_unavailable",
+        "risk_benchmark_index_scope_undefined", "risk_benchmark_index_unavailable",
         "metric_alpha_annualized",
     ]
     for key in new_keys:

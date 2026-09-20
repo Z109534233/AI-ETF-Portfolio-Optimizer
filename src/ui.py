@@ -280,6 +280,53 @@ def region_benchmark_selector(selected_region: str, etf_options: list, label: st
     return benchmark, was_reset
 
 
+# ── Index Benchmark Abstraction (Risk Analytics only, Issue #48 item 3) ──
+# region_benchmark_selector() above draws its candidate list from the
+# page's own selectable ETF universe -- fine for ETF Analysis (comparing
+# one ETF against another is a legitimate use case there), but economically
+# arbitrary for Risk Analytics: excluding a selected SPY/VOO could leave
+# `candidate_options[0]` as an unrelated style ETF (e.g. SCHD), which is
+# never a deliberate choice, just whatever sorts first. A real market
+# index (never a member of the selectable ETF universe) can't suffer this
+# failure mode -- it is never excluded and never falls back to an
+# arbitrary ETF. Kept intentionally small: only the regions actually in
+# get_countries() are defined; "All Regions" has no single sensible index
+# and is deliberately left undefined (benchmark metrics become
+# unavailable with a clear reason, never silently substituted).
+INDEX_BENCHMARKS = {
+    "United States": "^GSPC",   # S&P 500 Index
+    "Taiwan": "^TWII",          # Taiwan Capitalization Weighted Stock Index
+    "United Kingdom": "^FTSE",  # FTSE 100 Index
+}
+
+_INDEX_BENCHMARK_LABELS = {
+    "^GSPC": {"en": "S&P 500 Index", "zh-TW": "S&P 500 指數"},
+    "^TWII": {"en": "Taiwan Weighted Index", "zh-TW": "台灣加權指數"},
+    "^FTSE": {"en": "FTSE 100 Index", "zh-TW": "富時 100 指數"},
+}
+
+
+def index_benchmark_for_region(selected_region: str):
+    """The fixed external market-index ticker for `selected_region`, or
+    None when no single index is defined for that scope (currently only
+    "All Regions"). Callers MUST treat None as "no benchmark available for
+    this scope" and show a clear reason -- never substitute an ETF from
+    the selectable universe."""
+    return INDEX_BENCHMARKS.get(selected_region)
+
+
+def index_benchmark_label(benchmark_ticker: str, lang: str = "en") -> str:
+    """Human-readable "S&P 500 Index (^GSPC)"-style label for an index
+    benchmark ticker, so captions/methodology text identify it as an
+    index, never implying it's one more selectable ETF."""
+    if not benchmark_ticker:
+        return ""
+    names = _INDEX_BENCHMARK_LABELS.get(benchmark_ticker)
+    if not names:
+        return benchmark_ticker
+    return f"{names.get(lang, names['en'])} ({benchmark_ticker})"
+
+
 def _build_etf_label_map(tickers: list, include_market: bool = False) -> dict:
     """Precompute {ticker: "0050 — 元大台灣50"} for every ticker up front,
     in one pass -- this is what a multiselect's `format_func` should read

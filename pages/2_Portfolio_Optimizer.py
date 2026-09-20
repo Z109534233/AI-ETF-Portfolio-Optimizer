@@ -536,7 +536,7 @@ result = st.session_state.opt_result
 prices_df = st.session_state.prices_df
 
 if result is None or prices_df is None or prices_df.empty:
-    st.info(t("msg_configure_and_run", action=t("btn_run_optimization")))
+    st.info(t("opt_msg_configure_and_run", action=t("btn_run_optimization")))
     st.stop()
 
 # Stale-result guard (Issue #24 item 5): the sidebar has changed since this
@@ -759,7 +759,7 @@ with st.expander(t("opt_methodology_title"), expanded=False):
         f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}. "
         f"{t('opt_methodology_backtest_desc')}\n"
         f"- **{t('opt_methodology_rfr_label')}** — "
-        f"{t('opt_methodology_rfr_value', rf=f'{risk_free_rate:.2%}', provenance=format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))}\n"
+        f"{t('opt_methodology_rfr_value', provenance=format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))}\n"
         f"- **{t('opt_fx_methodology_label')}** — {_fx_currency_line}"
     )
     _validation = result.get("validation")

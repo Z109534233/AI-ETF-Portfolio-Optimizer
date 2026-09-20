@@ -269,7 +269,7 @@ with st.expander(t("etf_methodology_title"), expanded=False):
         f"- **{t('etf_methodology_annualization_label')}** — {t('etf_methodology_annualization_value')}\n"
         f"- **{t('etf_methodology_benchmark_label')}** — {benchmark}\n"
         f"- **{t('etf_methodology_rfr_label')}** — "
-        f"{t('etf_methodology_rfr_value', rf=f'{risk_free_rate:.2%}', provenance=format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))}\n"
+        f"{t('etf_methodology_rfr_value', provenance=format_rate_provenance(_rf_info, get_language(), selected_rate=risk_free_rate))}\n"
         f"- **{t('etf_methodology_rfr_usage_label')}** — {t('etf_methodology_rfr_usage_value')}\n"
         f"- **{t('etf_methodology_data_source_label')}** — {t('etf_methodology_data_source_value')}\n"
         f"- **{t('etf_methodology_limitation_label')}** — {t('etf_methodology_limitation_value')}"
