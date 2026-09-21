@@ -30,6 +30,7 @@ metric that isn't present in it.
 """
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -85,6 +86,25 @@ def _assumption_source_label(source: str) -> str:
     }
     key = mapping.get(source)
     return t(key) if key else (source or "—")
+
+
+def format_as_of_taipei(value) -> str:
+    """Format an aware timestamp as minute-level Taipei local time for UI.
+
+    Raw ISO timestamps remain available in context["as_of"] for fingerprints
+    and machine-readable metadata; this helper is display-only.
+    """
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    if not isinstance(value, datetime):
+        return str(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    local = value.astimezone(ZoneInfo("Asia/Taipei"))
+    return t("ai_as_of_taipei", datetime=local.strftime("%Y-%m-%d %H:%M"))
 
 
 # ============================================================================
@@ -216,8 +236,10 @@ def build_advisor_context(
     ever applies to "current" since those cached runs are keyed to the
     canonical portfolio's strategy/market, not to an arbitrary custom one.
     """
+    as_of_utc = datetime.now(timezone.utc)
     context = {
-        "as_of": datetime.now(timezone.utc).isoformat(),
+        "as_of": as_of_utc.isoformat(),
+        "as_of_display": format_as_of_taipei(as_of_utc),
         "portfolio_source": portfolio_source,
     }
 
