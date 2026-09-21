@@ -133,16 +133,37 @@ with st.sidebar:
             and current_portfolio.get("expected_return") is not None
             and current_portfolio.get("volatility") is not None
         )
+        _equal_weight_stats_available = (
+            current_portfolio is not None
+            and current_portfolio.get("equal_weight_reference_return") is not None
+            and current_portfolio.get("equal_weight_reference_volatility") is not None
+        )
+        _is_max_sharpe_portfolio = bool(
+            current_portfolio
+            and str(current_portfolio.get("strategy", "")).startswith("Maximum Sharpe")
+        )
         _asrc_options = (
             (["Portfolio Historical Statistics"] if _portfolio_stats_available else [])
+            + (["Equal-Weight Historical Reference"] if _equal_weight_stats_available else [])
             + ["Market Scenario", "Custom Assumptions"]
         )
         _asrc_labels = {
             "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+            "Equal-Weight Historical Reference": t("sim_assumption_source_equal_weight"),
             "Market Scenario": t("sim_market_scenario"),
             "Custom Assumptions": t("sim_assumption_source_custom"),
         }
-        _asrc_default = "Portfolio Historical Statistics" if _portfolio_stats_available else "Market Scenario"
+        # A fresh Maximum-Sharpe handoff defaults to the non-optimized
+        # equal-weight historical reference when available. The user can
+        # still explicitly inspect the optimized in-sample estimate, but the
+        # simulator no longer treats that selected optimum as the default
+        # long-run return assumption.
+        if _is_max_sharpe_portfolio and _equal_weight_stats_available:
+            _asrc_default = "Equal-Weight Historical Reference"
+        elif _portfolio_stats_available:
+            _asrc_default = "Portfolio Historical Statistics"
+        else:
+            _asrc_default = "Market Scenario"
         _ask, _asv = _shadow_default("projection_assumption_source", _asrc_default)
         _asrc_index = _asrc_options.index(_asv) if _asv in _asrc_options else 0
         projection_assumption_source = st.selectbox(
@@ -156,9 +177,10 @@ with st.sidebar:
             st.caption(t("sim_portfolio_stats_unavailable"))
 
         if projection_assumption_source == "Portfolio Historical Statistics":
-            # These are historical estimates from Portfolio Optimizer used
-            # AS simulation assumptions -- never described as a prediction
-            # of future returns (spec section 6).
+            # Historical estimates from Portfolio Optimizer. For Maximum
+            # Sharpe this is an in-sample selected optimum, so explicitly
+            # disclose optimizer's-curse / selection-bias risk rather than
+            # treating it as a neutral future-return assumption.
             annual_return = current_portfolio["expected_return"]
             annual_volatility = current_portfolio["volatility"]
             st.caption(
@@ -166,6 +188,16 @@ with st.sidebar:
                 f"{t('metric_expected_volatility')}: {annual_volatility:.2%}"
             )
             st.caption(t("sim_portfolio_stats_source_note"))
+            if _is_max_sharpe_portfolio:
+                st.warning(t("sim_max_sharpe_optimizer_curse_warning"))
+        elif projection_assumption_source == "Equal-Weight Historical Reference":
+            annual_return = current_portfolio["equal_weight_reference_return"]
+            annual_volatility = current_portfolio["equal_weight_reference_volatility"]
+            st.caption(
+                f"{t('metric_expected_annual_return')}: {annual_return:.2%} | "
+                f"{t('metric_expected_volatility')}: {annual_volatility:.2%}"
+            )
+            st.caption(t("sim_equal_weight_source_note"))
         elif projection_assumption_source == "Market Scenario":
             _scenario_labels = {k: t_market_scenario(k) for k in MARKET_SCENARIOS}
             _scenario_options = list(MARKET_SCENARIOS.keys())
@@ -549,6 +581,11 @@ if run_btn or st.session_state.sim_result is None:
             "annual_fee": annual_fee,
             "n_simulations": n_simulations,
             "assumption_source": projection_assumption_source,
+            "assumption_is_in_sample_optimized": bool(
+                projection_assumption_source == "Portfolio Historical Statistics"
+                and current_portfolio
+                and str(current_portfolio.get("strategy", "")).startswith("Maximum Sharpe")
+            ),
             "portfolio_strategy": current_portfolio.get("strategy") if current_portfolio else None,
         }
         st.session_state.sim_fingerprint = _mc_fingerprint
@@ -576,6 +613,7 @@ sim_params = st.session_state.sim_params
 # a re-run. This is what actually produced the numbers below.
 _asrc_display_labels = {
     "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+    "Equal-Weight Historical Reference": t("sim_assumption_source_equal_weight"),
     "Market Scenario": t("sim_market_scenario"),
     "Custom Assumptions": t("sim_assumption_source_custom"),
 }
