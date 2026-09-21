@@ -35,6 +35,9 @@ import src.market_intelligence as mi_mod
 from src.market_intelligence import (
     generate_market_summary, _generate_rule_based_summary, _market_summary_prompt,
     stars_to_impact_label, fetch_fear_greed_index,
+    derive_market_direction, derive_vix_regime, calculate_market_impact,
+    generate_today_ai_summary, generate_todays_market_action,
+    get_todays_major_events, get_economic_calendar,
 )
 from src.ui import star_rating_html, _star_salience_class
 
@@ -81,6 +84,115 @@ def mocked_market_data(monkeypatch):
         "russell": {"label": "Russell 2000", "available": False},
         "vix": {"label": "VIX", "available": True, "price": 15.0, "change": 0.5, "change_pct": 3.4},
     })
+
+
+# ── Professor review items 5–8: price-first summary / VIX / calendar / impact ──
+
+def _all_green_indices():
+    return {
+        "sp500": {"available": True, "price": 6900.0, "change_pct": 0.97},
+        "nasdaq": {"available": True, "price": 23000.0, "change_pct": 1.57},
+        "dow": {"available": True, "price": 47000.0, "change_pct": 0.40},
+        "russell": {"available": True, "price": 2600.0, "change_pct": 0.55},
+        "vix": {"available": True, "price": 14.61, "change_pct": -4.20},
+    }
+
+
+def test_market_direction_uses_actual_indices_not_headline_sentiment():
+    state = derive_market_direction(_all_green_indices())
+    assert state["available"] is True
+    assert state["direction"] == "Higher"
+    assert state["positive_count"] == 4
+    assert state["count"] == 4
+    assert state["average_change_pct"] > 0
+
+
+def test_top_summary_says_indices_moved_higher_even_when_headlines_are_negative(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "en")
+    negative_news = [
+        {
+            "title": "Stocks face renewed tariff pressure",
+            "impact": "Negative",
+            "publisher": "Reuters",
+            "link": "https://example.com/a",
+            "published": datetime(2026, 9, 21, 10, 0),
+        }
+    ]
+    summary = generate_today_ai_summary(negative_news, indices=_all_green_indices())
+    overview = summary["sections"][0]["text"]
+    assert "Major equity indices moved higher" in overview
+    assert "under pressure" not in overview.lower()
+
+
+def test_vix_14_61_and_falling_is_low_falling_not_elevated():
+    state = derive_vix_regime(_all_green_indices())
+    assert state["available"] is True
+    assert state["level"] == "Low"
+    assert state["trend"] == "Falling"
+
+
+def test_market_action_does_not_invent_upcoming_fed_decision(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "en")
+    news = [{
+        "title": "Federal Reserve policy outlook remains in focus",
+        "impact": "Neutral",
+        "publisher": "Reuters",
+        "link": "https://example.com/fed",
+        "published": datetime(2026, 9, 21, 12, 0),
+    }]
+    action = generate_todays_market_action(news, indices=_all_green_indices())
+    text = " ".join(action["items"])
+    assert "upcoming Fed" not in text
+    assert "verified Fed meeting schedule" in text
+    assert "VIX is 14.61" in text
+    assert "elevated" not in text.lower()
+
+
+def test_illustrative_calendar_never_claims_this_week_or_upcoming(monkeypatch):
+    labels = {
+        "mi_cal_example_timing": "Illustrative timing (date not verified)",
+        "mi_cal_high": "High",
+        "mi_cal_medium": "Medium",
+    }
+    monkeypatch.setattr(mi_mod, "t", lambda key, **kwargs: labels.get(key, key))
+    rows = get_economic_calendar()
+    assert rows
+    assert all(row["when"] == "Illustrative timing (date not verified)" for row in rows)
+    assert all("Upcoming" not in row["when"] and "This Week" not in row["when"] for row in rows)
+
+
+def test_commentary_fed_headline_is_downweighted_vs_reported_decision():
+    direct = [{
+        "title": "Federal Reserve cuts interest rates by 25 basis points",
+        "impact": "Positive",
+        "publisher": "Reuters",
+        "link": "https://example.com/direct",
+        "published": datetime(2026, 9, 21, 10, 0),
+    }]
+    commentary = [{
+        "title": "Howard Marks says Federal Reserve may cut rates again",
+        "impact": "Neutral",
+        "publisher": "Opinion Desk",
+        "link": "https://example.com/opinion",
+        "published": datetime(2026, 9, 21, 11, 0),
+    }]
+    direct_score = calculate_market_impact(direct)
+    commentary_score = calculate_market_impact(commentary)
+    assert direct_score["category"] == "Interest Rate"
+    assert commentary_score["category"] == "Interest Rate"
+    assert direct_score["breakdown"]["content_type_factor"] == 1.0
+    assert commentary_score["breakdown"]["content_type_factor"] == 0.65
+    assert commentary_score["score"] < direct_score["score"]
+    assert commentary_score["stars"] < direct_score["stars"]
+
+
+def test_major_event_keeps_source_and_publish_time():
+    events = get_todays_major_events(_sample_news(), limit=3)
+    assert events
+    first = events[0]
+    assert first["publisher"]
+    assert first["published"] is not None
+    assert "link" in first
 
 
 # ── Issue #43 item E: raw source headlines stay source-faithful but quoted ──

@@ -72,24 +72,24 @@ try:
     ai_sentiment = calculate_ai_market_sentiment(news_items)
     calendar_events = get_economic_calendar()
     affected_markets = calculate_affected_markets(news_items)
-    today_ai_summary = generate_today_ai_summary(news_items)
+    today_ai_summary = generate_today_ai_summary(news_items, indices=indices)
     market_impact = calculate_market_impact(news_items)
     major_events = get_todays_major_events(news_items, limit=5)
     etf_cards = generate_etf_card_data(news_items)
     news_card_meta = get_news_card_metadata(news_items)
-    todays_market_action = generate_todays_market_action(news_items)
+    todays_market_action = generate_todays_market_action(news_items, indices=indices)
     data_load_failed = False
 except Exception:
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
     affected_etfs, sentiment, calendar_events = [], calculate_market_sentiment([]), []
     ai_sentiment = calculate_ai_market_sentiment([])
     affected_markets = []
-    today_ai_summary = generate_today_ai_summary([])
+    today_ai_summary = generate_today_ai_summary([], indices={})
     market_impact = calculate_market_impact([])
     major_events = []
     etf_cards = generate_etf_card_data([])
     news_card_meta = get_news_card_metadata([])
-    todays_market_action = generate_todays_market_action([])
+    todays_market_action = generate_todays_market_action([], indices={})
     data_load_failed = True
 
 if data_load_failed:
@@ -122,6 +122,11 @@ with tab_overview:
     if major_events:
         event_cols = st.columns(len(major_events))
         for col, event in zip(event_cols, major_events):
+            event_time = (
+                event["published"].strftime("%Y-%m-%d %H:%M")
+                if event.get("published") else "—"
+            )
+            event_source = event.get("publisher") or "—"
             markets_html = "".join(f'<div class="affected-by-item">{m}</div>' for m in event["affected_markets"])
             markets_block = (
                 f'<div class="affected-by-caption">{_markets_caption}</div><div class="affected-by-list">{markets_html}</div>'
@@ -136,6 +141,7 @@ with tab_overview:
                 st.markdown(
                     '<div class="status-card market-impact-card">'
                     f'<div class="status-card-ticker">{event["headline"]}</div>'
+                    f'<div class="news-card-meta"><span>{event_source}</span><span>&middot;</span><span>{event_time}</span></div>'
                     f'<div class="affected-by-caption">{_impact_caption}</div>'
                     f'<div class="status-card-stars">{star_rating_html(event["stars"])}</div>'
                     f'<div class="market-impact-label">{event["category"]}</div>'
@@ -344,7 +350,10 @@ with tab_news:
     # ── AI Market Summary ──────────────────────────────────────────────────
     section_header(t("mi_section_summary_title"))
 
-    summary_result = generate_market_summary(news_items, sentiment, affected_etfs, session_state=st.session_state)
+    summary_result = generate_market_summary(
+        news_items, sentiment, affected_etfs,
+        session_state=st.session_state, indices=indices,
+    )
     with chart_card(t("mi_section_summary_title"), tag=t("ai_tag_generated") if summary_result["source"] == "ai" else t("ai_tag_rule_based")):
         st.markdown(summary_result["text"])
 
