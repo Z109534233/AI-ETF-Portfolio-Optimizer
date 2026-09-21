@@ -124,6 +124,7 @@ def _simulator_context(portfolio: dict, portfolio_source: str,
         future = {
             "available": True,
             "assumption_source": sim_params.get("assumption_source"),
+            "assumption_source_label": _assumption_source_label(sim_params.get("assumption_source")),
             "years": sim_params.get("years"),
             "annual_return": sim_params.get("annual_return"),
             "annual_volatility": sim_params.get("annual_volatility"),
