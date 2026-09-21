@@ -262,12 +262,19 @@ def build_advisor_context(
         "max_drawdown": portfolio.get("max_drawdown"),
         "generated_at": portfolio.get("generated_at"),
     }
+    # Downstream "current holding" logic must use exactly the same material
+    # holdings set. In particular, news impact must never see the original
+    # zero/sub-0.5% optimizer rows and later call them holdings.
+    active_portfolio = dict(portfolio)
+    active_portfolio["weights"] = weights
+    active_portfolio["tickers"] = tickers
+
     context["risk"] = _risk_context(weights, portfolio_prices)
     context["simulator"] = _simulator_context(
-        portfolio, portfolio_source, sim_result, sim_params, hist_result, hist_params
+        active_portfolio, portfolio_source, sim_result, sim_params, hist_result, hist_params
     )
-    context["ml"] = _ml_context(portfolio, portfolio_source, tickers, ml_result, ml_ticker)
-    context["news"] = _news_context(portfolio, tickers, news_items)
+    context["ml"] = _ml_context(active_portfolio, portfolio_source, tickers, ml_result, ml_ticker)
+    context["news"] = _news_context(active_portfolio, tickers, news_items)
     return context
 
 
