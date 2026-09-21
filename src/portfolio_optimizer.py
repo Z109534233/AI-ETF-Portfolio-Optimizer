@@ -604,7 +604,9 @@ def bootstrap_boundary_metrics(
     ticker rather than being broken arbitrarily.
 
     is_boundary_pattern is deliberately descriptive, not predictive:
-    median <= 1% and a material upper tail (p95 >= 20% or max >= 30%).
+    positive inclusion rate >= 5%, median <= 1%, and a material upper tail
+    (p95 >= 20% or max >= 30%). The 5% floor prevents one-off bootstrap
+    appearances (e.g. 1/200 = 0.5%) from being described as "quite sensitive".
     """
     tickers = list(weights_by_ticker.keys())
     if not tickers or not summary:
@@ -636,6 +638,7 @@ def bootstrap_boundary_metrics(
         )
         is_boundary_pattern = bool(
             np.isfinite([median, p95, max_weight]).all()
+            and positive_inclusion_rate >= 0.05
             and median <= 0.01
             and (p95 >= 0.20 or max_weight >= 0.30)
         )
