@@ -31,6 +31,7 @@ from src.i18n import TRANSLATIONS
 
 PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 T_CALL_RE = re.compile(r"\bt\(\s*[\"'](\w+)[\"']")
+CJK_RE = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 
 
 def _placeholders(value) -> set:
@@ -77,6 +78,18 @@ def test_no_forbidden_stale_terminology_in_translations():
             for term in FORBIDDEN_TERMS:
                 if term in value:
                     hits.append((lang, key, term, value))
+    assert hits == [], hits
+
+
+def test_english_translations_do_not_leak_chinese_copy():
+    # The language selector intentionally shows both languages in one label.
+    allow_cjk_keys = {"language_label"}
+    hits = []
+    for key, value in TRANSLATIONS["en"].items():
+        if key in allow_cjk_keys or not isinstance(value, str):
+            continue
+        if CJK_RE.search(value):
+            hits.append((key, value))
     assert hits == [], hits
 
 

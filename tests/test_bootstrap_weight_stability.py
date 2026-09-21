@@ -420,6 +420,42 @@ def test_boundary_metrics_ignore_numerical_dust_and_count_tied_maxima():
     assert abs(metrics["A"]["top_holding_rate"] - 0.50) < 1e-12
 
 
+def test_boundary_pattern_requires_at_least_five_percent_inclusion():
+    draws_a = [0.0] * 199 + [0.60]  # 1 / 200 = 0.5%
+    draws_b = [1.0] * 199 + [0.40]
+    summary = {
+        "A": {"median": 0.0, "p95": 0.0, "max": 0.60},
+        "B": {"median": 1.0, "p95": 1.0, "max": 1.0},
+    }
+    metrics = bootstrap_boundary_metrics(
+        {"A": draws_a, "B": draws_b},
+        summary,
+    )
+    assert metrics["A"]["positive_inclusion_rate"] == pytest.approx(0.005)
+    assert metrics["A"]["is_boundary_pattern"] is False
+
+
+def test_bootstrap_click_preserves_optimization_result_and_current_portfolio():
+    at = _setup_bootstrap_page(lang="en", method="Maximum Sharpe Ratio")
+    exc = at.exception[0] if at.exception else None
+    assert exc is None, str(exc)
+
+    before_result = dict(at.session_state["opt_result"])
+    before_weights = dict(before_result["weights"])
+    before_portfolio_id = at.session_state["opt_portfolio_id"]
+
+    at = _click_bootstrap_button(at)
+    exc = at.exception[0] if at.exception else None
+    assert exc is None, str(exc)
+
+    after_result = at.session_state["opt_result"]
+    assert after_result is not None
+    assert after_result["weights"] == before_weights
+    assert at.session_state["opt_portfolio_id"] == before_portfolio_id
+    assert at.session_state["current_portfolio"]["weights"] == before_weights
+    assert at.session_state["opt_bootstrap_result"] is not None
+
+
 def test_point_estimate_overlay_is_single_scatter_trace_and_localized():
     from src.charts import bootstrap_weight_stability_box_chart
 
