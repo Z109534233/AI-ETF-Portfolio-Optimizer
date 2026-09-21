@@ -705,7 +705,8 @@ with st.container(border=True):
             f"Median final value: ${summary['median_final']:,.0f}, "
             f"Optimistic (90th pct): ${summary['optimistic_final']:,.0f}, "
             f"Pessimistic (10th pct): ${summary['pessimistic_final']:,.0f}, "
-            f"Probability of a positive outcome: {summary['probability_profit']:.1%}"
+            f"Share of simulated paths above total contributions under these assumptions: "
+            f"{summary['probability_profit']:.1%}"
         )
         ai_interpret_button("sim_monte_carlo_ai_interpret", st.session_state, _mc_context)
 
@@ -757,7 +758,8 @@ with st.container(border=True):
             f"Median final value: ${summary['median_final']:,.0f}, "
             f"Optimistic (90th pct): ${summary['optimistic_final']:,.0f}, "
             f"Pessimistic (10th pct): ${summary['pessimistic_final']:,.0f}, "
-            f"Probability of a positive outcome: {summary['probability_profit']:.1%}"
+            f"Share of simulated paths above total contributions under these assumptions: "
+            f"{summary['probability_profit']:.1%}"
         )
         ai_interpret_button("sim_value_distribution_ai_interpret", st.session_state, _dist_context)
 
