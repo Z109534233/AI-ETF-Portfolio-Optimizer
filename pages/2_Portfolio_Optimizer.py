@@ -815,9 +815,12 @@ if optimization_method == "Maximum Sharpe Ratio":
             if st.session_state.opt_bootstrap_inputs == _bootstrap_inputs else None
         )
         if _bootstrap_result is not None:
+            _bootstrap_data_as_of = prices_df.index.max().strftime("%Y-%m-%d")
             st.caption(t(
                 "opt_bootstrap_seed_note",
-                seed=_bootstrap_result["seed"], n=_bootstrap_result["n_bootstrap"],
+                seed=_bootstrap_result["seed"],
+                n=_bootstrap_result["n_bootstrap"],
+                data_as_of=_bootstrap_data_as_of,
             ))
             st.plotly_chart(
                 bootstrap_weight_stability_box_chart(
@@ -837,13 +840,17 @@ if optimization_method == "Maximum Sharpe Ratio":
                     successful=_bootstrap_result["successful"], attempted=_bootstrap_result["attempted"],
                 ))
             else:
+                # Stable internal column names let Streamlit control narrow
+                # widths independently from the localized display labels. Keeping every
+                # column explicitly small/medium avoids the unnecessary horizontal
+                # scrollbar that the auto-sized long percentile headers produced.
                 _bootstrap_summary_rows = [
                     {
-                        t("opt_bootstrap_table_col_etf"): _tkr,
-                        t("opt_bootstrap_table_col_point_estimate"): f"{weights.get(_tkr, 0.0):.2%}",
-                        t("opt_bootstrap_table_col_median"): f"{_bootstrap_summary[_tkr]['median']:.2%}",
-                        t("opt_bootstrap_table_col_iqr"): f"{_bootstrap_summary[_tkr]['iqr']:.2%}",
-                        t("opt_bootstrap_table_col_p5_p95"): (
+                        "etf": _tkr,
+                        "point_estimate": f"{weights.get(_tkr, 0.0):.2%}",
+                        "median": f"{_bootstrap_summary[_tkr]['median']:.2%}",
+                        "iqr": f"{_bootstrap_summary[_tkr]['iqr']:.2%}",
+                        "p5_p95": (
                             f"{_bootstrap_summary[_tkr]['p5']:.2%}–"
                             f"{_bootstrap_summary[_tkr]['p95']:.2%}"
                         ),
@@ -854,6 +861,23 @@ if optimization_method == "Maximum Sharpe Ratio":
                     pd.DataFrame(_bootstrap_summary_rows),
                     hide_index=True,
                     use_container_width=True,
+                    column_config={
+                        "etf": st.column_config.TextColumn(
+                            t("opt_bootstrap_table_col_etf"), width="small"
+                        ),
+                        "point_estimate": st.column_config.TextColumn(
+                            t("opt_bootstrap_table_col_point_estimate"), width="small"
+                        ),
+                        "median": st.column_config.TextColumn(
+                            t("opt_bootstrap_table_col_median"), width="small"
+                        ),
+                        "iqr": st.column_config.TextColumn(
+                            t("opt_bootstrap_table_col_iqr"), width="small"
+                        ),
+                        "p5_p95": st.column_config.TextColumn(
+                            t("opt_bootstrap_table_col_p5_p95"), width="medium"
+                        ),
+                    },
                 )
                 st.markdown(f"**{t('opt_bootstrap_interpretation_title')}**")
                 st.caption(t("opt_bootstrap_interpretation_note"))
