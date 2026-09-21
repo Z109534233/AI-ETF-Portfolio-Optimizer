@@ -628,7 +628,7 @@ _setup_portfolio_label = (
 # the assumption-transparency guarantee above is unchanged.
 setup_summary_bar([
     f"{t('sim_assumption_source_label')}: {_asrc_display_labels.get(sim_params.get('assumption_source'), '—')}",
-    f"{sim_params['years']} {t('chart_years')}",
+    t("sim_year_count", years=sim_params["years"]),
     f"${sim_params['initial_investment']:,.0f} + ${sim_params['monthly_contribution']:,.0f}/mo",
     f"{sim_params['annual_return']:.1%} / {sim_params['annual_volatility']:.1%}",
     f"{sim_params['n_simulations']:,} {t('sim_setup_unit_simulations')}",
@@ -696,7 +696,10 @@ with st.container(border=True):
     ])
 
     with tab1:
-        fig_mc = monte_carlo_paths_chart(paths_df, t("chart_monte_carlo_simulation") + f" — {years}")
+        fig_mc = monte_carlo_paths_chart(
+            paths_df,
+            f"{t('chart_monte_carlo_simulation')} — {t('sim_year_count', years=years)}",
+        )
         st.plotly_chart(fig_mc, use_container_width=True, key="sim_monte_carlo_paths")
         chart_caption(t("sim_monte_carlo_chart_caption"))
         _mc_context = (
