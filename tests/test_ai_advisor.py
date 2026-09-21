@@ -29,6 +29,7 @@ import pytest
 
 from src.ai_advisor import (
     build_advisor_context, generate_rule_based_narrative, _build_prompt, advisor_fingerprint,
+    format_as_of_taipei,
 )
 from src.machine_learning import run_ml_pipeline
 from src.i18n import set_language
@@ -442,6 +443,33 @@ def test_prompt_handles_fully_missing_context_without_raising():
     prompt = _build_prompt(context, "Long-term Growth", "Moderate", 10)
     assert isinstance(prompt, str)
     assert "not available" in prompt.lower()
+
+
+def test_as_of_display_formats_utc_timestamp_as_taipei_time():
+    from datetime import datetime, timezone
+
+    try:
+        set_language("zh-TW")
+        dt = datetime(2026, 9, 21, 15, 11, 36, tzinfo=timezone.utc)
+        assert format_as_of_taipei(dt) == "2026-09-21 23:11（台北時間）"
+
+        set_language("en")
+        assert format_as_of_taipei(dt) == "2026-09-21 23:11 (Taipei time)"
+    finally:
+        set_language("en")
+
+
+def test_advisor_context_keeps_machine_timestamp_and_human_taipei_display():
+    try:
+        set_language("zh-TW")
+        context = build_advisor_context(
+            portfolio=_sample_portfolio(), portfolio_source="current"
+        )
+        assert "T" in context["as_of"] and "+00:00" in context["as_of"]
+        assert "台北時間" in context["as_of_display"]
+        assert "T" not in context["as_of_display"]
+    finally:
+        set_language("en")
 
 
 # ── advisor_fingerprint: cache invalidation must track everything the
