@@ -571,6 +571,24 @@ _diag = portfolio_diagnosis(weights)
 backtest_df = backtest_portfolio(prices_df, weights, investment_amount)
 _cp_max_drawdown = maximum_drawdown(backtest_df["Portfolio Value"]) if not backtest_df.empty else None
 
+# Non-optimized historical reference for downstream projection pages.
+# Reuses the SAME prices, return estimator and covariance conventions as the
+# current optimizer run, but assigns 1/N directly instead of selecting the
+# in-sample Maximum-Sharpe optimum. Investment Simulator can therefore offer
+# a less selection-biased historical reference without inventing a capital-
+# market forecast or re-downloading data.
+_equal_weight_reference = run_optimization(
+    prices_df, "Equal Weight", risk_free_rate=risk_free_rate
+)
+_equal_weight_reference_return = (
+    _equal_weight_reference.get("expected_return")
+    if not _equal_weight_reference.get("error") else None
+)
+_equal_weight_reference_volatility = (
+    _equal_weight_reference.get("expected_volatility")
+    if not _equal_weight_reference.get("error") else None
+)
+
 # ── Canonical Current Portfolio ─────────────────────────────────────────────
 # The ONE session-level object representing the current successfully-built
 # portfolio. Downstream pages (Investment Simulator, Risk Analytics) and
@@ -598,6 +616,8 @@ st.session_state.current_portfolio = {
     "expected_return": exp_ret,
     "volatility": exp_vol,
     "sharpe_ratio": sharpe,
+    "equal_weight_reference_return": _equal_weight_reference_return,
+    "equal_weight_reference_volatility": _equal_weight_reference_volatility,
     "max_drawdown": _cp_max_drawdown,
     "largest_position": {"ticker": _diag["largest_ticker"], "weight": _diag["largest_weight"]},
     "effective_holdings": _diag["effective_holdings"],

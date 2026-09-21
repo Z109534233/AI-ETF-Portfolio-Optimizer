@@ -73,3 +73,55 @@ def test_monte_carlo_stale_warning_clears_after_rerun():
     at.run()
     assert at.exception == []
     assert not _stale_warning_shown(at), "after re-running, the stale-result warning must clear"
+
+
+def _max_sharpe_current_portfolio():
+    return {
+        "strategy": "Maximum Sharpe Ratio",
+        "market": "United States",
+        "tickers": ["VOO", "GLD", "BND"],
+        "weights": {"VOO": 0.4142, "GLD": 0.5858, "BND": 0.0},
+        "investment_amount": 10000.0,
+        "expected_return": 0.1729,
+        "volatility": 0.145,
+        "equal_weight_reference_return": 0.081,
+        "equal_weight_reference_volatility": 0.128,
+    }
+
+
+def test_max_sharpe_handoff_defaults_to_non_optimized_equal_weight_reference():
+    at = _apptest_from_file("pages/3_Investment_Simulator.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.session_state["current_portfolio"] = _max_sharpe_current_portfolio()
+    at.run()
+    assert at.exception == []
+
+    source = next(
+        (s for s in at.selectbox if s.key == "projection_assumption_source"), None
+    )
+    assert source is not None
+    assert source.value == "Equal-Weight Historical Reference"
+
+    captions = "\n".join(c.value for c in at.caption)
+    assert "equal-weight (1/N)" in captions
+    warnings = "\n".join(w.value for w in at.warning)
+    assert "optimizer's curse" not in warnings.lower()
+
+
+def test_explicit_max_sharpe_in_sample_projection_source_shows_optimizer_curse_warning():
+    at = _apptest_from_file("pages/3_Investment_Simulator.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.session_state["current_portfolio"] = _max_sharpe_current_portfolio()
+    at.run()
+    assert at.exception == []
+
+    source = next(
+        (s for s in at.selectbox if s.key == "projection_assumption_source"), None
+    )
+    source.set_value("Portfolio Historical Statistics")
+    at.run()
+    assert at.exception == []
+
+    warnings = "\n".join(w.value for w in at.warning)
+    assert "optimizer's curse" in warnings.lower()
+    assert "selection bias" in warnings.lower()

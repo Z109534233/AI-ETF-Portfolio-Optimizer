@@ -31,6 +31,7 @@ from src.ai_advisor import (
     build_advisor_context, generate_rule_based_narrative, _build_prompt, advisor_fingerprint,
 )
 from src.machine_learning import run_ml_pipeline
+from src.i18n import set_language
 
 
 def _sample_portfolio():
@@ -211,7 +212,7 @@ def test_ml_hidden_when_run_errored_reason_is_the_real_error():
         ml_result=ml_result, ml_ticker="QQQ",
     )
     assert context["ml"]["available"] is False
-    assert context["ml"]["reason"] == ml_result["error"]
+    assert ml_result["error"] in context["ml"]["reason"]
 
 
 def test_ml_context_wired_to_real_run_ml_pipeline_output():
@@ -276,6 +277,114 @@ def test_news_unavailable_when_no_items():
     context = build_advisor_context(portfolio=portfolio, portfolio_source="current", news_items=[])
     assert context["news"]["available"] is False
     assert context["news"]["reason"]
+
+
+
+# ── Professor review: material holdings, localization, and profile consistency ──
+
+def test_sub_half_percent_positions_are_not_treated_as_current_holdings():
+    portfolio = {
+        **_sample_portfolio(),
+        "strategy": "Maximum Sharpe Ratio",
+        "tickers": ["VOO", "GLD", "BND", "TLT", "VXUS"],
+        "weights": {
+            "VOO": 0.4142,
+            "GLD": 0.5808,
+            "BND": 0.0040,   # below 0.5% -> not a material holding
+            "TLT": 0.0010,   # below 0.5% -> not a material holding
+            "VXUS": 0.0000,
+        },
+    }
+    context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    assert set(context["portfolio"]["tickers"]) == {"VOO", "GLD"}
+    assert set(context["portfolio"]["weights"]) == {"VOO", "GLD"}
+    assert context["risk"]["concentration"]["selected_holdings"] == 2
+    assert context["risk"]["concentration"]["active_holdings"] == 2
+
+
+def test_news_relevance_ignores_sub_half_percent_positions():
+    portfolio = {
+        **_sample_portfolio(),
+        "strategy": "Maximum Sharpe Ratio",
+        "tickers": ["VOO", "GLD", "BND", "TLT"],
+        "weights": {"VOO": 0.4142, "GLD": 0.5858, "BND": 0.0, "TLT": 0.0},
+    }
+    news_items = [
+        {"title": "Bond yields rise as Treasury market sells off", "impact": "Negative"},
+        {"title": "Gold prices rise on safe-haven demand", "impact": "Positive"},
+    ]
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", news_items=news_items,
+    )
+    tickers_seen = {e["ticker"] for e in context["news"]["affected_holdings"]}
+    assert "BND" not in tickers_seen
+    assert "TLT" not in tickers_seen
+    assert tickers_seen.issubset({"VOO", "GLD"})
+
+
+def test_rule_based_zh_report_has_sequential_sections_and_no_double_type_suffix():
+    previous = "en"
+    try:
+        set_language("zh-TW")
+        portfolio = {
+            **_sample_portfolio(),
+            "strategy": "Maximum Sharpe Ratio",
+            "tickers": ["VOO", "GLD", "BND", "TLT", "VXUS"],
+            "weights": {"VOO": 0.4142, "GLD": 0.5858, "BND": 0.0, "TLT": 0.0, "VXUS": 0.0},
+        }
+        context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+        narrative = generate_rule_based_narrative(
+            context, "Long-term Growth", "Conservative", 10
+        )
+        for n in range(1, 8):
+            assert f"### {n}." in narrative
+        assert "保守型型" not in narrative
+        assert "風險屬性為保守型" in narrative
+        assert "策略：最大夏普比率" in narrative
+        assert "此投資組合包含 2 檔 ETF" in narrative
+        assert "集中於少數持股" in narrative
+        assert "風險屬性不一致" in narrative
+    finally:
+        set_language(previous)
+
+
+def test_rule_based_zh_report_localizes_simulator_source_and_unavailable_reasons():
+    try:
+        set_language("zh-TW")
+        portfolio = {
+            **_sample_portfolio(),
+            "strategy": "Maximum Sharpe Ratio",
+        }
+        sim_result = {
+            "summary": {"median_final": 15000.0, "probability_profit": 1.0}
+        }
+        sim_params = {
+            "portfolio_strategy": "Maximum Sharpe Ratio",
+            "years": 10,
+            "annual_return": 0.17,
+            "annual_volatility": 0.15,
+            "n_simulations": 1000,
+            "assumption_source": "Portfolio Historical Statistics",
+            "assumption_is_in_sample_optimized": True,
+        }
+        context = build_advisor_context(
+            portfolio=portfolio,
+            portfolio_source="current",
+            sim_result=sim_result,
+            sim_params=sim_params,
+        )
+        narrative = generate_rule_based_narrative(
+            context, "Long-term Growth", "Conservative", 10
+        )
+        assert "Portfolio Historical Statistics" not in narrative
+        assert "投資組合歷史統計" in narrative
+        assert "run Investment Simulator" not in narrative
+        assert "no Machine Learning" not in narrative
+        assert "optimizer's curse" in narrative
+        assert "獲利機率約 100.00%" not in narrative
+        assert "模擬路徑中高於累積投入本金的比例" in narrative
+    finally:
+        set_language("en")
 
 
 # ── Narrative grounding: no invented numbers, missing sections handled ──────
