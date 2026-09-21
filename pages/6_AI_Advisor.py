@@ -118,6 +118,10 @@ with st.sidebar:
     st.markdown(f"### {t('ai_investor_profile')}")
     _objective_labels = {k: t_investment_objective(k) for k in INVESTMENT_OBJECTIVE_KEYS}
     _risk_labels = {k: t_risk_level(k) for k in RISK_LEVEL_KEYS}
+    # Keep canonical keys in state/fingerprints/narrative logic; localization
+    # happens only at render time inside src.ai_advisor. This avoids bugs such
+    # as zh-TW "保守型型" and lets deterministic profile-alignment rules test
+    # against the stable "Conservative" key in every language.
     investment_objective = st.selectbox(
         t("ai_investment_objective_label"),
         list(INVESTMENT_OBJECTIVE_KEYS.keys()),
@@ -128,8 +132,6 @@ with st.sidebar:
         list(RISK_LEVEL_KEYS.keys()),
         format_func=lambda x: _risk_labels.get(x, x),
     )
-    investment_objective = t_investment_objective(investment_objective)
-    risk_level = t_risk_level(risk_level)
     investment_horizon = st.slider(t("ai_investment_horizon_years"), 1, 40, 10)
 
     analyse_btn = st.button(t("btn_generate_analysis"), type="primary", use_container_width=True)
@@ -326,8 +328,11 @@ with tab_simulation:
         s = fp["summary"]
         st.markdown(t(
             "ai_sim_future_line", years=fp["years"], median=f"${s.get('median_final', 0):,.0f}",
-            prob=f"{s.get('probability_profit', 0):.1%}", source=fp.get("assumption_source", ""),
+            prob=f"{s.get('probability_profit', 0):.1%}",
+            source=fp.get("assumption_source_label") or fp.get("assumption_source", ""),
         ))
+        if fp.get("assumption_is_in_sample_optimized"):
+            st.markdown(t("ai_sim_optimizer_curse_warning"))
     else:
         st.markdown(t("ai_sim_future_unavailable", reason=fp.get("reason", "")))
     hs = sim_ctx["historical_simulation"]
