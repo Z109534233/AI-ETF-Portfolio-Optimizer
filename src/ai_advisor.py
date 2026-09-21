@@ -35,7 +35,9 @@ import streamlit as st
 
 from src.financial_metrics import portfolio_diagnosis
 from src.risk_analytics import historical_var_cvar
-from src.i18n import t, get_language
+from src.i18n import (
+    t, get_language, t_opt_method, t_investment_objective, t_risk_level,
+)
 from src.openai_service import cached_generate, fingerprint, is_configured
 
 
@@ -53,6 +55,37 @@ _ADVISOR_SYSTEM_INSTRUCTIONS = (
     "number that differs from what was given to you."
 )
 
+# Advisor-specific material-holding threshold requested in the professor
+# review. The optimizer can legitimately leave tiny or exactly-zero weights
+# for selected ETFs; synthesis/news/holding counts must not call those
+# tickers current holdings. This is intentionally stricter than the generic
+# numerical-noise tolerance used by portfolio_diagnosis elsewhere.
+ADVISOR_ACTIVE_WEIGHT_THRESHOLD = 0.005  # 0.5%
+
+
+def _active_weights(weights: dict, threshold: float = ADVISOR_ACTIVE_WEIGHT_THRESHOLD) -> dict:
+    """Filter sub-0.5% positions and renormalize the material holdings."""
+    active = {
+        ticker: float(weight)
+        for ticker, weight in (weights or {}).items()
+        if float(weight) >= threshold
+    }
+    total = sum(active.values())
+    if total <= 0:
+        return {}
+    return {ticker: weight / total for ticker, weight in active.items()}
+
+
+def _assumption_source_label(source: str) -> str:
+    mapping = {
+        "Portfolio Historical Statistics": "sim_assumption_source_portfolio",
+        "Equal-Weight Historical Reference": "sim_assumption_source_equal_weight",
+        "Market Scenario": "sim_market_scenario",
+        "Custom Assumptions": "sim_assumption_source_custom",
+    }
+    key = mapping.get(source)
+    return t(key) if key else (source or "—")
+
 
 # ============================================================================
 # Context assembly -- pure functions, no network/session access, so they are
@@ -66,7 +99,7 @@ def _risk_context(weights: dict, portfolio_prices=None) -> dict:
     else:
         var_cvar = {
             "available": False,
-            "reason": "no price history loaded for this portfolio in this session",
+            "reason": t("ai_reason_no_price_history"),
         }
     return {"available": True, "concentration": concentration, "var_cvar": var_cvar}
 
@@ -76,11 +109,11 @@ def _simulator_context(portfolio: dict, portfolio_source: str,
                         hist_result=None, hist_params=None) -> dict:
     future_unavailable = {
         "available": False,
-        "reason": "run Investment Simulator (Future Projection) with the current portfolio to include this",
+        "reason": t("ai_reason_run_future_sim"),
     }
     historical_unavailable = {
         "available": False,
-        "reason": "run Investment Simulator (Historical Simulation) with the current portfolio to include this",
+        "reason": t("ai_reason_run_historical_sim"),
     }
 
     if portfolio_source != "current":
@@ -96,6 +129,9 @@ def _simulator_context(portfolio: dict, portfolio_source: str,
             "annual_volatility": sim_params.get("annual_volatility"),
             "n_simulations": sim_params.get("n_simulations"),
             "summary": sim_result.get("summary", {}),
+            "assumption_is_in_sample_optimized": bool(
+                sim_params.get("assumption_is_in_sample_optimized")
+            ),
         }
 
     historical = historical_unavailable
@@ -114,13 +150,16 @@ def _simulator_context(portfolio: dict, portfolio_source: str,
 def _ml_context(portfolio: dict, portfolio_source: str, tickers: list,
                  ml_result=None, ml_ticker=None) -> dict:
     if portfolio_source != "current" or not ml_result:
-        return {"available": False, "reason": "no Machine Learning run available in this session"}
+        return {"available": False, "reason": t("ai_reason_ml_not_run")}
     if ml_result.get("error"):
-        return {"available": False, "reason": ml_result["error"]}
+        return {
+            "available": False,
+            "reason": t("ai_reason_ml_error", error=ml_result["error"]),
+        }
     if ml_ticker not in tickers:
         return {
             "available": False,
-            "reason": f"the last Machine Learning run ({ml_ticker}) is not a current holding",
+            "reason": t("ai_reason_ml_not_holding", ticker=ml_ticker),
         }
     metrics = ml_result.get("metrics", {}) or {}
     # src.machine_learning._compute_metrics() keys this "Accuracy"
@@ -142,7 +181,7 @@ def _ml_context(portfolio: dict, portfolio_source: str, tickers: list,
 
 def _news_context(portfolio: dict, tickers: list, news_items=None) -> dict:
     if not news_items:
-        return {"available": False, "reason": "no market news available in this session"}
+        return {"available": False, "reason": t("ai_reason_no_news")}
     from src.market_intelligence import get_affected_etfs, analyze_portfolio_impact
 
     affected = get_affected_etfs(news_items, tickers=tickers) if tickers else []
@@ -182,18 +221,30 @@ def build_advisor_context(
     }
 
     if not portfolio or not portfolio.get("weights"):
-        context["portfolio"] = {"available": False, "reason": "no portfolio built yet"}
-        context["risk"] = {"available": False, "reason": "no portfolio available"}
+        context["portfolio"] = {"available": False, "reason": t("ai_reason_no_portfolio")}
+        context["risk"] = {"available": False, "reason": t("ai_reason_no_portfolio_available")}
         context["simulator"] = {
-            "future_projection": {"available": False, "reason": "no portfolio available"},
-            "historical_simulation": {"available": False, "reason": "no portfolio available"},
+            "future_projection": {"available": False, "reason": t("ai_reason_no_portfolio_available")},
+            "historical_simulation": {"available": False, "reason": t("ai_reason_no_portfolio_available")},
         }
-        context["ml"] = {"available": False, "reason": "no portfolio available"}
-        context["news"] = {"available": False, "reason": "no portfolio available"}
+        context["ml"] = {"available": False, "reason": t("ai_reason_no_portfolio_available")}
+        context["news"] = {"available": False, "reason": t("ai_reason_no_portfolio_available")}
         return context
 
-    weights = portfolio["weights"]
-    tickers = portfolio.get("tickers") or list(weights.keys())
+    raw_weights = portfolio["weights"]
+    weights = _active_weights(raw_weights)
+    if not weights:
+        context["portfolio"] = {"available": False, "reason": t("ai_reason_no_portfolio_available")}
+        context["risk"] = {"available": False, "reason": t("ai_reason_no_portfolio_available")}
+        context["simulator"] = {
+            "future_projection": {"available": False, "reason": t("ai_reason_no_portfolio_available")},
+            "historical_simulation": {"available": False, "reason": t("ai_reason_no_portfolio_available")},
+        }
+        context["ml"] = {"available": False, "reason": t("ai_reason_no_portfolio_available")}
+        context["news"] = {"available": False, "reason": t("ai_reason_no_portfolio_available")}
+        return context
+
+    tickers = list(weights.keys())
 
     context["portfolio"] = {
         "available": True,
@@ -201,6 +252,8 @@ def build_advisor_context(
         "market": portfolio.get("market"),
         "tickers": tickers,
         "weights": weights,
+        "raw_selected_count": len(raw_weights),
+        "active_threshold": ADVISOR_ACTIVE_WEIGHT_THRESHOLD,
         "investment_amount": portfolio.get("investment_amount"),
         "expected_return": portfolio.get("expected_return"),
         "volatility": portfolio.get("volatility"),
