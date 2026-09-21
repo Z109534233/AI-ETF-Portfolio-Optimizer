@@ -125,3 +125,22 @@ def test_explicit_max_sharpe_in_sample_projection_source_shows_optimizer_curse_w
     warnings = "\n".join(w.value for w in at.warning)
     assert "optimizer's curse" in warnings.lower()
     assert "selection bias" in warnings.lower()
+
+
+def test_simulator_year_display_uses_localized_year_unit_not_axis_label():
+    source_path = os.path.join(REPO_ROOT, "pages/3_Investment_Simulator.py")
+    source = open(source_path, encoding="utf-8").read()
+    assert 't("sim_year_count", years=sim_params["years"])' in source
+    assert "f\"{t('chart_monte_carlo_simulation')} — {t('sim_year_count', years=years)}\"" in source
+    assert 'f"{sim_params[\'years\']} {t(\'chart_years\')}"' not in source
+
+
+def test_monte_carlo_methodology_discloses_fat_tail_risk_and_future_bootstrap():
+    from src.i18n import TRANSLATIONS
+
+    zh = TRANSLATIONS["zh-TW"]["sim_methodology_mc_distribution"]
+    en = TRANSLATIONS["en"]["sim_methodology_mc_distribution"]
+    assert "厚尾" in zh
+    assert "bootstrap" in zh.lower()
+    assert "fat tail" in en.lower() or "fat-tail" in en.lower() or "fat tails" in en.lower()
+    assert "bootstrap" in en.lower()
