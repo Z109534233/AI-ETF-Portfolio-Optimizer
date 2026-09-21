@@ -503,25 +503,46 @@ def future_value_distribution_chart(final_values: np.ndarray,
     return apply_dark_theme(fig)
 
 
-def bootstrap_weight_stability_box_chart(weights_by_ticker: dict) -> go.Figure:
-    """Per-ETF box plot of Maximum Sharpe bootstrap weight draws (Issue #50).
+def bootstrap_weight_stability_box_chart(
+    weights_by_ticker: dict,
+    point_estimate_weights: dict = None,
+) -> go.Figure:
+    """Per-ETF bootstrap weight boxes with an optional current point estimate.
 
-    `weights_by_ticker` is {ticker: [w1, w2, ...]} -- one value per
-    SUCCESSFUL bootstrap resample (see
-    src/portfolio_optimizer.py's bootstrap_max_sharpe_weight_stability()).
-    A wide box/whisker spread for a ticker visualizes that its optimized
-    weight is sensitive to sample estimation error, not a forecast.
+    weights_by_ticker contains one value per successful bootstrap resample.
+    When point_estimate_weights is supplied, one scatter trace overlays the
+    already-computed current Max-Sharpe weights so the user can see where the
+    point estimate sits inside the bootstrap distribution. The optimizer is
+    never re-run for this marker.
     """
     fig = go.Figure()
+    tickers = list(weights_by_ticker.keys())
     for ticker, draws in weights_by_ticker.items():
         fig.add_trace(go.Box(
             y=[w * 100 for w in draws], name=ticker,
             marker_color=color_for_ticker(ticker), boxpoints="outliers",
             hovertemplate=f"<b>{ticker}</b><br>{t('chart_weight')}: %{{y:.1f}}%<extra></extra>",
+            showlegend=False,
         ))
+
+    if point_estimate_weights:
+        point_values = [float(point_estimate_weights.get(ticker, 0.0)) * 100 for ticker in tickers]
+        fig.add_trace(go.Scatter(
+            x=tickers,
+            y=point_values,
+            mode="markers",
+            name=t("opt_bootstrap_point_estimate_label"),
+            marker=dict(symbol="diamond", size=10, line=dict(width=1)),
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                + t("opt_bootstrap_point_estimate_label")
+                + ": %{y:.2f}%<extra></extra>"
+            ),
+        ))
+
     fig.update_layout(
         title=t("opt_bootstrap_chart_title"),
         yaxis_title=t("chart_weight"),
-        showlegend=False,
+        showlegend=bool(point_estimate_weights),
     )
     return apply_dark_theme(fig)

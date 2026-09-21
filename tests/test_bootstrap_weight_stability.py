@@ -34,6 +34,7 @@ from src.portfolio_optimizer import (
     bootstrap_max_sharpe_weight_stability,
     DEFAULT_BOOTSTRAP_SEED, DEFAULT_N_BOOTSTRAP,
     MIN_BOOTSTRAP_SUCCESSES_FOR_SUMMARY,
+    bootstrap_boundary_metrics, BOOTSTRAP_INCLUSION_EPSILON,
 )
 from src.i18n import TRANSLATIONS, t, set_language
 
@@ -203,7 +204,9 @@ def test_no_summary_when_successful_count_below_threshold(monkeypatch):
 NEW_BOOTSTRAP_I18N_KEYS = [
     "opt_bootstrap_title", "opt_bootstrap_explanation", "opt_bootstrap_button",
     "opt_bootstrap_running", "opt_bootstrap_seed_note", "opt_bootstrap_success_ratio",
-    "opt_bootstrap_chart_title", "opt_bootstrap_table_col_etf", "opt_bootstrap_table_col_median",
+    "opt_bootstrap_chart_title", "opt_bootstrap_point_estimate_label",
+    "opt_bootstrap_table_col_etf", "opt_bootstrap_table_col_point_estimate",
+    "opt_bootstrap_table_col_p5_p95", "opt_bootstrap_table_col_median",
     "opt_bootstrap_table_col_p25", "opt_bootstrap_table_col_p75", "opt_bootstrap_table_col_iqr",
     "opt_bootstrap_table_col_p5", "opt_bootstrap_table_col_p95", "opt_bootstrap_table_col_min",
     "opt_bootstrap_table_col_max", "opt_bootstrap_insufficient_note", "opt_bootstrap_interpretation_title",
@@ -383,6 +386,86 @@ def test_bootstrap_panel_shown_and_runs_for_max_sharpe_zh_tw():
     assert "Michaud" in corpus
     for key in NEW_BOOTSTRAP_I18N_KEYS:
         assert key not in corpus
+
+
+# ── Issue #52 UX polish: boundary metrics + point-estimate overlay ──────────
+def test_boundary_metrics_compute_inclusion_and_top_holding_rates():
+    weights_by_ticker = {
+        "A": [0.0, 0.0, 0.40, 0.60],
+        "B": [1.0, 0.80, 0.30, 0.20],
+    }
+    summary = {
+        "A": {"median": 0.005, "p95": 0.55, "max": 0.60},
+        "B": {"median": 0.55, "p95": 0.95, "max": 1.00},
+    }
+    metrics = bootstrap_boundary_metrics(weights_by_ticker, summary)
+    assert abs(metrics["A"]["positive_inclusion_rate"] - 0.50) < 1e-12
+    assert abs(metrics["A"]["top_holding_rate"] - 0.50) < 1e-12
+    assert metrics["A"]["is_boundary_pattern"] is True
+    assert metrics["B"]["is_boundary_pattern"] is False
+
+
+def test_boundary_metrics_ignore_numerical_dust_and_count_tied_maxima():
+    eps = BOOTSTRAP_INCLUSION_EPSILON
+    weights_by_ticker = {
+        "A": [eps / 10, 0.50],
+        "B": [1.0 - eps / 10, 0.50],
+    }
+    summary = {
+        "A": {"median": 0.0, "p95": 0.50, "max": 0.50},
+        "B": {"median": 0.75, "p95": 1.0, "max": 1.0},
+    }
+    metrics = bootstrap_boundary_metrics(weights_by_ticker, summary)
+    assert abs(metrics["A"]["positive_inclusion_rate"] - 0.50) < 1e-12
+    assert abs(metrics["A"]["top_holding_rate"] - 0.50) < 1e-12
+
+
+def test_point_estimate_overlay_is_single_scatter_trace_and_localized():
+    from src.charts import bootstrap_weight_stability_box_chart
+
+    draws = {"GLD": [0.40, 0.55, 0.70], "VOO": [0.60, 0.45, 0.30]}
+    points = {"GLD": 0.5858, "VOO": 0.4142}
+
+    set_language("en")
+    fig = bootstrap_weight_stability_box_chart(draws, point_estimate_weights=points)
+    scatter = [trace for trace in fig.data if trace.type == "scatter"]
+    assert len(scatter) == 1
+    assert list(scatter[0].x) == ["GLD", "VOO"]
+    assert np.allclose(list(scatter[0].y), [58.58, 41.42])
+    assert scatter[0].name == "Current point estimate"
+
+    set_language("zh-TW")
+    fig_zh = bootstrap_weight_stability_box_chart(draws, point_estimate_weights=points)
+    scatter_zh = [trace for trace in fig_zh.data if trace.type == "scatter"]
+    assert len(scatter_zh) == 1
+    assert scatter_zh[0].name == "目前點估計"
+
+
+def test_box_chart_remains_backward_safe_without_point_estimate():
+    from src.charts import bootstrap_weight_stability_box_chart
+
+    fig = bootstrap_weight_stability_box_chart({"A": [0.2, 0.3], "B": [0.8, 0.7]})
+    assert not [trace for trace in fig.data if trace.type == "scatter"]
+
+
+def test_bootstrap_page_summary_table_source_is_compact_five_columns():
+    source_path = os.path.join(REPO_ROOT, "pages/2_Portfolio_Optimizer.py")
+    source = open(source_path, encoding="utf-8").read()
+    start = source.index("_bootstrap_summary_rows = [")
+    end = source.index("st.dataframe(", start)
+    block = source[start:end]
+    assert block.count('t("opt_bootstrap_table_col_') == 5
+    assert 't("opt_bootstrap_table_col_p5_p95")' in block
+    assert 't("opt_bootstrap_table_col_point_estimate")' in block
+
+
+def test_boundary_copy_is_bilingual_and_reviewer_safe():
+    zh = TRANSLATIONS["zh-TW"]["opt_bootstrap_boundary_note"]
+    en = TRANSLATIONS["en"]["opt_bootstrap_boundary_note"]
+    assert "納入／排除" in zh
+    assert "inclusion/exclusion" in en.lower()
+    assert "{positive_rate}" in zh and "{top_rate}" in zh
+    assert "{positive_rate}" in en and "{top_rate}" in en
 
 
 if __name__ == "__main__":

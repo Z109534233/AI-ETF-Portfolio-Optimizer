@@ -39,7 +39,8 @@ from src.fx import convert_prices_to_base_currency
 from src.portfolio_optimizer import (
     run_optimization, monte_carlo_simulation, backtest_portfolio,
     compute_efficient_frontier, build_backtest_reference_plan,
-    bootstrap_max_sharpe_weight_stability, DEFAULT_BOOTSTRAP_SEED, DEFAULT_N_BOOTSTRAP,
+    bootstrap_max_sharpe_weight_stability, bootstrap_boundary_metrics,
+    DEFAULT_BOOTSTRAP_SEED, DEFAULT_N_BOOTSTRAP,
 )
 from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
@@ -819,7 +820,10 @@ if optimization_method == "Maximum Sharpe Ratio":
                 seed=_bootstrap_result["seed"], n=_bootstrap_result["n_bootstrap"],
             ))
             st.plotly_chart(
-                bootstrap_weight_stability_box_chart(_bootstrap_result["weights_by_ticker"]),
+                bootstrap_weight_stability_box_chart(
+                    _bootstrap_result["weights_by_ticker"],
+                    point_estimate_weights=weights,
+                ),
                 use_container_width=True, key="opt_bootstrap_box_chart",
             )
             st.markdown(t(
@@ -836,20 +840,49 @@ if optimization_method == "Maximum Sharpe Ratio":
                 _bootstrap_summary_rows = [
                     {
                         t("opt_bootstrap_table_col_etf"): _tkr,
+                        t("opt_bootstrap_table_col_point_estimate"): f"{weights.get(_tkr, 0.0):.2%}",
                         t("opt_bootstrap_table_col_median"): f"{_bootstrap_summary[_tkr]['median']:.2%}",
-                        t("opt_bootstrap_table_col_p25"): f"{_bootstrap_summary[_tkr]['p25']:.2%}",
-                        t("opt_bootstrap_table_col_p75"): f"{_bootstrap_summary[_tkr]['p75']:.2%}",
                         t("opt_bootstrap_table_col_iqr"): f"{_bootstrap_summary[_tkr]['iqr']:.2%}",
-                        t("opt_bootstrap_table_col_p5"): f"{_bootstrap_summary[_tkr]['p5']:.2%}",
-                        t("opt_bootstrap_table_col_p95"): f"{_bootstrap_summary[_tkr]['p95']:.2%}",
-                        t("opt_bootstrap_table_col_min"): f"{_bootstrap_summary[_tkr]['min']:.2%}",
-                        t("opt_bootstrap_table_col_max"): f"{_bootstrap_summary[_tkr]['max']:.2%}",
+                        t("opt_bootstrap_table_col_p5_p95"): (
+                            f"{_bootstrap_summary[_tkr]['p5']:.2%}–"
+                            f"{_bootstrap_summary[_tkr]['p95']:.2%}"
+                        ),
                     }
                     for _tkr in _bootstrap_result["tickers"]
                 ]
-                st.dataframe(pd.DataFrame(_bootstrap_summary_rows), hide_index=True, use_container_width=True)
+                st.dataframe(
+                    pd.DataFrame(_bootstrap_summary_rows),
+                    hide_index=True,
+                    use_container_width=True,
+                )
                 st.markdown(f"**{t('opt_bootstrap_interpretation_title')}**")
                 st.caption(t("opt_bootstrap_interpretation_note"))
+
+                _boundary_metrics = bootstrap_boundary_metrics(
+                    _bootstrap_result["weights_by_ticker"],
+                    _bootstrap_summary,
+                )
+                _boundary_tickers = [
+                    _tkr for _tkr in _bootstrap_result["tickers"]
+                    if _boundary_metrics.get(_tkr, {}).get("is_boundary_pattern")
+                ]
+                _boundary_tickers = sorted(
+                    _boundary_tickers,
+                    key=lambda _tkr: (
+                        _bootstrap_summary[_tkr]["p95"],
+                        _bootstrap_summary[_tkr]["max"],
+                    ),
+                    reverse=True,
+                )[:3]
+                for _tkr in _boundary_tickers:
+                    _metrics = _boundary_metrics[_tkr]
+                    st.caption("• " + t(
+                        "opt_bootstrap_boundary_note",
+                        ticker=_tkr,
+                        positive_rate=f"{_metrics['positive_inclusion_rate']:.1%}",
+                        top_rate=f"{_metrics['top_holding_rate']:.1%}",
+                    ))
+
                 st.caption(t("opt_bootstrap_michaud_citation"))
 
 # ── Shared Portfolio Diagnosis rendering helpers (used by both Overview's

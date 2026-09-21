@@ -564,6 +564,9 @@ DEFAULT_N_BOOTSTRAP = 200
 # estimate is too noisy to be meaningful, so no summary is fabricated from
 # too few points (Issue #50).
 MIN_BOOTSTRAP_SUCCESSES_FOR_SUMMARY = 20
+# Same numerical-noise convention used by _clean_weights(): values at or
+# below this threshold are treated as zero for inclusion-rate diagnostics.
+BOOTSTRAP_INCLUSION_EPSILON = 1e-6
 
 
 def _bootstrap_weight_summary_stats(weights_matrix: np.ndarray, tickers: list) -> dict:
@@ -585,6 +588,64 @@ def _bootstrap_weight_summary_stats(weights_matrix: np.ndarray, tickers: list) -
             "max": float(col.max()),
         }
     return summary
+
+
+def bootstrap_boundary_metrics(
+    weights_by_ticker: dict,
+    summary: dict,
+    inclusion_epsilon: float = BOOTSTRAP_INCLUSION_EPSILON,
+) -> dict:
+    """Compute transparent inclusion/exclusion-boundary diagnostics.
+
+    Uses only successful bootstrap draws. positive_inclusion_rate is the
+    share of draws with a weight above the same 1e-6 numerical-noise threshold
+    used by _clean_weights. top_holding_rate is the share of draws in which
+    the ticker is tied for the largest weight; ties count for every tied
+    ticker rather than being broken arbitrarily.
+
+    is_boundary_pattern is deliberately descriptive, not predictive:
+    median <= 1% and a material upper tail (p95 >= 20% or max >= 30%).
+    """
+    tickers = list(weights_by_ticker.keys())
+    if not tickers or not summary:
+        return {}
+
+    lengths = {len(weights_by_ticker.get(ticker, [])) for ticker in tickers}
+    if len(lengths) != 1:
+        return {}
+    n_successful = next(iter(lengths), 0)
+    if n_successful <= 0:
+        return {}
+
+    matrix = np.array([weights_by_ticker[ticker] for ticker in tickers], dtype=float).T
+    if matrix.shape != (n_successful, len(tickers)) or not np.isfinite(matrix).all():
+        return {}
+
+    row_max = np.max(matrix, axis=1)
+    metrics = {}
+    for idx, ticker in enumerate(tickers):
+        ticker_summary = summary.get(ticker, {})
+        median = float(ticker_summary.get("median", np.nan))
+        p95 = float(ticker_summary.get("p95", np.nan))
+        max_weight = float(ticker_summary.get("max", np.nan))
+        col = matrix[:, idx]
+
+        positive_inclusion_rate = float(np.mean(col > inclusion_epsilon))
+        top_holding_rate = float(
+            np.mean(np.isclose(col, row_max, rtol=1e-9, atol=1e-12))
+        )
+        is_boundary_pattern = bool(
+            np.isfinite([median, p95, max_weight]).all()
+            and median <= 0.01
+            and (p95 >= 0.20 or max_weight >= 0.30)
+        )
+
+        metrics[ticker] = {
+            "positive_inclusion_rate": positive_inclusion_rate,
+            "top_holding_rate": top_holding_rate,
+            "is_boundary_pattern": is_boundary_pattern,
+        }
+    return metrics
 
 
 def bootstrap_max_sharpe_weight_stability(
