@@ -442,7 +442,7 @@ def test_bootstrap_click_preserves_optimization_result_and_current_portfolio():
 
     before_result = dict(at.session_state["opt_result"])
     before_weights = dict(before_result["weights"])
-    before_portfolio_id = at.session_state.get("opt_portfolio_id")
+    before_portfolio_id = at.session_state["opt_portfolio_id"]
 
     at = _click_bootstrap_button(at)
     exc = at.exception[0] if at.exception else None
@@ -451,7 +451,7 @@ def test_bootstrap_click_preserves_optimization_result_and_current_portfolio():
     after_result = at.session_state["opt_result"]
     assert after_result is not None
     assert after_result["weights"] == before_weights
-    assert at.session_state.get("opt_portfolio_id") == before_portfolio_id
+    assert at.session_state["opt_portfolio_id"] == before_portfolio_id
     assert at.session_state["current_portfolio"]["weights"] == before_weights
     assert at.session_state["opt_bootstrap_result"] is not None
 
