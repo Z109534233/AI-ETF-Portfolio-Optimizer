@@ -452,11 +452,25 @@ def test_bootstrap_page_summary_table_source_is_compact_five_columns():
     source_path = os.path.join(REPO_ROOT, "pages/2_Portfolio_Optimizer.py")
     source = open(source_path, encoding="utf-8").read()
     start = source.index("_bootstrap_summary_rows = [")
-    end = source.index("st.dataframe(", start)
+    end = source.index("st.markdown(f\"**{t('opt_bootstrap_interpretation_title')}**\")", start)
     block = source[start:end]
-    assert block.count('t("opt_bootstrap_table_col_') == 5
+    assert '"etf": _tkr' in block
+    assert '"point_estimate":' in block
+    assert '"median":' in block
+    assert '"iqr":' in block
+    assert '"p5_p95":' in block
+    assert block.count("st.column_config.TextColumn(") == 5
     assert 't("opt_bootstrap_table_col_p5_p95")' in block
     assert 't("opt_bootstrap_table_col_point_estimate")' in block
+    assert "hide_index=True" in block
+
+
+def test_bootstrap_seed_note_scopes_reproducibility_to_same_data_window():
+    zh = TRANSLATIONS["zh-TW"]["opt_bootstrap_seed_note"]
+    en = TRANSLATIONS["en"]["opt_bootstrap_seed_note"]
+    assert "{data_as_of}" in zh and "{data_as_of}" in en
+    assert "資料窗口" in zh
+    assert "data window" in en.lower()
 
 
 def test_boundary_copy_is_bilingual_and_reviewer_safe():
