@@ -304,7 +304,7 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
         weights_str = "\n".join(f"  - {tk}: {w:.1%}" for tk, w in sorted(
             p["weights"].items(), key=lambda kv: kv[1], reverse=True))
         lines.append(
-            f"CURRENT PORTFOLIO (source: {context['portfolio_source']}, strategy: {p['strategy']}, "
+            f"CURRENT PORTFOLIO (source: {context['portfolio_source']}, strategy: {t_opt_method(p['strategy'])}, "
             f"market: {p['market']}):\n{weights_str}\n"
             f"Expected annual return: {_fmt_pct(p['expected_return'])}\n"
             f"Expected annual volatility: {_fmt_pct(p['volatility'])}\n"
@@ -341,9 +341,10 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
         s = fp["summary"]
         lines.append(
             f"\nINVESTMENT SIMULATOR -- Future Projection (Monte Carlo, {fp['n_simulations']} paths, "
-            f"assumptions: {fp['assumption_source']}): median value after {fp['years']} years "
-            f"{_fmt_money(s.get('median_final'))}; probability of profit {_fmt_pct(s.get('probability_profit'))}. "
-            f"This is a projection, not a guarantee."
+            f"assumptions: {assumption_source_label(fp['assumption_source'])}): median value after {fp['years']} years "
+            f"{_fmt_money(s.get('median_final'))}; share of simulated paths ending above cumulative contributions "
+            f"{_fmt_pct(s.get('probability_profit'))}. This is a simulated-path share under the stated assumptions, "
+            f"not a real-world probability of profit or a guarantee."
         )
     else:
         lines.append(f"\nINVESTMENT SIMULATOR -- Future Projection: not available ({fp.get('reason')}).")
@@ -382,12 +383,33 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
     else:
         lines.append(f"\nMARKET INTELLIGENCE: not available ({news.get('reason')}).")
 
+    # Deterministic consistency check is included in the AI prompt too, so
+    # the OpenAI-assisted path cannot omit a mismatch that the rule-based
+    # path would flag.
+    if p.get("available") and str(risk_level).lower() == "conservative":
+        concentration = context.get("risk", {}).get("concentration", {})
+        top_weight = concentration.get("largest_weight", 0)
+        effective = concentration.get("effective_holdings", 0)
+        vol = p.get("volatility")
+        if ((isinstance(vol, (int, float)) and vol > 0.12)
+                or top_weight > 0.40 or effective < 3):
+            lines.append(
+                "\nRISK-PROFILE CONSISTENCY CHECK: MISMATCH. The user selected Conservative, "
+                f"while annualized volatility is {_fmt_pct(vol)}, the largest holding is "
+                f"{_fmt_pct(top_weight)}, and effective holdings are {_fmt_num(effective, 1)}. "
+                "State explicitly that this allocation is inconsistent with the selected Conservative "
+                "profile under the app's rule (volatility >12%, largest holding >40%, or effective holdings <3)."
+            )
+
     language_instruction = (
         "Respond entirely in Traditional Chinese (zh-TW/繁體中文), including all section "
-        "headings and body text."
+        "headings and body text. Translate app labels into Traditional Chinese; do not leave "
+        "English strategy names, assumption-source labels, or unavailable-reason boilerplate in the final report."
         if get_language() == "zh-TW"
         else "Respond entirely in English."
     )
+    objective_display = t_investment_objective(investment_objective)
+    risk_display = t_risk_level(risk_level)
 
     return f"""You are an educational financial analyst assistant. Using ONLY the structured
 data below (never invent a number that is not printed here -- if a section says "not
@@ -396,7 +418,7 @@ clear, structured educational explanation.
 
 {language_instruction}
 
-Investor profile: {investment_objective} objective, {risk_level} risk tolerance, {investment_horizon}-year horizon.
+Investor profile: {objective_display} objective, {risk_display} risk tolerance, {investment_horizon}-year horizon.
 
 {chr(10).join(lines)}
 
@@ -407,7 +429,7 @@ Please provide a structured analysis including:
 4. Machine Learning Signal (only if available, framed as experimental/probabilistic)
 5. Market Intelligence / News Relevance (only if available)
 6. Main Risks and Tradeoffs
-7. Educational Suggestions
+7. Educational Review Points
 
 Keep the tone professional and educational. Do not provide personalised financial advice.
 For every section marked "not available" above, say so explicitly rather than fabricating content.
