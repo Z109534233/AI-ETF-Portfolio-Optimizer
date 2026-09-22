@@ -554,6 +554,7 @@ def test_advisor_filters_sub_half_percent_positions_from_all_holding_logic():
 
 
 def test_conservative_profile_mismatch_is_explicit_for_concentrated_portfolio():
+    set_language("en")
     portfolio = {
         **_sample_portfolio(),
         "strategy": "Maximum Sharpe Ratio",
