@@ -72,7 +72,7 @@ try:
     ai_sentiment = calculate_ai_market_sentiment(news_items)
     calendar_events = get_economic_calendar()
     affected_markets = calculate_affected_markets(news_items)
-    today_ai_summary = generate_today_ai_summary(news_items)
+    today_ai_summary = generate_today_ai_summary(news_items, indices)
     market_impact = calculate_market_impact(news_items)
     major_events = get_todays_major_events(news_items, limit=5)
     etf_cards = generate_etf_card_data(news_items)
@@ -84,7 +84,7 @@ except Exception:
     affected_etfs, sentiment, calendar_events = [], calculate_market_sentiment([]), []
     ai_sentiment = calculate_ai_market_sentiment([])
     affected_markets = []
-    today_ai_summary = generate_today_ai_summary([])
+    today_ai_summary = generate_today_ai_summary([], {})
     market_impact = calculate_market_impact([])
     major_events = []
     etf_cards = generate_etf_card_data([])
@@ -302,16 +302,19 @@ with tab_overview:
     section_header(t("mi_section_calendar_title"), t("mi_section_calendar_subtitle"))
 
     with chart_card(t("mi_section_calendar_title")):
-        calendar_df = pd.DataFrame([
-            {
-                t("mi_cal_col_event"): e["event"],
-                t("mi_cal_col_when"): e["when"],
-                t("mi_cal_col_importance"): e["importance"],
-            }
-            for e in calendar_events
-        ])
-        st.dataframe(calendar_df, use_container_width=True, hide_index=True)
-        chart_caption(t("mi_caption_calendar"))
+        if calendar_events:
+            calendar_df = pd.DataFrame([
+                {
+                    t("mi_cal_col_event"): e["event"],
+                    t("mi_cal_col_when"): e["when"],
+                    t("mi_cal_col_importance"): e["importance"],
+                }
+                for e in calendar_events
+            ])
+            st.dataframe(calendar_df, use_container_width=True, hide_index=True)
+            chart_caption(t("mi_caption_calendar"))
+        else:
+            st.info(t("mi_calendar_no_verified_data"))
 
 # ══════════════════════════════════════════════════════════════════════════
 # NEWS
@@ -344,7 +347,10 @@ with tab_news:
     # ── AI Market Summary ──────────────────────────────────────────────────
     section_header(t("mi_section_summary_title"))
 
-    summary_result = generate_market_summary(news_items, sentiment, affected_etfs, session_state=st.session_state)
+    summary_result = generate_market_summary(
+        news_items, sentiment, affected_etfs,
+        session_state=st.session_state, market_indices=indices,
+    )
     with chart_card(t("mi_section_summary_title"), tag=t("ai_tag_generated") if summary_result["source"] == "ai" else t("ai_tag_rule_based")):
         st.markdown(summary_result["text"])
 
@@ -364,13 +370,17 @@ with tab_impact:
     current_portfolio_mi = st.session_state.get("current_portfolio")
     if current_portfolio_mi and current_portfolio_mi.get("weights"):
         mi_portfolio_name = t_opt_method(current_portfolio_mi.get("strategy", ""))
-        mi_portfolio_holdings = current_portfolio_mi["weights"]
+        mi_portfolio_holdings = {
+            tk: w for tk, w in current_portfolio_mi["weights"].items() if float(w) >= 0.005
+        }
         mi_portfolio_caption = t("mi_portfolio_using_current", name=mi_portfolio_name)
     else:
         portfolios = load_all_portfolios()
         if portfolios:
             mi_portfolio_name = portfolios[0]["name"]
-            mi_portfolio_holdings = portfolios[0]["holdings"]
+            mi_portfolio_holdings = {
+                tk: w for tk, w in portfolios[0]["holdings"].items() if float(w) >= 0.005
+            }
             mi_portfolio_caption = t("mi_portfolio_using", name=mi_portfolio_name)
         else:
             mi_portfolio_name = None
