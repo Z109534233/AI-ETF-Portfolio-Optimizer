@@ -416,6 +416,24 @@ def _market_impact_score_to_stars(score: int) -> int:
     return 1
 
 
+_COMMENTARY_TITLE_MARKERS = (
+    "opinion:", "opinion ", "commentary:", "commentary ", "column:",
+    "column ", "interview:", "interview ", "comments on", "views on",
+    "perspective on",
+)
+
+
+def _is_commentary_news_item(item: dict) -> bool:
+    """Conservative title-only detection for commentary/opinion content.
+
+    The news feed does not expose a reliable article-type field, so only
+    explicit editorial markers are used. Hard-news headlines are never
+    downgraded merely for being the only article in the feed.
+    """
+    title = str((item or {}).get("title") or "").lower()
+    return any(marker in title for marker in _COMMENTARY_TITLE_MARKERS)
+
+
 def calculate_market_impact(news_items: list) -> dict:
     """
     Market Impact Score: a 0-100 score for today's news, built from *event
@@ -430,9 +448,9 @@ def calculate_market_impact(news_items: list) -> dict:
         that category is known to hit our supported markets
       - Affected Industry   (20%) -- EVENT_INDUSTRY_BREADTH, how broadly
         that category tends to reach across industries/sectors
-      - News Frequency      (15%) -- what share of today's headlines are
-        about that same dominant category (a repeated theme signals a
-        bigger, more pervasive story than a single one-off mention)
+      - News Frequency      (15%) -- absolute corroborating headline count
+        for the dominant category (a repeated theme signals a bigger,
+        more pervasive story than a single one-off mention)
     A transparent rule-based heuristic, not a prediction of market
     direction.
 
@@ -472,9 +490,14 @@ def calculate_market_impact(news_items: list) -> dict:
         + affected_industry * 0.20
         + news_frequency * 0.15
     )
-    # A single uncorroborated headline can be relevant, but it cannot by
-    # itself earn a 4- or 5-star "high impact" label.
-    if category_counts[dominant] == 1:
+    # Explicit commentary/opinion pieces should not become 4-5 star
+    # "market impact" events just because they mention a high-weight term
+    # such as "Federal Reserve". Do NOT cap ordinary hard news merely
+    # because only one headline is available.
+    dominant_items = [
+        item for item in news_items if classify_event(item["title"]) == dominant
+    ]
+    if len(dominant_items) == 1 and _is_commentary_news_item(dominant_items[0]):
         score = min(score, 69)
     score = max(0, min(100, score))
     stars = _market_impact_score_to_stars(score)
