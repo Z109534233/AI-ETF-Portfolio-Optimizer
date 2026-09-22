@@ -529,3 +529,60 @@ def test_ai_advisor_stale_warning_on_language_change_without_regenerate():
     assert at.exception == []
     assert at.session_state["language"] == "zh-TW"
     assert _stale_warning_shown(at), "changing the language without regenerating must show the stale-result warning"
+
+
+def test_advisor_filters_sub_half_percent_positions_from_all_holding_logic():
+    portfolio = {
+        **_sample_portfolio(),
+        "strategy": "Maximum Sharpe Ratio",
+        "tickers": ["VOO", "GLD", "BND", "TLT"],
+        "weights": {"VOO": 0.576, "GLD": 0.420, "BND": 0.004, "TLT": 0.0},
+        "volatility": 0.18,
+        "risk_tolerance": "Conservative",
+    }
+    news = [{
+        "title": "Treasury yields rise as Federal Reserve outlook shifts",
+        "impact": "Negative", "publisher": "Reuters", "link": "", "published": None,
+    }]
+    context = build_advisor_context(
+        portfolio=portfolio, portfolio_source="current", news_items=news,
+    )
+    assert set(context["portfolio"]["weights"]) == {"VOO", "GLD"}
+    assert context["portfolio"]["tickers"] == ["VOO", "GLD"]
+    assert all(x["ticker"] not in {"BND", "TLT"} for x in context["news"]["affected_holdings"])
+
+
+def test_conservative_profile_mismatch_is_explicit_for_concentrated_portfolio():
+    portfolio = {
+        **_sample_portfolio(),
+        "strategy": "Maximum Sharpe Ratio",
+        "tickers": ["GLD", "VOO", "BND", "TLT"],
+        "weights": {"GLD": 0.58, "VOO": 0.42, "BND": 0.0, "TLT": 0.0},
+        "volatility": 0.18,
+        "risk_tolerance": "Conservative",
+    }
+    context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+    text = generate_rule_based_narrative(
+        context, investment_objective="Capital Preservation",
+        risk_level="Conservative", investment_horizon=20,
+    )
+    assert "Risk-profile mismatch" in text
+    assert "multi-asset but highly concentrated" in text
+    assert "2 ETF" in text
+
+
+def test_rule_based_report_section_numbers_are_sequential():
+    context = build_advisor_context(portfolio=_sample_portfolio(), portfolio_source="current")
+    text = generate_rule_based_narrative(context)
+    headings = [f"### {i}." for i in range(1, 8)]
+    positions = [text.index(h) for h in headings]
+    assert positions == sorted(positions)
+    assert "### 8." not in text
+
+
+def test_as_of_display_is_human_readable_taipei_time():
+    context = build_advisor_context(portfolio=_sample_portfolio(), portfolio_source="current")
+    display = context["as_of_display"]
+    assert "T" not in display
+    assert "+00:00" not in display
+    assert len(display) == 16
