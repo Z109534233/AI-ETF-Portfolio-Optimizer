@@ -502,3 +502,19 @@ def test_boundary_pattern_requires_at_least_five_percent_inclusion():
     metrics = bootstrap_boundary_metrics(weights_by_ticker, summary)
     assert metrics["BND"]["positive_inclusion_rate"] == pytest.approx(0.005)
     assert metrics["BND"]["is_boundary_pattern"] is False
+
+
+
+def test_bootstrap_click_does_not_clear_optimized_portfolio_result():
+    """Regression for reviewer item #10: an unrelated Bootstrap rerun must
+    preserve the canonical optimizer result/current_portfolio."""
+    at = _setup_bootstrap_page(lang="en", method="Maximum Sharpe Ratio")
+    assert at.session_state["opt_result"] is not None
+    assert at.session_state["current_portfolio"] is not None
+    before_id = at.session_state["current_portfolio"]["portfolio_id"]
+
+    at = _click_bootstrap_button(at)
+
+    assert at.session_state["opt_result"] is not None
+    assert at.session_state["current_portfolio"] is not None
+    assert at.session_state["current_portfolio"]["portfolio_id"] == before_id
