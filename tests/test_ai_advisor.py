@@ -31,6 +31,7 @@ from src.ai_advisor import (
     build_advisor_context, generate_rule_based_narrative, _build_prompt, advisor_fingerprint,
 )
 from src.machine_learning import run_ml_pipeline
+from src.i18n import set_language
 
 
 def _sample_portfolio():
@@ -586,3 +587,41 @@ def test_as_of_display_is_human_readable_taipei_time():
     assert "T" not in display
     assert "+00:00" not in display
     assert len(display) == 16
+
+
+
+def test_zh_rule_based_report_does_not_leak_core_english_labels():
+    """Focused bilingual regression for the reviewer-facing Advisor report."""
+    set_language("zh-TW")
+    try:
+        portfolio = {
+            **_sample_portfolio(),
+            "strategy": "Maximum Sharpe Ratio",
+            "risk_tolerance": "Conservative",
+        }
+        sim_result = {"summary": {"median_final": 20000.0, "probability_profit": 0.95}}
+        sim_params = {
+            "portfolio_strategy": "Maximum Sharpe Ratio",
+            "years": 20,
+            "assumption_source": "Portfolio Historical Statistics",
+            "annual_return": 0.17,
+            "annual_volatility": 0.18,
+            "n_simulations": 1000,
+        }
+        context = build_advisor_context(
+            portfolio=portfolio, portfolio_source="current",
+            sim_result=sim_result, sim_params=sim_params,
+        )
+        report = generate_rule_based_narrative(
+            context, investment_objective="Capital Preservation",
+            risk_level="Conservative", investment_horizon=20,
+        )
+        assert "Maximum Sharpe Ratio" not in report
+        assert "Portfolio Historical Statistics" not in report
+        assert "probability of profit" not in report.lower()
+        assert "no Machine Learning run" not in report
+        assert "最大夏普比率" in report
+        assert "投資組合歷史統計" in report
+        assert "模擬路徑" in report
+    finally:
+        set_language("en")
