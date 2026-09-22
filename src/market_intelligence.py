@@ -1628,20 +1628,22 @@ _ACTION_REASON_ZH = {
     "Other": "今日市場動態",
 }
 
-# category -> an "upcoming catalyst to watch" phrase per language.
+# category -> a verified-information follow-up phrase per language.
+# These deliberately avoid claiming a specific future release/event unless
+# a live calendar source has actually provided one.
 _ACTION_CATALYST_EN = {
-    "Interest Rate": "Investors should watch upcoming Fed announcements.",
-    "Inflation": "Investors should watch upcoming inflation data releases.",
-    "Trade Policy": "Investors should watch upcoming trade policy developments.",
-    "Technology": "Investors should watch upcoming big-tech earnings.",
-    "Semiconductor": "Investors should watch upcoming semiconductor earnings and export data.",
-    "Energy": "Investors should watch upcoming energy supply developments.",
-    "Geopolitics": "Investors should watch how geopolitical tensions develop.",
-    "Economy": "Investors should watch upcoming economic growth data.",
-    "AI": "Investors should watch upcoming AI-industry announcements.",
-    "Banking": "Investors should watch upcoming banking-sector developments.",
-    "Cryptocurrency": "Investors should watch upcoming crypto regulatory news.",
-    "Other": "Investors should stay alert for further market-moving news.",
+    "Interest Rate": "Follow verified Federal Reserve or central-bank updates related to this theme.",
+    "Inflation": "Follow verified inflation releases or reporting related to this theme.",
+    "Trade Policy": "Follow verified trade-policy developments.",
+    "Technology": "Follow verified technology-sector developments.",
+    "Semiconductor": "Follow verified semiconductor-sector developments.",
+    "Energy": "Follow verified energy-supply developments.",
+    "Geopolitics": "Follow verified geopolitical developments.",
+    "Economy": "Follow verified economic-data releases.",
+    "AI": "Follow verified AI-industry developments.",
+    "Banking": "Follow verified banking-sector developments.",
+    "Cryptocurrency": "Follow verified cryptocurrency regulatory developments.",
+    "Other": "Follow verified market-moving developments.",
 }
 _ACTION_CATALYST_ZH = {
     "Interest Rate": "請以已驗證的聯準會或央行最新資訊追蹤此主題。",
@@ -1660,14 +1662,14 @@ _ACTION_CATALYST_ZH = {
 
 # mood -> a general portfolio-positioning action phrase per language.
 _ACTION_MOOD_EN = {
-    "Bullish": "Consider maintaining growth exposure while momentum remains positive.",
-    "Bearish": "Headline sentiment is negative; keep it separate from the actual index and VIX readings.",
-    "Neutral": "Stay balanced with a diversified allocation amid mixed signals.",
+    "Bullish": "Headline sentiment is positive; treat it as context rather than a market-direction signal, and read it alongside the actual index and VIX data.",
+    "Bearish": "Headline sentiment is negative; treat it as context rather than a market-direction signal, and read it alongside the actual index and VIX data.",
+    "Neutral": "Headline sentiment is mixed; treat it as context rather than a market-direction signal, and read it alongside the actual index and VIX data.",
 }
 _ACTION_MOOD_ZH = {
-    "Bullish": "在動能持續之際，可考慮維持成長型資產部位。",
-    "Bearish": "市場波動升高之際，建議維持分散配置。",
-    "Neutral": "訊號較為分歧，建議維持均衡、分散的資產配置。",
+    "Bullish": "新聞情緒偏正面；這只是背景訊號，應搭配實際指數與 VIX 數據解讀，不應直接視為市場方向。",
+    "Bearish": "新聞情緒偏負面；這只是背景訊號，應搭配實際指數與 VIX 數據解讀，不應直接視為市場方向。",
+    "Neutral": "新聞情緒較分歧；這只是背景訊號，應搭配實際指數與 VIX 數據解讀，不應直接視為市場方向。",
 }
 
 # ETF Type -> a short lowercase sector word per language, used only by
