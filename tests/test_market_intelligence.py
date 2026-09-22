@@ -36,6 +36,7 @@ from src.market_intelligence import (
     generate_market_summary, _generate_rule_based_summary, _market_summary_prompt,
     stars_to_impact_label, fetch_fear_greed_index, calculate_market_impact,
     get_economic_calendar, generate_today_ai_summary, get_todays_major_events,
+    generate_todays_market_action,
 )
 from src.ui import star_rating_html, _star_salience_class
 
@@ -320,3 +321,18 @@ def test_major_event_cards_have_source_and_publish_time_metadata():
     assert all("publisher" in event and "published_text" in event for event in events)
     assert any(event["publisher"] == "Reuters" for event in events)
     assert any(event["published_text"].startswith("2026-09-14") for event in events)
+
+
+
+def test_market_action_does_not_invent_upcoming_events_or_vix_state(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "en")
+    action_en = generate_todays_market_action(_sample_news())
+    text_en = " ".join(action_en["items"]).lower()
+    assert "upcoming" not in text_en
+    assert "volatility remains elevated" not in text_en
+
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "zh-TW")
+    action_zh = generate_todays_market_action(_sample_news())
+    text_zh = " ".join(action_zh["items"])
+    assert "即將公布" not in text_zh
+    assert "市場波動升高" not in text_zh
