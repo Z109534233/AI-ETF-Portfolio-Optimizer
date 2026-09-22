@@ -1364,8 +1364,9 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
     "Affected ETFs" is every DEFAULT_ETF_IMPACT_WATCHLIST ticker whose
     calculate_etf_impact() rating for this single headline is 4+ stars.
 
-    Returns a list of dicts, sorted by score descending: headline, score
-    (0-100), stars (1-5), star_label (e.g. "★★★★★"), category, sentiment
+    Returns a list of dicts, sorted by score descending: headline,
+    publisher, published/published_text, score (0-100), stars (1-5),
+    star_label (e.g. "★★★★★"), category, sentiment
     (raw mood), sentiment_label (translated), sentiment_variant (badge
     color), affected_markets (list of translated country names, may be
     empty), affected_etfs (list of tickers, may be empty).
@@ -1389,8 +1390,13 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
             if any(EVENT_MARKET_IMPACT.get(et, {}).get(m, 0) >= 3 for et in event_types)
         ]
 
+        _published = item.get("published")
+        _published_text = _published.strftime("%Y-%m-%d %H:%M") if hasattr(_published, "strftime") else ""
         events.append({
             "headline": item["title"],
+            "publisher": item.get("publisher") or "",
+            "published": _published,
+            "published_text": _published_text,
             "score": impact["score"],
             "stars": impact["stars"],
             "star_label": "★" * impact["stars"] + "☆" * (5 - impact["stars"]),
