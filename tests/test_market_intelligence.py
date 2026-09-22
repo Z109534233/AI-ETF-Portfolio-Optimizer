@@ -35,7 +35,7 @@ import src.market_intelligence as mi_mod
 from src.market_intelligence import (
     generate_market_summary, _generate_rule_based_summary, _market_summary_prompt,
     stars_to_impact_label, fetch_fear_greed_index, calculate_market_impact,
-    get_economic_calendar, generate_today_ai_summary,
+    get_economic_calendar, generate_today_ai_summary, get_todays_major_events,
 )
 from src.ui import star_rating_html, _star_salience_class
 
@@ -311,3 +311,12 @@ def test_market_summary_prompt_makes_index_snapshot_authoritative(monkeypatch):
     assert "MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT" in prompt
     assert "Do not invent upcoming Fed decisions" in prompt
     assert "S&P 500 +0.97%" in prompt
+
+
+
+def test_major_event_cards_have_source_and_publish_time_metadata():
+    events = get_todays_major_events(_sample_news(), limit=5)
+    assert events
+    assert all("publisher" in event and "published_text" in event for event in events)
+    assert any(event["publisher"] == "Reuters" for event in events)
+    assert any(event["published_text"].startswith("2026-09-14") for event in events)
