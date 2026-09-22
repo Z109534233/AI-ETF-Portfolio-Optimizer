@@ -282,7 +282,7 @@ with tab_summary:
 
     # ── Deterministic Data (computed, not AI-generated) ──────────────────
     section_header(t("ai_deterministic_data_title"))
-    st.caption(f"{t('ai_as_of_label')}: {context['as_of']}")
+    st.caption(f"{t('ai_as_of_label')}: {context.get('as_of_display', context['as_of'])} ({t('ai_taipei_time')})")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1:
         st.metric(t("metric_annualized_return"), f"{port_ctx['expected_return']:.2%}" if port_ctx["expected_return"] is not None else "N/A")
