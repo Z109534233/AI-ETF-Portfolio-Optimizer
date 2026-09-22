@@ -127,19 +127,23 @@ def summarize_market_snapshot(indices: dict) -> dict:
 
     vix = indices.get("vix", {})
     vix_text = ""
+    vix_level = None
+    vix_change = None
+    vix_level_desc = None
+    vix_change_desc = None
     if vix.get("available"):
-        level = float(vix.get("price", 0))
-        change = float(vix.get("change_pct", 0))
-        if level < 15:
-            level_desc = "low"
-        elif level < 20:
-            level_desc = "moderate"
-        elif level < 30:
-            level_desc = "elevated"
+        vix_level = float(vix.get("price", 0))
+        vix_change = float(vix.get("change_pct", 0))
+        if vix_level < 15:
+            vix_level_desc = "low"
+        elif vix_level < 20:
+            vix_level_desc = "moderate"
+        elif vix_level < 30:
+            vix_level_desc = "elevated"
         else:
-            level_desc = "high"
-        change_desc = "falling" if change < -0.05 else "rising" if change > 0.05 else "little changed"
-        vix_text = f"VIX {level:.2f} ({change:+.2f}%), {level_desc} and {change_desc}"
+            vix_level_desc = "high"
+        vix_change_desc = "falling" if vix_change < -0.05 else "rising" if vix_change > 0.05 else "little changed"
+        vix_text = f"VIX {vix_level:.2f} ({vix_change:+.2f}%), {vix_level_desc} and {vix_change_desc}"
 
     return {
         "direction": direction,
@@ -148,7 +152,26 @@ def summarize_market_snapshot(indices: dict) -> dict:
         "equity_available": len(available),
         "equity_details": details,
         "vix_text": vix_text,
+        "vix_level": vix_level,
+        "vix_change": vix_change,
+        "vix_level_desc": vix_level_desc,
+        "vix_change_desc": vix_change_desc,
     }
+
+
+def localized_vix_text(snapshot: dict) -> str:
+    """Language-aware VIX interpretation for user-facing rule-based prose."""
+    if snapshot.get("vix_level") is None:
+        return ""
+    if get_language() == "zh-TW":
+        level_map = {"low": "偏低", "moderate": "中等", "elevated": "偏高", "high": "高檔"}
+        change_map = {"falling": "下降", "rising": "上升", "little changed": "變化不大"}
+        return (
+            f"VIX 為 {snapshot['vix_level']:.2f}（{snapshot['vix_change']:+.2f}%），"
+            f"水準{level_map.get(snapshot['vix_level_desc'], snapshot['vix_level_desc'])}且"
+            f"{change_map.get(snapshot['vix_change_desc'], snapshot['vix_change_desc'])}"
+        )
+    return snapshot.get("vix_text", "")
 
 
 def fetch_fear_greed_index() -> dict:
@@ -952,8 +975,9 @@ def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etf
             "Unavailable": "目前無法取得足夠的主要指數資料",
         }[snapshot["direction"]]
         snapshot_text = f"{direction_text}（{snapshot['equity_details']}）。" if snapshot["equity_details"] else f"{direction_text}。"
-        if snapshot["vix_text"]:
-            snapshot_text += f" {snapshot['vix_text']}。"
+        _vix = localized_vix_text(snapshot)
+        if _vix:
+            snapshot_text += f" {_vix}。"
     else:
         direction_text = {
             "Rising": "Major equity indices are broadly higher today",
@@ -1156,8 +1180,9 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
             f"{'正面' if mood == 'Bullish' else '負面' if mood == 'Bearish' else '中性'}，"
             f"主要涉及{category_zh}相關發展；新聞情緒僅作補充，不覆蓋實際指數方向。"
         )
-        if snapshot["vix_text"]:
-            overview_text += f" {snapshot['vix_text']}。"
+        _vix = localized_vix_text(snapshot)
+        if _vix:
+            overview_text += f" {_vix}。"
         if top_type:
             why_text = (
                 f"{_ETF_TYPE_REGION_ZH.get(top_type, top_type)} ETF 預期將比"
