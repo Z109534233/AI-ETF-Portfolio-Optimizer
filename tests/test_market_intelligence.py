@@ -336,3 +336,14 @@ def test_market_action_does_not_invent_upcoming_events_or_vix_state(monkeypatch)
     text_zh = " ".join(action_zh["items"])
     assert "即將公布" not in text_zh
     assert "市場波動升高" not in text_zh
+
+
+
+def test_single_hard_news_event_can_still_receive_high_impact_rating():
+    hard_news = [{
+        "title": "Federal Reserve cuts interest rates by 50 basis points",
+        "impact": "Positive", "publisher": "Reuters", "link": "", "published": None,
+    }]
+    result = calculate_market_impact(hard_news)
+    assert result["score"] >= 70
+    assert result["stars"] >= 4
