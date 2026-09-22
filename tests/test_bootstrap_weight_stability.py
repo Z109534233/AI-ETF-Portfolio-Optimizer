@@ -28,6 +28,7 @@ sys.path.insert(0, REPO_ROOT)
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import src.portfolio_optimizer as portfolio_optimizer_mod
 from src.portfolio_optimizer import (
