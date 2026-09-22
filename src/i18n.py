@@ -1619,7 +1619,7 @@ TRANSLATIONS = {
         "chart_risk_contribution_pct": "風險貢獻（%）",
         "chart_etf": "ETF",
         "chart_portfolio_growth_deterministic": "複利成長推估（確定性情境）",
-        "chart_years": "年數",
+        "chart_years": "年",
         "chart_value_usd": "價值（$）",
         "chart_portfolio_balance": "投資組合餘額",
         "chart_real_value_inflation_adj": "實質價值（通膨調整後）",
