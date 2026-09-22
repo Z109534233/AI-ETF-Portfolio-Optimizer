@@ -36,7 +36,9 @@ import streamlit as st
 
 from src.financial_metrics import portfolio_diagnosis
 from src.risk_analytics import historical_var_cvar
-from src.i18n import t, get_language, t_opt_method
+from src.i18n import (
+    t, get_language, t_opt_method, t_investment_objective, t_risk_level,
+)
 from src.openai_service import cached_generate, fingerprint, is_configured
 
 
@@ -67,6 +69,16 @@ def _format_as_of_taipei(utc_iso: str) -> str:
         return dt.astimezone(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M")
     except Exception:
         return utc_iso
+
+
+def assumption_source_label(source: str) -> str:
+    """Translate simulator assumption-source storage values for display."""
+    return {
+        "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+        "Conservative Assumptions": t("sim_assumption_source_conservative"),
+        "Market Scenario": t("sim_market_scenario"),
+        "Custom Assumptions": t("sim_assumption_source_custom"),
+    }.get(source, source or "—")
 
 _ADVISOR_SYSTEM_INSTRUCTIONS = (
     "You are a professional educational financial analyst. Only discuss numbers "
@@ -480,8 +492,10 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     if not p["available"]:
         return t("ai_no_portfolio_data")
 
+    _objective_display = t_investment_objective(investment_objective)
+    _risk_display = t_risk_level(risk_level)
     lines = [t("ai_report_title"), t(
-        "ai_report_meta", objective=investment_objective, risk=risk_level, horizon=investment_horizon
+        "ai_report_meta", objective=_objective_display, risk=_risk_display, horizon=investment_horizon
     ) + "\n"]
 
     weights = p["weights"]
@@ -508,7 +522,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     lines.append(t(
         "ai_report_summary_text",
         n_holdings=n_holdings, focus=focus, top_holding=top_holding,
-        top_weight=_fmt_pct(top_weight), horizon=investment_horizon, risk_lower=risk_level.lower(),
+        top_weight=_fmt_pct(top_weight), horizon=investment_horizon, risk=_risk_display,
     ))
     lines.append(t(
         "ai_synthesis_portfolio_metrics",
@@ -516,7 +530,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
         sharpe=_fmt_num(p["sharpe_ratio"]), strategy=t_opt_method(p["strategy"]),
     ))
 
-    lines.append("\n" + t("ai_section_risk"))
+    lines.append("\n" + t("ai_report_section2_risk"))
     r = context["risk"]
     if r.get("available"):
         c = r["concentration"]
@@ -536,14 +550,15 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_section_unavailable", reason=r.get("reason", "")))
 
-    lines.append("\n" + t("ai_section_simulator"))
+    lines.append("\n" + t("ai_report_section3_simulator"))
     sim = context["simulator"]
     fp = sim["future_projection"]
     if fp.get("available"):
         s = fp["summary"]
         lines.append(t(
             "ai_sim_future_line", years=fp["years"], median=_fmt_money(s.get("median_final")),
-            prob=_fmt_pct(s.get("probability_profit")), source=fp.get("assumption_source", ""),
+            prob=_fmt_pct(s.get("probability_profit")),
+            source=assumption_source_label(fp.get("assumption_source", "")),
         ))
     else:
         lines.append(t("ai_sim_future_unavailable", reason=fp.get("reason", "")))
@@ -557,7 +572,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_sim_historical_unavailable", reason=hs.get("reason", "")))
 
-    lines.append("\n" + t("ai_section_ml"))
+    lines.append("\n" + t("ai_report_section4_ml"))
     ml = context["ml"]
     if ml.get("available"):
         beats = t("ai_ml_beats") if ml["beats_baseline"] else t("ai_ml_below")
@@ -569,7 +584,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_section_unavailable", reason=ml.get("reason", "")))
 
-    lines.append("\n" + t("ai_section_news"))
+    lines.append("\n" + t("ai_report_section5_news"))
     news = context["news"]
     if news.get("available"):
         lines.append(t(
@@ -580,7 +595,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_section_unavailable", reason=news.get("reason", "")))
 
-    lines.append("\n" + t("ai_report_section4"))
+    lines.append("\n" + t("ai_report_section6_risks"))
     if top_weight > 0.5:
         lines.append("- " + t("ai_report_risk_concentration", ticker=top_holding, weight=_fmt_pct(top_weight)))
     if str(risk_level).lower() == "conservative":
@@ -596,7 +611,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
         lines.append("- " + t("ai_report_risk_equity_market"))
     lines.append("- " + t("ai_report_risk_market"))
 
-    lines.append("\n" + t("ai_report_section8"))
+    lines.append("\n" + t("ai_report_section7_education"))
     lines.append("- " + t("ai_report_edu_correlation"))
     lines.append("- " + t("ai_report_edu_simulator"))
     lines.append("- " + t("ai_report_edu_tax"))
