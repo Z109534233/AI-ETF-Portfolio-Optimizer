@@ -136,6 +136,8 @@ with tab_overview:
                 st.markdown(
                     '<div class="status-card market-impact-card">'
                     f'<div class="status-card-ticker">{event["headline"]}</div>'
+                    f'<div class="status-card-sector">{event.get("publisher", "")}'
+                    f'{(" · " + event.get("published_text", "")) if event.get("published_text") else ""}</div>'
                     f'<div class="affected-by-caption">{_impact_caption}</div>'
                     f'<div class="status-card-stars">{star_rating_html(event["stars"])}</div>'
                     f'<div class="market-impact-label">{event["category"]}</div>'
