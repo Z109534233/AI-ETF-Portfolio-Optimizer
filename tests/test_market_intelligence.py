@@ -347,3 +347,46 @@ def test_single_hard_news_event_can_still_receive_high_impact_rating():
     result = calculate_market_impact(hard_news)
     assert result["score"] >= 70
     assert result["stars"] >= 4
+
+
+
+def test_portfolio_impact_prefers_active_session_portfolio(mocked_market_data):
+    at = _apptest_from_file("pages/8_Market_Intelligence.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.session_state["current_portfolio"] = {
+        "strategy": "Equal Weight",
+        "weights": {"VOO": 0.60, "BND": 0.40},
+    }
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(
+        [m.value for m in at.markdown]
+        + [c.value for c in at.caption]
+    )
+    assert "Active portfolio (this session, from Portfolio Optimizer)" in corpus
+    assert "shared demo portfolio only" not in corpus
+
+
+def test_portfolio_impact_demo_fallback_is_explicitly_labeled(mocked_market_data, monkeypatch):
+    import src.database as dbmod
+
+    monkeypatch.setattr(
+        dbmod, "load_all_portfolios",
+        lambda *a, **k: [{
+            "name": "Global_Diversified",
+            "holdings": {"VOO": 0.50, "BND": 0.50},
+            "metadata": {"synthetic_demo": True},
+        }],
+    )
+
+    at = _apptest_from_file("pages/8_Market_Intelligence.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(
+        [m.value for m in at.markdown]
+        + [c.value for c in at.caption]
+    )
+    assert "No active portfolio exists in this session" in corpus
+    assert "shared demo portfolio only" in corpus
+    assert "Global_Diversified" in corpus
