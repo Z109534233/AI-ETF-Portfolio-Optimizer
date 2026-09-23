@@ -702,7 +702,8 @@ def _render_portfolio_history_tab():
             else:
                 st.error(t("hist_delete_failed"))
     with col2:
-        st.caption(t("hist_demo_delete_protected") if _del_is_demo else t("hist_delete_warning"))
+        if not _del_is_demo:
+            st.caption(t("hist_delete_warning"))
 
 
 tab_goal, tab_holdings, tab_watchlist, tab_history, tab_brief = st.tabs([
