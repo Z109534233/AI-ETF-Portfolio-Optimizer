@@ -22,10 +22,7 @@ from src.data_loader import download_etf_data
 from src.data_cleaner import clean_price_data
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import annualized_return, annualized_volatility, sharpe_ratio, maximum_drawdown
-from src.ai_advisor import (
-    build_advisor_context, generate_advisor_narrative, assumption_source_label,
-    conservative_profile_mismatch,
-)
+from src.ai_advisor import build_advisor_context, generate_advisor_narrative, assumption_source_label
 from src.openai_service import is_configured as openai_is_configured
 from src.news import fetch_market_news
 from src.charts import allocation_donut_chart
@@ -263,7 +260,6 @@ tab_summary, tab_risk, tab_simulation, tab_ml, tab_market = st.tabs([
 ])
 
 risk_ctx = context["risk"]
-_profile_mismatch = conservative_profile_mismatch(context, risk_level)
 
 with tab_summary:
     section_header(t("ai_analysis_results_title"))
@@ -296,13 +292,6 @@ with tab_summary:
         st.metric(t("metric_sharpe_ratio"), f"{port_ctx['sharpe_ratio']:.2f}" if port_ctx["sharpe_ratio"] is not None else "N/A")
     with kpi4:
         st.metric(t("metric_maximum_drawdown"), f"{port_ctx['max_drawdown']:.2%}" if port_ctx["max_drawdown"] is not None else "N/A")
-    if _profile_mismatch:
-        st.warning(t(
-            "ai_report_risk_profile_mismatch",
-            volatility=f"{_profile_mismatch['volatility']:.2%}" if _profile_mismatch["volatility"] is not None else "N/A",
-            largest_weight=f"{_profile_mismatch['largest_weight']:.2%}",
-            effective_holdings=f"{_profile_mismatch['effective_holdings']:.1f}",
-        ))
 
 with tab_risk:
     section_header(t("ai_section_risk"))
@@ -318,13 +307,6 @@ with tab_risk:
             "ai_risk_concentration_line", ticker=c["largest_ticker"], weight=f"{c['largest_weight']:.2%}",
             effective_holdings=f"{c['effective_holdings']:.1f}",
         ))
-        if _profile_mismatch:
-            st.warning(t(
-                "ai_report_risk_profile_mismatch",
-                volatility=f"{_profile_mismatch['volatility']:.2%}" if _profile_mismatch["volatility"] is not None else "N/A",
-                largest_weight=f"{_profile_mismatch['largest_weight']:.2%}",
-                effective_holdings=f"{_profile_mismatch['effective_holdings']:.1f}",
-            ))
         if vc.get("available"):
             st.markdown(t(
                 "ai_risk_var_line", confidence=f"{vc['confidence']:.0%}", holding_period=vc["holding_period_days"],
