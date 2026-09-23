@@ -283,6 +283,18 @@ def test_three_scenarios_always_present_with_increasing_return_and_volatility():
         assert scenarios[name]["expected_volatility"] == SCENARIO_ASSUMPTIONS[name]["expected_volatility"]
 
 
+def test_scenarios_expose_clear_illustrative_equity_bond_mixes():
+    plan = build_goal_plan(
+        current_age=35, target_age=65, current_capital=10000.0,
+        monthly_contribution=500.0, target_mode="total_value",
+        target_amount=1_000_000.0, market_preference="Taiwan",
+        risk_tolerance="balanced", base_currency="TWD",
+    )
+    assert plan["scenarios"]["conservative"]["asset_mix"] == {"Equity": 0.30, "Fixed Income": 0.70}
+    assert plan["scenarios"]["balanced"]["asset_mix"] == {"Equity": 0.60, "Fixed Income": 0.40}
+    assert plan["scenarios"]["aggressive"]["asset_mix"] == {"Equity": 0.90, "Fixed Income": 0.10}
+
+
 def test_assumptions_disclosure_present_and_mentions_key_caveats():
     plan = build_goal_plan(
         current_age=35, target_age=65, current_capital=0.0,
