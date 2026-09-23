@@ -888,6 +888,23 @@ with tab_goal:
             _gp_grid_html = '<div class="gp-scenario-grid">' + "".join(_gp_cards) + "</div>"
             st.markdown(_gp_grid_html.strip(), unsafe_allow_html=True)
 
+            _balanced_mc = _gp_results["balanced"]
+            _aggressive_mc = _gp_results["aggressive"]
+            _target_for_gap = max(float(gp_plan["implied_target_total"]), 1.0)
+            _p10_gap_ratio = abs(_aggressive_mc["p10"] - _balanced_mc["p10"]) / _target_for_gap
+            if (
+                _aggressive_mc["target_share"] > _balanced_mc["target_share"]
+                and _p10_gap_ratio <= 0.03
+            ):
+                st.info(t(
+                    "gp_distribution_insight_upside",
+                    aggressive_share=f"{_aggressive_mc['target_share']:.1%}",
+                    balanced_share=f"{_balanced_mc['target_share']:.1%}",
+                    aggressive_p10=f"{_aggressive_mc['p10']:,.0f}",
+                    balanced_p10=f"{_balanced_mc['p10']:,.0f}",
+                    currency=gp_base_currency,
+                ))
+
             with st.expander(t("gp_assumptions_title"), expanded=False):
                 st.markdown(f"- {t('gp_assumptions_hypothetical')}")
                 st.markdown(f"- {t('gp_assumptions_return_source')}")
