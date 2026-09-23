@@ -102,6 +102,13 @@ def test_goal_planner_uses_responsive_scenario_grid_and_nominal_label(isolated_d
     assert "80% 路徑月投入" in corpus
 
 
+def test_goal_planner_explains_when_upside_expands_but_p10_is_similar(isolated_db, no_network):
+    at = _run_my_portfolio(lang="zh-TW")
+    info_text = "\n".join(i.value for i in at.info)
+    assert "情境觀察" in info_text
+    assert "不是「股票一定較好」的普遍結論" in info_text
+
+
 def test_goal_planner_html_cards_are_not_rendered_as_code_blocks(isolated_db, no_network):
     at = _run_my_portfolio(lang="zh-TW")
     raw_code = "\n".join(getattr(c, "value", "") for c in at.code)
