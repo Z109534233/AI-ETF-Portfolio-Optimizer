@@ -249,6 +249,15 @@ def test_daily_brief_empty_state_when_no_holdings_or_watchlist(isolated_db, no_n
     at = _run_my_portfolio()
     corpus = "\n".join(m.value for m in at.markdown)
     assert "Add a ticker to Current Holdings or Watchlist" in corpus
+    # The section subtitle belongs under the section title only; the empty
+    # state should not repeat the exact same disclaimer a second time.
+    subtitle = "A summary generated from your holdings, watchlist, and market intelligence — not buy/sell advice."
+    all_text = "\n".join(
+        [m.value for m in at.markdown]
+        + [c.value for c in at.caption]
+        + [i.value for i in at.info]
+    )
+    assert all_text.count(subtitle) <= 1
 
 
 def test_daily_brief_renders_with_holdings(isolated_db, no_network, monkeypatch):
