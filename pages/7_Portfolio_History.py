@@ -672,27 +672,37 @@ def _render_portfolio_history_tab():
                            format_func=lambda x: portfolio_names[x],
                            key="delete_select")
 
-    # Explicit second confirmation (Issue #43 item N): selecting a portfolio
-    # above never deletes it by itself. The confirmation checkbox is keyed
-    # by `del_id`, so it is a BRAND NEW (unchecked) widget whenever the
-    # selection changes -- switching portfolios automatically invalidates
-    # any prior confirmation without extra session-state bookkeeping. The
-    # Delete button stays disabled until this box is checked.
+    # Public demo protection: curated synthetic demo rows are immutable.
+    # They are shared across visitors and form part of the portfolio showcase,
+    # so a public user must never be able to delete them.
     _del_name = portfolio_names.get(del_id, "")
-    confirm_delete = st.checkbox(
-        t("hist_delete_confirm_checkbox", name=_del_name), key=f"hist_delete_confirm_{del_id}",
-    )
+    _del_portfolio = next((p for p in portfolios if p["id"] == del_id), None)
+    _del_is_demo = bool((_del_portfolio or {}).get("metadata", {}).get("synthetic_demo"))
+
+    if _del_is_demo:
+        st.info(t("hist_demo_delete_protected"))
+        confirm_delete = False
+    else:
+        # Explicit second confirmation: selecting a portfolio never deletes it.
+        # The key changes with del_id so confirmation cannot carry over.
+        confirm_delete = st.checkbox(
+            t("hist_delete_confirm_checkbox", name=_del_name), key=f"hist_delete_confirm_{del_id}",
+        )
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button(t("btn_delete_portfolio"), type="secondary", disabled=not confirm_delete):
+        if st.button(
+            t("btn_delete_portfolio"),
+            type="secondary",
+            disabled=_del_is_demo or not confirm_delete,
+        ):
             if delete_portfolio(del_id):
                 st.success(t("hist_delete_success"))
                 st.rerun()
             else:
                 st.error(t("hist_delete_failed"))
     with col2:
-        st.caption(t("hist_delete_warning"))
+        st.caption(t("hist_demo_delete_protected") if _del_is_demo else t("hist_delete_warning"))
 
 
 tab_goal, tab_holdings, tab_watchlist, tab_history, tab_brief = st.tabs([
@@ -1074,7 +1084,7 @@ with tab_brief:
     _brief_watchlist = _session_watchlist()
 
     if not _brief_holdings and not _brief_watchlist:
-        empty_state(t("db_empty_no_data"), t("db_section_subtitle"), icon="layers")
+        empty_state(t("db_empty_no_data"), "", icon="layers")
     else:
         try:
             _brief_news = fetch_market_news(limit=10)
