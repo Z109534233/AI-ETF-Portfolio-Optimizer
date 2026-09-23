@@ -377,13 +377,21 @@ with tab_impact:
         }
         mi_portfolio_caption = t("mi_portfolio_using_current", name=mi_portfolio_name)
     else:
+        # Public deployment fallback: never present an arbitrary database row
+        # written by another visitor as "your" portfolio. If this session has
+        # no active optimizer portfolio, use only a curated synthetic demo and
+        # label it explicitly as shared demo data.
         portfolios = load_all_portfolios()
-        if portfolios:
-            mi_portfolio_name = portfolios[0]["name"]
+        demo_portfolios = [
+            p for p in portfolios if bool((p.get("metadata") or {}).get("synthetic_demo"))
+        ]
+        if demo_portfolios:
+            demo = demo_portfolios[0]
+            mi_portfolio_name = demo["name"]
             mi_portfolio_holdings = {
-                tk: w for tk, w in portfolios[0]["holdings"].items() if float(w) >= 0.005
+                tk: w for tk, w in demo["holdings"].items() if float(w) >= 0.005
             }
-            mi_portfolio_caption = t("mi_portfolio_using", name=mi_portfolio_name)
+            mi_portfolio_caption = t("mi_portfolio_using_shared_demo", name=mi_portfolio_name)
         else:
             mi_portfolio_name = None
             mi_portfolio_holdings = None
