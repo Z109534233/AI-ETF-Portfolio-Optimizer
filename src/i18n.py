@@ -3622,7 +3622,8 @@ def _browser_language():
         context = getattr(st, "context", None)
         headers = getattr(context, "headers", None) if context is not None else None
         if headers:
-            return _language_from_accept_language(headers.get("Accept-Language"))
+            value = headers.get("Accept-Language") or headers.get("accept-language")
+            return _language_from_accept_language(value)
     except Exception:
         pass
     return None
