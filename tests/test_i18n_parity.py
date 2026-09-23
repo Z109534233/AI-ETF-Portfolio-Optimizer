@@ -27,6 +27,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
+import src.i18n as i18n_mod
 from src.i18n import TRANSLATIONS, _normalize_language_code, _language_from_accept_language
 
 PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
@@ -117,3 +118,49 @@ def test_browser_language_prefers_chinese_when_present_otherwise_english():
     assert _language_from_accept_language("en-US,en;q=0.9") == "en"
     assert _language_from_accept_language("fr-FR,fr;q=0.9") == "en"
     assert _language_from_accept_language("") is None
+
+
+
+class _FakeContext:
+    def __init__(self, headers=None):
+        self.headers = headers or {}
+
+
+class _FakeStreamlitLanguageState:
+    def __init__(self, query_params=None, headers=None, session_state=None):
+        self.query_params = query_params if query_params is not None else {}
+        self.context = _FakeContext(headers)
+        self.session_state = session_state if session_state is not None else {}
+
+
+def test_get_language_url_parameter_overrides_existing_session(monkeypatch):
+    fake = _FakeStreamlitLanguageState(
+        query_params={"lang": "en"},
+        headers={"Accept-Language": "zh-TW,zh;q=0.9"},
+        session_state={"language": "zh-TW"},
+    )
+    monkeypatch.setattr(i18n_mod, "st", fake)
+    assert i18n_mod.get_language() == "en"
+    assert fake.session_state["language"] == "en"
+
+
+def test_get_language_uses_browser_locale_on_fresh_session(monkeypatch):
+    fake = _FakeStreamlitLanguageState(
+        query_params={},
+        headers={"Accept-Language": "en-US,en;q=0.9"},
+        session_state={},
+    )
+    monkeypatch.setattr(i18n_mod, "st", fake)
+    assert i18n_mod.get_language() == "en"
+    assert fake.session_state["language"] == "en"
+
+
+def test_language_selector_callback_persists_shareable_query_parameter(monkeypatch):
+    fake = _FakeStreamlitLanguageState(
+        query_params={},
+        session_state={"_language_selector_widget": "en", "language": "zh-TW"},
+    )
+    monkeypatch.setattr(i18n_mod, "st", fake)
+    i18n_mod._on_language_selector_change()
+    assert fake.session_state["language"] == "en"
+    assert fake.query_params["lang"] == "en"
