@@ -569,8 +569,68 @@ def test_conservative_profile_mismatch_is_explicit_for_concentrated_portfolio():
         risk_level="Conservative", investment_horizon=20,
     )
     assert "Risk-profile mismatch" in text
-    assert "multi-asset but highly concentrated" in text
+    assert "actual allocation is highly concentrated" in text
     assert "2 ETF" in text
+
+
+def test_conservative_mismatch_works_with_localized_zh_risk_label():
+    """Regression: the zh-TW page passes the localized label 保守型."""
+    set_language("zh-TW")
+    try:
+        portfolio = {
+            **_sample_portfolio(),
+            "strategy": "Maximum Sharpe Ratio",
+            "tickers": ["GLD", "VOO"],
+            "weights": {"GLD": 0.58, "VOO": 0.42},
+            "volatility": 0.1398,
+            "risk_tolerance": "Conservative",
+        }
+        context = build_advisor_context(portfolio=portfolio, portfolio_source="current")
+        text = generate_rule_based_narrative(
+            context, investment_objective="Capital Preservation",
+            risk_level="保守型", investment_horizon=20,
+        )
+        assert "風險屬性不一致" in text
+        assert "13.98%" in text
+        assert "雖選自跨資產類別，但實際配置高度集中" in text
+    finally:
+        set_language("en")
+
+
+def test_rule_based_report_distinguishes_in_sample_return_from_projection_assumption():
+    set_language("zh-TW")
+    try:
+        portfolio = {
+            **_sample_portfolio(),
+            "strategy": "Maximum Sharpe Ratio",
+            "expected_return": 0.1739,
+            "volatility": 0.1398,
+        }
+        sim_result = {"summary": {"median_final": 20000.0, "probability_profit": 0.80}}
+        sim_params = {
+            "portfolio_strategy": "Maximum Sharpe Ratio",
+            "years": 20,
+            "assumption_source": "Conservative Assumptions",
+            "annual_return": 0.05,
+            "annual_volatility": 0.1398,
+            "n_simulations": 1000,
+        }
+        context = build_advisor_context(
+            portfolio=portfolio, portfolio_source="current",
+            sim_result=sim_result, sim_params=sim_params,
+        )
+        text = generate_rule_based_narrative(context, risk_level="保守型", investment_horizon=20)
+        assert "樣本內歷史統計（非未來預期）" in text
+        assert "17.39%" in text
+        assert "第 3 節" in text
+        assert "保守假設" in text
+        assert "5.00%" in text
+
+        prompt = _build_prompt(context, "Long-term Growth", "保守型", 20)
+        assert "In-sample historical annualized return: 17.39%" in prompt
+        assert "annual-return assumption 5.00%" in prompt
+    finally:
+        set_language("en")
 
 
 def test_rule_based_report_section_numbers_are_sequential():
