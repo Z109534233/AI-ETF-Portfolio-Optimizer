@@ -1079,6 +1079,7 @@ elif workspace == "Holdings":
                 f"<span style='color:var(--text-muted);font-size:12px;'>{t('etf_holdings_coverage_note')}</span>",
                 unsafe_allow_html=True,
             )
+            st.caption(t("etf_holdings_effective_disclosed_note", count=len(_hld_items)))
 
         elif hold_view == "Top":
             from src.theme import COLORS as _HLD_C
