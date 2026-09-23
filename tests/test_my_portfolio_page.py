@@ -133,7 +133,6 @@ def test_add_holding_with_known_ticker_succeeds(isolated_db, no_network):
     assert holdings[0]["ticker"] == "VOO"
     assert holdings[0]["quantity"] == 10.0
     # Public visitors must never write holdings into the shared SQLite DB.
-    assert at.session_state["_guest_session_holdings"] == []
     assert isolated_db.load_user_holdings("demo") == []
 
 
@@ -146,6 +145,7 @@ def test_add_holding_with_invalid_ticker_shows_error_and_does_not_persist(isolat
     assert at.exception == []
     error_texts = "\n".join(e.value for e in at.error)
     assert "NOTAREALTICKERXYZ" in error_texts
+    assert at.session_state["_guest_session_holdings"] == []
     assert isolated_db.load_user_holdings("demo") == []
 
 
