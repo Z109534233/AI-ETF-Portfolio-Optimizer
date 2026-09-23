@@ -312,3 +312,29 @@ def test_no_trend_status_light_emoji_anywhere_on_etf_analysis(_mock_full_history
     corpus = _page_corpus(at)
     for emoji in _TREND_EMOJI:
         assert emoji not in corpus, f"Trend status-light emoji {emoji!r} must not appear on the Compare/Rankings view"
+
+
+
+def test_overview_quant_score_badge_explains_actual_formula(_mock_full_history_download):
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = _page_corpus(at)
+    assert "A 0–100 rule-based heuristic score, not a probability." in corpus
+    assert "annualized return contributes up to ±22" in corpus
+    assert "Sharpe Ratio up to ±18" in corpus
+    assert "10-day momentum up to ±12" in corpus
+    assert "adding up to 8 or subtracting up to 22" in corpus
+    assert "maximum drawdown can subtract up to another 22" in corpus
+    assert "&#9432;" in corpus
+
+
+def test_overview_interpretation_button_is_not_mislabeled_as_ai(_mock_full_history_download):
+    at = _apptest_from_file("pages/1_ETF_Analysis.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    labels = [b.label for b in at.button]
+    assert "Generate Interpretation" in labels
+    assert "AI Interpretation" not in labels

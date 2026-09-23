@@ -1038,13 +1038,14 @@ def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etf
     return " ".join(parts)
 
 
-def analyze_portfolio_impact(holdings: dict, affected_etfs: list) -> str:
+def analyze_portfolio_impact(holdings: dict, affected_etfs: list, portfolio_source: str = "current") -> str:
     """
-    Given a saved portfolio's holdings ({ticker: weight}) and the output of
+    Given portfolio holdings ({ticker: weight}) and the output of
     get_affected_etfs(), produce a short rule-based narrative describing the
     portfolio's dominant sector exposure and which held tickers today's news
-    may be relevant to. This analyzes possible relevance only -- it never
-    predicts prices or returns.
+    may be relevant to. `portfolio_source` is "current" or "demo" and changes
+    pronouns only; the underlying impact logic is identical. This analyzes
+    possible relevance only -- it never predicts prices or returns.
     """
     if not holdings:
         return t("mi_portfolio_no_data")
@@ -1060,7 +1061,11 @@ def analyze_portfolio_impact(holdings: dict, affected_etfs: list) -> str:
         return t("mi_portfolio_no_data")
 
     top_sector, top_weight = max(sector_weight.items(), key=lambda x: x[1])
-    lines = [t("mi_portfolio_exposure", sector=top_sector, weight=f"{top_weight:.0%}")]
+    is_demo = portfolio_source == "demo"
+    exposure_key = "mi_demo_portfolio_exposure" if is_demo else "mi_portfolio_exposure"
+    news_key = "mi_demo_portfolio_news_line" if is_demo else "mi_portfolio_news_line"
+    no_news_key = "mi_demo_portfolio_no_relevant_news" if is_demo else "mi_portfolio_no_relevant_news"
+    lines = [t(exposure_key, sector=top_sector, weight=f"{top_weight:.0%}")]
 
     relevant = [
         (tk, impact_by_ticker[tk]) for tk in holdings
@@ -1069,9 +1074,9 @@ def analyze_portfolio_impact(holdings: dict, affected_etfs: list) -> str:
     if relevant:
         for tk, info in relevant:
             verb = t("mi_impact_positive_verb") if info["impact"] == "Positive" else t("mi_impact_negative_verb")
-            lines.append(t("mi_portfolio_news_line", ticker=tk, verb=verb))
+            lines.append(t(news_key, ticker=tk, verb=verb))
     else:
-        lines.append(t("mi_portfolio_no_relevant_news"))
+        lines.append(t(no_news_key))
 
     return " ".join(lines)
 

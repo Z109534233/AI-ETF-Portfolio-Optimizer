@@ -376,6 +376,7 @@ with tab_impact:
             tk: w for tk, w in current_portfolio_mi["weights"].items() if float(w) >= 0.005
         }
         mi_portfolio_caption = t("mi_portfolio_using_current", name=mi_portfolio_name)
+        mi_portfolio_source = "current"
     else:
         # Public deployment fallback: never present an arbitrary database row
         # written by another visitor as "your" portfolio. If this session has
@@ -392,15 +393,19 @@ with tab_impact:
                 tk: w for tk, w in demo["holdings"].items() if float(w) >= 0.005
             }
             mi_portfolio_caption = t("mi_portfolio_using_shared_demo", name=mi_portfolio_name)
+            mi_portfolio_source = "demo"
         else:
             mi_portfolio_name = None
             mi_portfolio_holdings = None
             mi_portfolio_caption = None
+            mi_portfolio_source = None
 
     if not mi_portfolio_holdings:
         empty_state(t("hist_no_portfolios_title"), t("mi_portfolio_no_data"), icon="layers")
     else:
-        impact_text = analyze_portfolio_impact(mi_portfolio_holdings, affected_etfs)
+        impact_text = analyze_portfolio_impact(
+            mi_portfolio_holdings, affected_etfs, portfolio_source=mi_portfolio_source
+        )
         col_text, col_chart = st.columns([2, 1])
         with col_text:
             with chart_card(mi_portfolio_name, mi_portfolio_caption):
@@ -409,12 +414,18 @@ with tab_impact:
             with chart_card(t("hist_allocation_breakdown_card")):
                 fig = allocation_donut_chart(mi_portfolio_holdings, "")
                 st.plotly_chart(fig, use_container_width=True, key="mi_portfolio_allocation_donut")
-                chart_caption(t("mi_caption_allocation_donut"))
+                chart_caption(
+                    t("mi_caption_demo_allocation_donut")
+                    if mi_portfolio_source == "demo"
+                    else t("mi_caption_allocation_donut")
+                )
                 # context_text built ONLY from values already displayed in
                 # this donut -- the portfolio name/strategy and each
                 # holding's own allocation share (Issue #24 item 4 rule E:
                 # explain what's already computed, never predict/recommend).
-                _allocation_context = "Portfolio: {}. Allocation by ticker: {}.".format(
+                _allocation_subject = "Demo portfolio" if mi_portfolio_source == "demo" else "Current portfolio"
+                _allocation_context = "{}: {}. Allocation by ticker: {}.".format(
+                    _allocation_subject,
                     mi_portfolio_name,
                     ", ".join(
                         f"{tk} {w:.1%}"

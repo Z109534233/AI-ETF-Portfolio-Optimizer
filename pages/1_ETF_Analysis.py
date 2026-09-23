@@ -58,6 +58,9 @@ from src.i18n import (
 )
 from src.etf_signals import (
     compute_quant_signals, trend_signal_from_return, recent_trend_return,
+    QUANT_SCORE_BASE, QUANT_RETURN_CAP, QUANT_SHARPE_CAP, QUANT_MOMENTUM_CAP,
+    QUANT_VOL_REFERENCE, QUANT_VOL_BENEFIT_CAP, QUANT_VOL_PENALTY_CAP,
+    QUANT_DRAWDOWN_PENALTY_CAP,
     generate_etf_interpretation, has_sufficient_history,
     risk_level_from_vol, expected_return_label_from_ann_ret,
 )
@@ -455,11 +458,9 @@ def _render_ai_interpretation_section(ticker: str, entry: dict) -> None:
     )
     badge = t("ai_tag_generated") if result["source"] == "ai" else t("ai_tag_rule_based")
     with chart_card(t("etf_ai_interpretation_title"), tag=badge):
-        if result["source"] == "ai":
-            st.markdown(result["text"])
-        else:
+        if result["source"] == "rule_based":
             st.caption(t("etf_ai_interpretation_unavailable"))
-            st.markdown(f"• {entry['insights'][0]}" if entry["insights"] else "—")
+        st.markdown(result["text"] or "—")
 
 
 # ── Top-Level Workspace Navigation ───────────────────────────────────────────
@@ -523,6 +524,17 @@ def _render_overview_hero():
         badge={
             "label": f"{t_trend_signal(entry['trend'])} · {t('etf_score_badge_label')} {entry['score']}",
             "color": color,
+            "help": t(
+                "etf_quant_score_help",
+                base=f"{QUANT_SCORE_BASE:.0f}",
+                return_cap=f"{QUANT_RETURN_CAP:.0f}",
+                sharpe_cap=f"{QUANT_SHARPE_CAP:.0f}",
+                momentum_cap=f"{QUANT_MOMENTUM_CAP:.0f}",
+                vol_ref=f"{QUANT_VOL_REFERENCE:.0%}",
+                vol_bonus=f"{QUANT_VOL_BENEFIT_CAP:.0f}",
+                vol_penalty=f"{QUANT_VOL_PENALTY_CAP:.0f}",
+                drawdown_penalty=f"{QUANT_DRAWDOWN_PENALTY_CAP:.0f}",
+            ),
             "meta": [(t("etf_signal_agreement_label"), f"{entry['signal_agreement']}%")],
         },
         secondary=[

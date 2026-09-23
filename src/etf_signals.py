@@ -64,6 +64,24 @@ MIN_RELIABLE_HISTORY_POINTS = 10
 # semantics note discloses, not a bug).
 TREND_LOOKBACK_DAYS = 60
 
+# Canonical Quant Score formula parameters. Keep these named so the UI can
+# describe the ACTUAL scoring model instead of publishing a separate,
+# potentially stale set of "weights". This is a bounded heuristic, not a
+# weighted-average probability model.
+QUANT_SCORE_BASE = 50.0
+QUANT_RETURN_CAP = 22.0
+QUANT_RETURN_MULTIPLIER = 140.0
+QUANT_SHARPE_CAP = 18.0
+QUANT_SHARPE_MULTIPLIER = 11.0
+QUANT_MOMENTUM_CAP = 12.0
+QUANT_MOMENTUM_MULTIPLIER = 200.0
+QUANT_VOL_REFERENCE = 0.15
+QUANT_VOL_BENEFIT_CAP = 8.0
+QUANT_VOL_PENALTY_CAP = 22.0
+QUANT_VOL_MULTIPLIER = 90.0
+QUANT_DRAWDOWN_PENALTY_CAP = 22.0
+QUANT_DRAWDOWN_MULTIPLIER = 55.0
+
 
 def has_sufficient_history(p) -> bool:
     return len(p) >= MIN_RELIABLE_HISTORY_POINTS
@@ -155,12 +173,15 @@ def compute_quant_signals(p: pd.Series, risk_free_rate: float) -> dict:
     mom = mom_last if pd.notna(mom_last) else 0.0
     price_now = p.iloc[-1]
 
-    score = 50.0
-    score += max(-22, min(22, ann_ret * 140))
-    score += max(-18, min(18, sr * 11))
-    score += max(-12, min(12, mom * 200))
-    score -= max(-8, min(22, (vol - 0.15) * 90))
-    score -= max(0, min(22, abs(mdd) * 55))
+    score = QUANT_SCORE_BASE
+    score += max(-QUANT_RETURN_CAP, min(QUANT_RETURN_CAP, ann_ret * QUANT_RETURN_MULTIPLIER))
+    score += max(-QUANT_SHARPE_CAP, min(QUANT_SHARPE_CAP, sr * QUANT_SHARPE_MULTIPLIER))
+    score += max(-QUANT_MOMENTUM_CAP, min(QUANT_MOMENTUM_CAP, mom * QUANT_MOMENTUM_MULTIPLIER))
+    score -= max(
+        -QUANT_VOL_BENEFIT_CAP,
+        min(QUANT_VOL_PENALTY_CAP, (vol - QUANT_VOL_REFERENCE) * QUANT_VOL_MULTIPLIER),
+    )
+    score -= max(0, min(QUANT_DRAWDOWN_PENALTY_CAP, abs(mdd) * QUANT_DRAWDOWN_MULTIPLIER))
     score = int(round(max(0, min(100, score))))
 
     trend = trend_signal_from_return(recent_ret)
@@ -253,6 +274,67 @@ def interpretation_fingerprint(ticker: str, lang: str, window_start, window_end,
     )
 
 
+def rule_based_etf_interpretation(signals: dict, lang: str) -> str:
+    """Explain signal agreement/tension without duplicating Quant Insights.
+
+    Trend Signal is a recent-direction label; Portfolio View is a thresholded
+    view of the full-window Quant Score. This fallback deliberately explains
+    that semantic difference instead of repeating a generic performance
+    observation such as "cumulative return is strong".
+    """
+    trend = signals["trend"]
+    view = signals["portfolio_view"]
+    score = int(signals["score"])
+
+    if view == VIEW_OVERWEIGHT:
+        score_band_en = "the Overweight band (65–100)"
+        score_band_zh = "加碼區間（65–100）"
+    elif view == VIEW_UNDERWEIGHT:
+        score_band_en = "the Underweight band (0–35)"
+        score_band_zh = "減碼區間（0–35）"
+    else:
+        score_band_en = "the Neutral band (36–64)"
+        score_band_zh = "中立區間（36–64）"
+
+    aligned = (
+        (trend == TREND_BULLISH and view == VIEW_OVERWEIGHT)
+        or (trend == TREND_BEARISH and view == VIEW_UNDERWEIGHT)
+        or (trend == TREND_NEUTRAL and view == VIEW_NEUTRAL)
+    )
+
+    if lang == "zh-TW":
+        trend_zh = {
+            TREND_BULLISH: "偏多",
+            TREND_NEUTRAL: "中性",
+            TREND_BEARISH: "偏空",
+        }.get(trend, trend)
+        relation = (
+            "兩個訊號方向一致。"
+            if aligned
+            else "兩個標籤看似不同，但並不矛盾，因為它們使用不同的時間範圍與判斷方式。"
+        )
+        return (
+            f"趨勢訊號「{trend_zh}」只反映近 {TREND_LOOKBACK_DAYS} 個交易日的價格方向；"
+            f"投資組合觀點則由完整區間的量化評分決定，目前評分 {score} 落在{score_band_zh}。"
+            f"{relation}"
+            "量化評分同時納入完整區間的年化報酬、Sharpe、10 日動能、波動度與最大回撤，"
+            "因此近期趨勢可以偏多／偏空，而較長區間的觀點仍維持中立。"
+        )
+
+    relation = (
+        "The two signals are directionally aligned."
+        if aligned
+        else "The labels can differ without contradicting each other because they use different horizons and rules."
+    )
+    return (
+        f"The {trend} Trend Signal reflects only the trailing {TREND_LOOKBACK_DAYS} trading days, "
+        f"whereas Portfolio View is derived from the full-window Quant Score; the current score of {score} falls in {score_band_en}. "
+        f"{relation} "
+        "The Quant Score also incorporates full-window annualized return, Sharpe ratio, 10-day momentum, volatility, and maximum drawdown, "
+        "so a recent directional move can coexist with a Neutral broader-window view."
+    )
+
+
 def generate_etf_interpretation(ticker: str, lang: str, window_start, window_end, signals: dict,
                                  session_state=None) -> dict:
     """Returns {"text": str|None, "source": "ai"|"rule_based", "error": str|None}.
@@ -274,4 +356,8 @@ def generate_etf_interpretation(ticker: str, lang: str, window_start, window_end
 
     if result["available"]:
         return {"text": result["text"], "source": "ai", "error": None}
-    return {"text": None, "source": "rule_based", "error": result.get("error")}
+    return {
+        "text": rule_based_etf_interpretation(signals, lang),
+        "source": "rule_based",
+        "error": result.get("error"),
+    }

@@ -6,6 +6,7 @@ pages to keep layout, typography and card styling consistent site-wide.
 """
 
 import contextlib
+import html
 import streamlit as st
 
 from src.theme import COLORS, icon_svg
@@ -996,7 +997,8 @@ def hero_metric_panel(primary_label: str, primary_value: str, primary_color: str
     right and an optional row of smaller secondary metrics underneath.
 
     `badge`, if given, is a dict: {"emoji": str, "label": str, "color": str,
-    "meta": [(meta_label, meta_value), ...]} -- `label`/`meta` values must
+    "help": str, "meta": [(meta_label, meta_value), ...]} -- `label`/`meta`
+    values must
     already be translated by the caller (this function does no i18n lookup
     itself, matching every other src/ui.py renderer).
 
@@ -1032,11 +1034,17 @@ def hero_metric_panel(primary_label: str, primary_value: str, primary_color: str
             f'<div class="hero-metric-panel-badge-meta-row"><span>{ml}</span><span>{mv}</span></div>'
             for ml, mv in badge.get("meta", [])
         )
+        help_text = badge.get("help")
+        help_html = (
+            f'<span title="{html.escape(help_text, quote=True)}" '
+            'style="cursor:help;opacity:0.72;margin-left:5px;font-size:12px;">&#9432;</span>'
+            if help_text else ""
+        )
         with right_col:
             st.markdown(
                 '<div class="hero-metric-panel-badge">'
                 f'<span class="badge" style="background:{badge_color}22;color:{badge_color};'
-                f'border-color:{badge_color}55;">{emoji_html}{badge["label"]}</span>'
+                f'border-color:{badge_color}55;">{emoji_html}{badge["label"]}{help_html}</span>'
                 f'{meta_html}'
                 '</div>',
                 unsafe_allow_html=True,
