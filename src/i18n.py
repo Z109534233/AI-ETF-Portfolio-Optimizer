@@ -1745,7 +1745,7 @@ TRANSLATIONS = {
         "mi_cal_col_when": "時間",
         "mi_cal_col_importance": "重要性",
 
-        "mi_portfolio_no_data": "尚未建立任何已儲存的投資組合。請先至「投資組合最佳化」頁面建立並儲存投資組合，即可查看今日新聞對你投資組合的可能影響。",
+        "mi_portfolio_no_data": "目前工作階段尚未建立使用中的投資組合，且沒有可用的展示範資料。請先至「投資組合最佳化」建立一組投資組合，再查看市場新聞與配置的關聯。",
         "mi_portfolio_using": "以下分析基於已儲存的投資組合：{name}",
         "mi_portfolio_using_current": "使用中的投資組合（本次工作階段，來自投資組合最佳化）：{name}",
         "mi_portfolio_using_shared_demo": "目前工作階段尚未建立使用中的投資組合，因此以下僅顯示共用展示範投資組合：{name}",
@@ -3515,7 +3515,7 @@ TRANSLATIONS = {
         "mi_cal_col_when": "When",
         "mi_cal_col_importance": "Importance",
 
-        "mi_portfolio_no_data": "You don't have any saved portfolios yet. Build and save one on the Portfolio Optimizer page to see how today's news may affect your holdings.",
+        "mi_portfolio_no_data": "There is no active portfolio in this session and no shared demo is available. Build a portfolio in Portfolio Optimizer to relate market news to its allocation.",
         "mi_portfolio_using": "The analysis below is based on a saved portfolio: {name}",
         "mi_portfolio_using_current": "Active portfolio (this session, from Portfolio Optimizer): {name}",
         "mi_portfolio_using_shared_demo": "No active portfolio exists in this session, so the analysis below uses the shared demo portfolio only: {name}",
