@@ -40,7 +40,7 @@ from src.goal_planner import (
     build_goal_plan, VALID_TARGET_MODES, VALID_MARKET_PREFERENCES,
     VALID_RISK_TOLERANCES, VALID_BASE_CURRENCIES,
 )
-from src.simulator import simulate_investment
+from src.simulator import goal_attainment_analysis
 from src.daily_brief import build_brief_context, generate_daily_brief
 from src.news import fetch_market_news
 from src.theme import COLORS
@@ -170,27 +170,31 @@ def _set_holdings_as_current_portfolio(holdings_rows: list, live_values: dict) -
 def _simulate_goal_scenario(initial_capital: float, monthly_contribution: float,
                             annual_contribution: float, years: int,
                             annual_return: float, annual_volatility: float,
-                            target_amount: float, n_simulations: int = 5000) -> dict:
-    result = simulate_investment(
+                            target_amount: float,
+                            deterministic_monthly_contribution: float,
+                            n_simulations: int = 5000) -> dict:
+    return goal_attainment_analysis(
         initial_investment=initial_capital,
         monthly_contribution=monthly_contribution,
+        annual_contribution=annual_contribution,
         years=years,
         annual_return=annual_return,
         annual_volatility=annual_volatility,
-        annual_contribution=annual_contribution,
+        target_amount=target_amount,
+        reference_monthly_contribution=deterministic_monthly_contribution,
+        target_path_share=0.80,
         n_simulations=n_simulations,
         seed=42,
     )
-    finals = np.asarray(result["all_final_values"], dtype=float)
-    summary = result["summary"]
-    return {
-        "target_share": float(np.mean(finals >= float(target_amount))),
-        "p10": float(np.percentile(finals, 10)),
-        "median": float(np.percentile(finals, 50)),
-        "p90": float(np.percentile(finals, 90)),
-        "real_median": float(summary["real_median_final"]),
-        "n_simulations": int(n_simulations),
-    }
+
+
+def _format_goal_path_share(share: float, count: int, n: int) -> str:
+    """Avoid a bare 0.0% that can look like a broken simulation."""
+    if n <= 0:
+        return "—"
+    if count <= 0:
+        return f"0 / {n:,}"
+    return f"{share:.1%}"
 
 
 IMPACT_VARIANT = {"Positive": "green", "Negative": "red", "Neutral": "neutral"}
@@ -708,7 +712,7 @@ with tab_goal:
             gp_current_age = st.number_input(t("gp_current_age"), min_value=15, max_value=100, value=35, step=1, key="gp_current_age")
             gp_target_age = st.number_input(t("gp_target_age"), min_value=16, max_value=100, value=65, step=1, key="gp_target_age")
             gp_current_capital = st.number_input(t("gp_current_capital"), min_value=0.0, value=10000.0, step=1000.0, key="gp_current_capital")
-            gp_monthly_contribution = st.number_input(t("gp_monthly_contribution"), min_value=0.0, value=500.0, step=50.0, key="gp_monthly_contribution")
+            gp_monthly_contribution = st.number_input(t("gp_monthly_contribution"), min_value=0.0, value=5000.0, step=500.0, key="gp_monthly_contribution")
             gp_annual_contribution = st.number_input(t("gp_annual_contribution"), min_value=0.0, value=0.0, step=500.0, key="gp_annual_contribution")
 
             _gp_mode_labels = {m: t_goal_target_mode(m) for m in VALID_TARGET_MODES}
@@ -716,7 +720,7 @@ with tab_goal:
                 t("gp_target_mode_label"), list(VALID_TARGET_MODES),
                 format_func=lambda x: _gp_mode_labels.get(x, x), key="gp_target_mode",
             )
-            gp_target_amount = st.number_input(t("gp_target_amount_label"), min_value=0.0, value=10_000_000.0, step=100_000.0, key="gp_target_amount")
+            gp_target_amount = st.number_input(t("gp_target_amount_label"), min_value=0.0, value=5_000_000.0, step=100_000.0, key="gp_target_amount")
 
             _gp_market_labels = {m: (t("gp_market_mixed") if m == "Mixed" else t_country(m)) for m in VALID_MARKET_PREFERENCES}
             gp_market_preference = st.selectbox(
@@ -773,49 +777,107 @@ with tab_goal:
             _gp_status_color = {
                 "on_track": COLORS["success"], "below_target": COLORS["danger"], "above_target": COLORS["primary"],
             }
-            gp_scenario_cols = st.columns(3)
-            for gp_col, gp_scenario_name in zip(gp_scenario_cols, ["conservative", "balanced", "aggressive"]):
+
+            _gp_results = {}
+            with st.spinner(t("gp_simulating_spinner")):
+                for gp_scenario_name in ["conservative", "balanced", "aggressive"]:
+                    gp_sdata = gp_plan["scenarios"][gp_scenario_name]
+                    _gp_results[gp_scenario_name] = _simulate_goal_scenario(
+                        float(gp_current_capital), float(gp_monthly_contribution),
+                        float(gp_annual_contribution), int(round(gp_plan["horizon_years"])),
+                        float(gp_sdata["expected_return"]), float(gp_sdata["expected_volatility"]),
+                        float(gp_plan["implied_target_total"]),
+                        float(gp_sdata["required_monthly_contribution"]),
+                    )
+
+            # Responsive HTML grid instead of st.columns(3): Streamlit columns
+            # can clip metric labels/values at ~430px. This grid collapses to
+            # one full-width card on narrow screens while preserving the
+            # three-column comparison on desktop.
+            st.markdown("""
+            <style>
+            .gp-scenario-grid {
+                display:grid;
+                grid-template-columns:repeat(3,minmax(0,1fr));
+                gap:14px;
+                margin:10px 0 16px 0;
+            }
+            .gp-scenario-card {
+                border:1px solid var(--border-color, rgba(128,128,128,.25));
+                border-radius:14px;
+                padding:16px;
+                min-width:0;
+            }
+            .gp-scenario-title {font-size:1.05rem;font-weight:750;margin-bottom:12px;}
+            .gp-metric {margin:0 0 11px 0;}
+            .gp-metric-label {font-size:.76rem;opacity:.72;line-height:1.25;}
+            .gp-metric-value {font-size:1.22rem;font-weight:750;line-height:1.25;overflow-wrap:anywhere;}
+            .gp-note {font-size:.76rem;opacity:.72;line-height:1.45;margin-top:7px;}
+            .gp-status {font-size:.83rem;font-weight:750;margin:10px 0;}
+            @media (max-width: 900px) {
+                .gp-scenario-grid {grid-template-columns:1fr;}
+                .gp-scenario-card {padding:15px;}
+                .gp-metric-value {font-size:1.18rem;}
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            _gp_cards = []
+            for gp_scenario_name in ["conservative", "balanced", "aggressive"]:
                 gp_sdata = gp_plan["scenarios"][gp_scenario_name]
-                gp_mc = _simulate_goal_scenario(
-                    float(gp_current_capital), float(gp_monthly_contribution),
-                    float(gp_annual_contribution), int(round(gp_plan["horizon_years"])),
-                    float(gp_sdata["expected_return"]), float(gp_sdata["expected_volatility"]),
-                    float(gp_plan["implied_target_total"]),
+                gp_mc = _gp_results[gp_scenario_name]
+                _mix = gp_sdata.get("asset_mix", {})
+                _market_display = t("gp_market_mixed") if gp_market_preference == "Mixed" else t_country(gp_market_preference)
+                _attain_value = _format_goal_path_share(
+                    gp_mc["target_share"], gp_mc["target_count"], gp_mc["n_simulations"]
                 )
-                with gp_col:
-                    with st.container(border=True):
-                        st.markdown(f"**{t_goal_risk(gp_scenario_name)}**")
-                        st.metric(t("gp_expected_return_label"), f"{gp_sdata['expected_return']:.1%}")
-                        st.metric(t("gp_expected_volatility_label"), f"{gp_sdata['expected_volatility']:.1%}")
-                        st.metric(t("gp_target_attainment_label"), f"{gp_mc['target_share']:.1%}")
-                        st.metric(t("gp_sim_median_label"), f"{gp_mc['median']:,.0f} {gp_base_currency}")
-                        st.caption(t(
-                            "gp_sim_range_caption",
-                            p10=f"{gp_mc['p10']:,.0f}", p90=f"{gp_mc['p90']:,.0f}",
-                            currency=gp_base_currency, n=f"{gp_mc['n_simulations']:,}",
-                        ))
-                        st.metric(t("gp_required_contribution_label"), f"{gp_sdata['required_monthly_contribution']:,.0f} {gp_base_currency}")
-                        st.markdown(
-                            f"<span style='color:{_gp_status_color[gp_sdata['status']]};font-weight:700;'>"
-                            f"{t_goal_status(gp_sdata['status'])}</span>",
-                            unsafe_allow_html=True,
-                        )
-                        _mix = gp_sdata.get("asset_mix", {})
-                        if _mix:
-                            st.caption(t(
-                                "gp_asset_mix_label",
-                                equity=f"{_mix.get('Equity', 0):.0%}",
-                                bonds=f"{_mix.get('Fixed Income', 0):.0%}",
-                            ))
-                        if gp_sdata["example_etfs"]:
-                            st.caption(f"{t('gp_example_etfs_label')}: {', '.join(gp_sdata['example_etfs'])}")
-                            _market_display = t("gp_market_mixed") if gp_market_preference == "Mixed" else t_country(gp_market_preference)
-                            st.caption(t(
-                                f"gp_selection_logic_{gp_scenario_name}",
-                                market=_market_display,
-                            ))
-                        else:
-                            st.caption(t("gp_no_examples"))
+                _reference_share = gp_mc.get("reference_target_share")
+                _reference_share_text = f"{_reference_share:.1%}" if _reference_share is not None else "—"
+                _status = t_goal_status(gp_sdata["status"])
+                _status_color = _gp_status_color[gp_sdata["status"]]
+                _asset_mix = t(
+                    "gp_asset_mix_label",
+                    equity=f"{_mix.get('Equity', 0):.0%}",
+                    bonds=f"{_mix.get('Fixed Income', 0):.0%}",
+                ) if _mix else ""
+                _examples = (
+                    f"{t('gp_example_etfs_label')}: {', '.join(gp_sdata['example_etfs'])}"
+                    if gp_sdata["example_etfs"] else t("gp_no_examples")
+                )
+                _selection_logic = (
+                    t(f"gp_selection_logic_{gp_scenario_name}", market=_market_display)
+                    if gp_sdata["example_etfs"] else ""
+                )
+                _gp_cards.append(f"""
+                <div class="gp-scenario-card">
+                  <div class="gp-scenario-title">{t_goal_risk(gp_scenario_name)}</div>
+                  <div class="gp-metric"><div class="gp-metric-label">{t('gp_expected_return_label')}</div>
+                    <div class="gp-metric-value">{gp_sdata['expected_return']:.1%}</div></div>
+                  <div class="gp-metric"><div class="gp-metric-label">{t('gp_expected_volatility_label')}</div>
+                    <div class="gp-metric-value">{gp_sdata['expected_volatility']:.1%}</div></div>
+                  <div class="gp-metric"><div class="gp-metric-label">{t('gp_target_attainment_label')}</div>
+                    <div class="gp-metric-value">{_attain_value}</div>
+                    <div class="gp-note">{t('gp_target_attainment_count_note', count=f"{gp_mc['target_count']:,}", n=f"{gp_mc['n_simulations']:,}")}</div></div>
+                  <div class="gp-metric"><div class="gp-metric-label">{t('gp_sim_median_label')}</div>
+                    <div class="gp-metric-value">{gp_mc['median']:,.0f} {gp_base_currency}</div>
+                    <div class="gp-note">{t('gp_sim_range_caption', p10=f"{gp_mc['p10']:,.0f}", p90=f"{gp_mc['p90']:,.0f}", currency=gp_base_currency, n=f"{gp_mc['n_simulations']:,}")}</div></div>
+                  <div class="gp-metric"><div class="gp-metric-label">{t('gp_required_contribution_label')}</div>
+                    <div class="gp-metric-value">{gp_sdata['required_monthly_contribution']:,.0f} {gp_base_currency}</div>
+                    <div class="gp-note">{t('gp_deterministic_contribution_context', share=_reference_share_text)}</div></div>
+                  <div class="gp-metric"><div class="gp-metric-label">{t('gp_80_contribution_label')}</div>
+                    <div class="gp-metric-value">{gp_mc['monthly_for_target_path_share']:,.0f} {gp_base_currency}</div>
+                    <div class="gp-note">{t('gp_80_contribution_note')}</div></div>
+                  <div class="gp-status" style="color:{_status_color};">{_status}</div>
+                  <div class="gp-note">{_asset_mix}</div>
+                  <div class="gp-note">{_examples}</div>
+                  <div class="gp-note">{_selection_logic}</div>
+                </div>
+                """)
+
+            st.markdown(
+                '<div class="gp-scenario-grid">' + "".join(_gp_cards) + "</div>",
+                unsafe_allow_html=True,
+            )
 
             with st.expander(t("gp_assumptions_title"), expanded=False):
                 st.markdown(f"- {t('gp_assumptions_hypothetical')}")
