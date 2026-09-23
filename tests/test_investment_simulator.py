@@ -18,7 +18,9 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from src.simulator import conservative_portfolio_return, simulate_investment
+from src.simulator import (
+    conservative_portfolio_return, simulate_investment, goal_attainment_analysis,
+)
 
 
 def _apptest_from_file(rel_path, **kwargs):
@@ -108,3 +110,75 @@ def test_monte_carlo_supports_annual_contributions_for_goal_planner():
     # 100 initial + 24*10 monthly + 2*120 annual = 580.
     assert result["summary"]["total_contributed"] == pytest.approx(580.0)
     assert result["summary"]["median_final"] == pytest.approx(580.0)
+
+
+
+def test_goal_attainment_default_demo_has_meaningful_nonzero_distribution():
+    scenarios = [(0.045, 0.07), (0.065, 0.12), (0.085, 0.17)]
+    shares = []
+    for annual_return, annual_volatility in scenarios:
+        result = goal_attainment_analysis(
+            initial_investment=10_000.0,
+            monthly_contribution=5_000.0,
+            annual_contribution=0.0,
+            years=30,
+            annual_return=annual_return,
+            annual_volatility=annual_volatility,
+            target_amount=5_000_000.0,
+            n_simulations=5_000,
+            seed=42,
+        )
+        shares.append(result["target_share"])
+
+    # Demo defaults should teach distributional differences rather than show
+    # three identical-looking 0.0% figures.
+    assert all(0.0 < share < 1.0 for share in shares)
+    assert shares[0] < shares[1] < shares[2]
+
+
+def test_goal_attainment_80pct_monthly_amount_reaches_about_80pct_of_same_paths():
+    base = goal_attainment_analysis(
+        initial_investment=10_000.0,
+        monthly_contribution=5_000.0,
+        annual_contribution=0.0,
+        years=30,
+        annual_return=0.065,
+        annual_volatility=0.12,
+        target_amount=5_000_000.0,
+        target_path_share=0.80,
+        n_simulations=5_000,
+        seed=42,
+    )
+    required = base["monthly_for_target_path_share"]
+    check = goal_attainment_analysis(
+        initial_investment=10_000.0,
+        monthly_contribution=required,
+        annual_contribution=0.0,
+        years=30,
+        annual_return=0.065,
+        annual_volatility=0.12,
+        target_amount=5_000_000.0,
+        target_path_share=0.80,
+        n_simulations=5_000,
+        seed=42,
+    )
+    assert 0.79 <= check["target_share"] <= 0.81
+
+
+def test_formula_based_reference_contribution_is_not_mislabeled_as_50pct_threshold():
+    # The deterministic contribution solver ignores volatility drag/fee, so
+    # under a stochastic simulation its target share need not be 50%.
+    result = goal_attainment_analysis(
+        initial_investment=10_000.0,
+        monthly_contribution=5_000.0,
+        annual_contribution=0.0,
+        years=30,
+        annual_return=0.065,
+        annual_volatility=0.12,
+        target_amount=5_000_000.0,
+        reference_monthly_contribution=4_623.93,
+        n_simulations=5_000,
+        seed=42,
+    )
+    assert result["reference_target_share"] is not None
+    assert result["reference_target_share"] < 0.50

@@ -80,13 +80,28 @@ def test_holdings_are_isolated_between_fresh_browser_sessions(isolated_db, no_ne
 
 def test_goal_planner_zh_selection_logic_has_no_english_leak(isolated_db, no_network):
     at = _run_my_portfolio(lang="zh-TW")
-    corpus = "\n".join(c.value for c in at.caption)
+    corpus = "\n".join([c.value for c in at.caption] + [m.value for m in at.markdown])
     assert "Conservative:" not in corpus
     assert "category 'Fixed Income'" not in corpus
     assert "非選股結果" in corpus
 
 
 # ── Goal Planner ─────────────────────────────────────────────────────────
+def test_goal_planner_demo_defaults_produce_useful_showcase_inputs(isolated_db, no_network):
+    at = _run_my_portfolio()
+    assert at.number_input(key="gp_monthly_contribution").value == 5000.0
+    assert at.number_input(key="gp_target_amount").value == 5_000_000.0
+
+
+def test_goal_planner_uses_responsive_scenario_grid_and_nominal_label(isolated_db, no_network):
+    at = _run_my_portfolio(lang="zh-TW")
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "gp-scenario-grid" in corpus
+    assert "@media (max-width: 900px)" in corpus
+    assert "達標路徑比例（名目）" in corpus
+    assert "80% 路徑月投入" in corpus
+
+
 def test_goal_planner_renders_three_scenarios_by_default(isolated_db, no_network):
     at = _run_my_portfolio()
     corpus = "\n".join(m.value for m in at.markdown)
