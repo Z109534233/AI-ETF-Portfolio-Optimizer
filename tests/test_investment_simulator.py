@@ -18,7 +18,7 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from src.simulator import conservative_portfolio_return
+from src.simulator import conservative_portfolio_return, simulate_investment
 
 
 def _apptest_from_file(rel_path, **kwargs):
@@ -89,3 +89,22 @@ def test_conservative_portfolio_return_does_not_reuse_optimizer_expected_return(
 def test_conservative_portfolio_return_ignores_zero_weight_assets():
     value = conservative_portfolio_return({"VOO": 1.0, "BND": 0.0, "TLT": 0.0})
     assert value == pytest.approx(0.065)
+
+
+
+def test_monte_carlo_supports_annual_contributions_for_goal_planner():
+    result = simulate_investment(
+        initial_investment=100.0,
+        monthly_contribution=10.0,
+        annual_contribution=120.0,
+        years=2,
+        annual_return=0.0,
+        annual_volatility=0.0,
+        annual_fee=0.0,
+        inflation_rate=0.0,
+        n_simulations=20,
+        seed=42,
+    )
+    # 100 initial + 24*10 monthly + 2*120 annual = 580.
+    assert result["summary"]["total_contributed"] == pytest.approx(580.0)
+    assert result["summary"]["median_final"] == pytest.approx(580.0)
