@@ -1258,11 +1258,11 @@ TRANSLATIONS = {
         "ai_report_section5_news": "### 5. 市場情報",
         "ai_report_section6_risks": "### 6. 主要風險",
         "ai_report_section7_education": "### 7. 教學性檢視重點",
-        "ai_report_focus_equity": "股票",
-        "ai_report_focus_diversified": "多元化",
-        "ai_report_focus_concentrated": "跨資產但高度集中",
+        "ai_report_focus_equity": "主要配置於股票資產",
+        "ai_report_focus_diversified": "配置涵蓋多元資產類別",
+        "ai_report_focus_concentrated": "雖選自跨資產類別，但實際配置高度集中",
         "ai_report_summary_text": (
-            "此投資組合包含 {n_holdings} 檔 ETF，主要聚焦於{focus}資產。"
+            "此投資組合包含 {n_holdings} 檔 ETF，{focus}。"
             "最大持股為 **{top_holding}**，占投資組合的 **{top_weight}**。"
             "此投資組合設計為 {horizon} 年投資期間，使用者所選風險屬性為「{risk}」。"
         ),
@@ -1275,7 +1275,7 @@ TRANSLATIONS = {
         "ai_report_strength_default": "透過指數型 ETF 進行廣泛市場曝險，提供具成本效益的分散配置。",
         "ai_report_section4": "### 4. 主要風險",
         "ai_report_risk_concentration": "**集中度風險**：{ticker} 占投資組合 {weight}，形成顯著的單一 ETF 依賴風險。",
-        "ai_report_risk_profile_mismatch": "**風險屬性不一致**：使用者選擇「保守型」，但目前組合的年化波動率為 {volatility}、最大單一持股為 {largest_weight}、有效持股數約 {effective_holdings}。依本系統的保守型檢核規則（波動率 > 12%、最大持股 > 40% 或有效持股數 < 3 任一成立），此配置與所選保守型風險屬性不一致。",
+        "ai_report_risk_profile_mismatch": "**風險屬性不一致**：使用者選擇「保守型」，但目前組合的年化波動率為 {volatility}、最大單一持股為 {largest_weight}、有效持股數約 {effective_holdings}。依本系統的保守型檢核規則（波動率 > 12%、最大持股 > 50% 或有效持股數 < 2 任一成立），此配置與所選保守型風險屬性不一致。",
         "ai_report_risk_equity_market": "**股票市場風險**：較高的股票配置使投資組合對整體市場下跌較為敏感。",
         "ai_report_risk_duration": "**存續期風險**：固定收益曝險有限，較短投資期間可能面臨較高短期波動。",
         "ai_report_risk_market": "**市場風險**：所有投資皆存在固有市場風險，過去績效不代表未來結果。",
@@ -1316,7 +1316,8 @@ TRANSLATIONS = {
         "ai_reason_no_market_news": "本次工作階段目前沒有可用的市場新聞",
         "ai_reason_no_portfolio": "目前尚未建立投資組合",
         "ai_reason_no_active_holdings": "目前沒有權重至少 0.5% 的有效持股",
-        "ai_synthesis_portfolio_metrics": "預期年化報酬 **{ret}**，預期年化波動度 **{vol}**，Sharpe 比率 **{sharpe}**（策略：{strategy}）。",
+        "ai_synthesis_portfolio_metrics": "樣本內歷史統計（非未來預期）：年化報酬 **{ret}**、年化波動度 **{vol}**、Sharpe 比率 **{sharpe}**（策略：{strategy}）。",
+        "ai_report_projection_bridge": "長期推估另採第 3 節的「{source}」假設，年化報酬假設為 **{ret}**；請勿與上述樣本內歷史統計混為一談。",
         "ai_section_risk": "### 風險分析",
         "ai_section_simulator": "### 投資模擬",
         "ai_section_ml": "### 機器學習",
@@ -3002,12 +3003,12 @@ TRANSLATIONS = {
         "ai_report_section5_news": "### 5. Market Intelligence",
         "ai_report_section6_risks": "### 6. Main Risks",
         "ai_report_section7_education": "### 7. Educational Review Points",
-        "ai_report_focus_equity": "equity",
-        "ai_report_focus_diversified": "diversified",
-        "ai_report_focus_concentrated": "multi-asset but highly concentrated",
+        "ai_report_focus_equity": "is primarily allocated to equity assets",
+        "ai_report_focus_diversified": "is allocated across diversified asset classes",
+        "ai_report_focus_concentrated": "draws from multiple asset classes, but the actual allocation is highly concentrated",
         "ai_report_summary_text": (
-            "This portfolio consists of {n_holdings} ETF(s) with a primary focus on "
-            "{focus} assets. The largest holding is **{top_holding}** at **{top_weight}** of the portfolio. "
+            "This portfolio consists of {n_holdings} ETF(s) and {focus}. "
+            "The largest holding is **{top_holding}** at **{top_weight}** of the portfolio. "
             "The portfolio is designed for a {horizon}-year investment horizon; the user-selected risk profile is {risk}."
         ),
         "ai_report_section2": "### 2. Allocation Explanation",
@@ -3019,7 +3020,7 @@ TRANSLATIONS = {
         "ai_report_strength_default": "Broad market exposure through index ETFs provides cost-efficient diversification.",
         "ai_report_section4": "### 4. Main Risks",
         "ai_report_risk_concentration": "**Concentration Risk**: {ticker} represents {weight} of the portfolio, creating significant single-ETF dependency.",
-        "ai_report_risk_profile_mismatch": "**Risk-profile mismatch**: the user selected Conservative, but the portfolio has annualized volatility of {volatility}, a largest holding of {largest_weight}, and approximately {effective_holdings} effective holdings. Under this app’s Conservative consistency rule (volatility > 12%, largest holding > 40%, or effective holdings < 3), this allocation is not consistent with the selected Conservative profile.",
+        "ai_report_risk_profile_mismatch": "**Risk-profile mismatch**: the user selected Conservative, but the portfolio has annualized volatility of {volatility}, a largest holding of {largest_weight}, and approximately {effective_holdings} effective holdings. Under this app’s Conservative consistency rule (volatility > 12%, largest holding > 50%, or effective holdings < 2), this allocation is not consistent with the selected Conservative profile.",
         "ai_report_risk_equity_market": "**Equity Market Risk**: High equity allocation means the portfolio is sensitive to broad market downturns.",
         "ai_report_risk_duration": "**Duration Risk**: Limited fixed income exposure may increase short-term volatility for shorter horizons.",
         "ai_report_risk_market": "**Market Risk**: All investments carry inherent market risk and past performance does not guarantee future results.",
@@ -3060,7 +3061,8 @@ TRANSLATIONS = {
         "ai_reason_no_market_news": "no market news is currently available in this session",
         "ai_reason_no_portfolio": "no portfolio has been built yet",
         "ai_reason_no_active_holdings": "there are no active holdings with at least 0.5% weight",
-        "ai_synthesis_portfolio_metrics": "Expected annual return **{ret}**, expected annual volatility **{vol}**, Sharpe ratio **{sharpe}** (strategy: {strategy}).",
+        "ai_synthesis_portfolio_metrics": "In-sample historical statistics (not forward-looking expectations): annualized return **{ret}**, annualized volatility **{vol}**, Sharpe ratio **{sharpe}** (strategy: {strategy}).",
+        "ai_report_projection_bridge": "Long-term projection uses the Section 3 “{source}” assumptions instead, with an annual-return assumption of **{ret}**; do not interpret this as the same quantity as the in-sample historical statistic above.",
         "ai_section_risk": "### Risk Analytics",
         "ai_section_simulator": "### Investment Simulator",
         "ai_section_ml": "### Machine Learning",
