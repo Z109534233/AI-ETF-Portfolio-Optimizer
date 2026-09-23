@@ -63,7 +63,8 @@ def simulate_investment(
     inflation_rate: float = 0.025,
     annual_fee: float = 0.001,
     n_simulations: int = 1000,
-    seed: int = 42
+    seed: int = 42,
+    annual_contribution: float = 0.0,
 ) -> dict:
     """
     Run Monte Carlo simulation for long-term investment growth.
@@ -86,7 +87,8 @@ def simulate_investment(
 
     for t in range(1, months + 1):
         random_returns = np.random.normal(monthly_return - monthly_fee, monthly_vol, n_simulations)
-        paths[t, :] = paths[t - 1, :] * (1 + random_returns) + monthly_contribution
+        annual_add = annual_contribution if (t % 12 == 0) else 0.0
+        paths[t, :] = paths[t - 1, :] * (1 + random_returns) + monthly_contribution + annual_add
 
     # Inflation-adjusted paths
     inflation_factors = np.array([(1 + monthly_inflation) ** t for t in range(months + 1)])
@@ -96,7 +98,11 @@ def simulate_investment(
     real_final_values = real_paths[-1, :]
 
     # Total contributed capital
-    total_contributed = initial_investment + monthly_contribution * months
+    total_contributed = (
+        initial_investment
+        + monthly_contribution * months
+        + annual_contribution * years
+    )
 
     summary = {
         "median_final": float(np.median(final_values)),
@@ -123,7 +129,11 @@ def simulate_investment(
     annual_rows = []
     for yr in range(years + 1):
         month_idx = yr * 12
-        contributed = initial_investment + monthly_contribution * month_idx
+        contributed = (
+            initial_investment
+            + monthly_contribution * month_idx
+            + annual_contribution * yr
+        )
         value = median_path[month_idx]
         gain = value - contributed
         real_value = value / ((1 + monthly_inflation) ** month_idx)
