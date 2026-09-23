@@ -3592,7 +3592,7 @@ def _normalize_language_code(value):
     code = str(value).strip().lower().replace("_", "-")
     if code == "en" or code.startswith("en-"):
         return "en"
-    if code in {"zh", "zh-tw", "zh-hant"} or code.startswith("zh-hant-"):
+    if code == "zh" or code.startswith("zh-"):
         return "zh-TW"
     return None
 
