@@ -291,6 +291,48 @@ def _fmt_money(x):
     return f"${x:,.0f}" if isinstance(x, (int, float)) else "N/A"
 
 
+def _is_conservative_profile(risk_level: str) -> bool:
+    """Accept either the canonical profile key or its localized zh-TW label."""
+    normalized = str(risk_level or "").strip().lower()
+    return normalized in {"conservative", "保守型", "保守"}
+
+
+def conservative_profile_mismatch(context: dict, risk_level: str):
+    """Return deterministic mismatch details for a Conservative profile.
+
+    The reviewer-facing guardrails are: annualized volatility > 12%,
+    largest holding > 50%, or effective holdings < 2.
+    """
+    p = (context or {}).get("portfolio", {})
+    if not p.get("available") or not _is_conservative_profile(risk_level):
+        return None
+
+    weights = p.get("weights") or {}
+    concentration = (context or {}).get("risk", {}).get("concentration", {}) or {}
+
+    top_weight = concentration.get("largest_weight")
+    if not isinstance(top_weight, (int, float)):
+        top_weight = max(weights.values(), default=0.0)
+
+    effective = concentration.get("effective_holdings")
+    if not isinstance(effective, (int, float)):
+        effective = float(len(weights))
+
+    vol = p.get("volatility")
+    if not (
+        (isinstance(vol, (int, float)) and vol > 0.12)
+        or top_weight > 0.50
+        or effective < 2
+    ):
+        return None
+
+    return {
+        "volatility": vol,
+        "largest_weight": top_weight,
+        "effective_holdings": effective,
+    }
+
+
 def _build_prompt(context: dict, investment_objective: str, risk_level: str,
                    investment_horizon: int) -> str:
     """Serialize the context dict into a plain-text brief for the LLM.
@@ -306,8 +348,9 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
         lines.append(
             f"CURRENT PORTFOLIO (source: {context['portfolio_source']}, strategy: {t_opt_method(p['strategy'])}, "
             f"market: {p['market']}):\n{weights_str}\n"
-            f"Expected annual return: {_fmt_pct(p['expected_return'])}\n"
-            f"Expected annual volatility: {_fmt_pct(p['volatility'])}\n"
+            f"In-sample historical annualized return: {_fmt_pct(p['expected_return'])} "
+            f"(optimizer/backtest statistic; not a forward-looking expected return)\n"
+            f"In-sample historical annualized volatility: {_fmt_pct(p['volatility'])}\n"
             f"Sharpe ratio: {_fmt_num(p['sharpe_ratio'])}\n"
             f"Maximum drawdown (backtest): {_fmt_pct(p['max_drawdown'])}\n"
             f"Investment amount: {_fmt_money(p['investment_amount'])}"
@@ -341,8 +384,11 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
         s = fp["summary"]
         lines.append(
             f"\nINVESTMENT SIMULATOR -- Future Projection (Monte Carlo, {fp['n_simulations']} paths, "
-            f"assumptions: {assumption_source_label(fp['assumption_source'])}): median value after {fp['years']} years "
-            f"{_fmt_money(s.get('median_final'))}; share of simulated paths ending above cumulative contributions "
+            f"assumptions: {assumption_source_label(fp['assumption_source'])}; "
+            f"annual-return assumption {_fmt_pct(fp.get('annual_return'))}; "
+            f"annual-volatility assumption {_fmt_pct(fp.get('annual_volatility'))}): "
+            f"median value after {fp['years']} years {_fmt_money(s.get('median_final'))}; "
+            f"share of simulated paths ending above cumulative contributions "
             f"{_fmt_pct(s.get('probability_profit'))}. This is a simulated-path share under the stated assumptions, "
             f"not a real-world probability of profit or a guarantee."
         )
@@ -386,20 +432,16 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
     # Deterministic consistency check is included in the AI prompt too, so
     # the OpenAI-assisted path cannot omit a mismatch that the rule-based
     # path would flag.
-    if p.get("available") and str(risk_level).lower() == "conservative":
-        concentration = context.get("risk", {}).get("concentration", {})
-        top_weight = concentration.get("largest_weight", 0)
-        effective = concentration.get("effective_holdings", 0)
-        vol = p.get("volatility")
-        if ((isinstance(vol, (int, float)) and vol > 0.12)
-                or top_weight > 0.40 or effective < 3):
-            lines.append(
-                "\nRISK-PROFILE CONSISTENCY CHECK: MISMATCH. The user selected Conservative, "
-                f"while annualized volatility is {_fmt_pct(vol)}, the largest holding is "
-                f"{_fmt_pct(top_weight)}, and effective holdings are {_fmt_num(effective, 1)}. "
-                "State explicitly that this allocation is inconsistent with the selected Conservative "
-                "profile under the app's rule (volatility >12%, largest holding >40%, or effective holdings <3)."
-            )
+    mismatch = conservative_profile_mismatch(context, risk_level)
+    if mismatch:
+        lines.append(
+            "\nRISK-PROFILE CONSISTENCY CHECK: MISMATCH. The user selected Conservative, "
+            f"while annualized volatility is {_fmt_pct(mismatch['volatility'])}, the largest holding is "
+            f"{_fmt_pct(mismatch['largest_weight'])}, and effective holdings are "
+            f"{_fmt_num(mismatch['effective_holdings'], 1)}. "
+            "State explicitly that this allocation is inconsistent with the selected Conservative "
+            "profile under the app's rule (volatility >12%, largest holding >50%, or effective holdings <2)."
+        )
 
     language_instruction = (
         "Respond entirely in Traditional Chinese (zh-TW/繁體中文), including all section "
@@ -433,6 +475,9 @@ Please provide a structured analysis including:
 
 Keep the tone professional and educational. Do not provide personalised financial advice.
 For every section marked "not available" above, say so explicitly rather than fabricating content.
+In Section 1, label portfolio return/volatility as in-sample historical statistics, not future expectations.
+If Section 3 has a future projection, explicitly distinguish its assumption source and annual-return assumption
+from the in-sample historical statistic shown in Section 1.
 End with a clear disclaimer that this is for educational purposes only."""
 
 
@@ -535,7 +580,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     equity_weight = sum(w for tk, w in weights.items() if _category(tk) == "Equity")
     concentration = context.get("risk", {}).get("concentration", {})
     _effective_holdings = concentration.get("effective_holdings", n_holdings)
-    if top_weight > 0.40 or _effective_holdings < 3:
+    if top_weight > 0.50 or _effective_holdings < 2:
         focus = t("ai_report_focus_concentrated")
     else:
         focus = t("ai_report_focus_equity") if equity_weight > 0.5 else t("ai_report_focus_diversified")
@@ -551,6 +596,13 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
         ret=_fmt_pct(p["expected_return"]), vol=_fmt_pct(p["volatility"]),
         sharpe=_fmt_num(p["sharpe_ratio"]), strategy=t_opt_method(p["strategy"]),
     ))
+    _summary_fp = context.get("simulator", {}).get("future_projection", {})
+    if _summary_fp.get("available") and isinstance(_summary_fp.get("annual_return"), (int, float)):
+        lines.append(t(
+            "ai_report_projection_bridge",
+            source=assumption_source_label(_summary_fp.get("assumption_source", "")),
+            ret=_fmt_pct(_summary_fp.get("annual_return")),
+        ))
 
     lines.append("\n" + t("ai_report_section2_risk"))
     r = context["risk"]
@@ -620,15 +672,14 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     lines.append("\n" + t("ai_report_section6_risks"))
     if top_weight > 0.5:
         lines.append("- " + t("ai_report_risk_concentration", ticker=top_holding, weight=_fmt_pct(top_weight)))
-    if str(risk_level).lower() == "conservative":
-        _vol = p.get("volatility")
-        if ((_vol is not None and _vol > 0.12) or top_weight > 0.40 or _effective_holdings < 3):
-            lines.append("- " + t(
-                "ai_report_risk_profile_mismatch",
-                volatility=_fmt_pct(_vol),
-                largest_weight=_fmt_pct(top_weight),
-                effective_holdings=_fmt_num(_effective_holdings, 1),
-            ))
+    _profile_mismatch = conservative_profile_mismatch(context, risk_level)
+    if _profile_mismatch:
+        lines.append("- " + t(
+            "ai_report_risk_profile_mismatch",
+            volatility=_fmt_pct(_profile_mismatch["volatility"]),
+            largest_weight=_fmt_pct(_profile_mismatch["largest_weight"]),
+            effective_holdings=_fmt_num(_profile_mismatch["effective_holdings"], 1),
+        ))
     if equity_weight > 0.9:
         lines.append("- " + t("ai_report_risk_equity_market"))
     lines.append("- " + t("ai_report_risk_market"))
