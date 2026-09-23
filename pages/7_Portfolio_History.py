@@ -677,7 +677,7 @@ def _render_portfolio_history_tab():
     # so a public user must never be able to delete them.
     _del_name = portfolio_names.get(del_id, "")
     _del_portfolio = next((p for p in portfolios if p["id"] == del_id), None)
-    _del_is_demo = bool((_del_portfolio or {}).get("metadata", {}).get("synthetic_demo"))
+    _del_is_demo = bool(((_del_portfolio or {}).get("metadata") or {}).get("synthetic_demo"))
 
     if _del_is_demo:
         st.info(t("hist_demo_delete_protected"))
