@@ -3997,32 +3997,41 @@ def t_market_display(markets) -> str:
     return t_country(unique[0])
 
 
-def language_selector() -> None:
-    """Render the '語言 / Language' selector. Call once, at the top of the sidebar."""
-    current = get_language()
-    codes = list(LANGUAGE_LABELS.keys())
-    labels = [LANGUAGE_LABELS[c] for c in codes]
-    try:
-        idx = codes.index(current)
-    except ValueError:
-        idx = 0
-
-    st.markdown(
-        f'<div class="sidebar-nav-label">{t("language_label")}</div>',
-        unsafe_allow_html=True,
-    )
-    selected_label = st.selectbox(
-        t("language_label"),
-        labels,
-        index=idx,
-        label_visibility="collapsed",
-        key="_language_selector_widget",
-    )
-    selected_code = codes[labels.index(selected_label)]
-    if selected_code != current:
+def _on_language_selector_change() -> None:
+    selected_code = st.session_state.get("_language_selector_widget")
+    if selected_code in SUPPORTED_LANGUAGES:
         set_language(selected_code)
         try:
             st.query_params["lang"] = selected_code
         except Exception:
             pass
-        st.rerun()
+
+
+def language_selector() -> None:
+    """Render the language selector and keep explicit choices URL-shareable."""
+    current = get_language()
+    codes = list(LANGUAGE_LABELS.keys())
+    try:
+        idx = codes.index(current)
+    except ValueError:
+        idx = 0
+
+    # Migrate the old widget state (which stored display labels) and honor an
+    # explicit URL override even inside an already-open Streamlit session.
+    prior = st.session_state.get("_language_selector_widget")
+    if prior not in codes or (_url_language() and prior != current):
+        st.session_state["_language_selector_widget"] = current
+
+    st.markdown(
+        f'<div class="sidebar-nav-label">{t("language_label")}</div>',
+        unsafe_allow_html=True,
+    )
+    st.selectbox(
+        t("language_label"),
+        codes,
+        index=idx,
+        format_func=lambda code: LANGUAGE_LABELS[code],
+        label_visibility="collapsed",
+        key="_language_selector_widget",
+        on_change=_on_language_selector_change,
+    )
