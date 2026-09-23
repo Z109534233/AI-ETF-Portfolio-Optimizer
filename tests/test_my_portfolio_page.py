@@ -102,6 +102,13 @@ def test_goal_planner_uses_responsive_scenario_grid_and_nominal_label(isolated_d
     assert "80% 路徑月投入" in corpus
 
 
+def test_goal_planner_html_cards_are_not_rendered_as_code_blocks(isolated_db, no_network):
+    at = _run_my_portfolio(lang="zh-TW")
+    raw_code = "\n".join(getattr(c, "value", "") for c in at.code)
+    assert "gp-metric-label" not in raw_code
+    assert "<div class=\"gp-scenario-card\">" not in raw_code
+
+
 def test_goal_planner_renders_three_scenarios_by_default(isolated_db, no_network):
     at = _run_my_portfolio()
     corpus = "\n".join(m.value for m in at.markdown)
