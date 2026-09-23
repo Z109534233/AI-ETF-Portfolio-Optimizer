@@ -39,9 +39,18 @@ from src.etf_database import get_etf, get_tickers_by_country
 #   balanced:     ~60/40 equity/bond mix -> moderate expected return/vol
 #   aggressive:   equity-heavy allocation -> higher expected return, higher vol
 SCENARIO_ASSUMPTIONS = {
-    "conservative": {"expected_return": 0.045, "expected_volatility": 0.07},
-    "balanced": {"expected_return": 0.065, "expected_volatility": 0.12},
-    "aggressive": {"expected_return": 0.085, "expected_volatility": 0.17},
+    "conservative": {
+        "expected_return": 0.045, "expected_volatility": 0.07,
+        "asset_mix": {"Equity": 0.30, "Fixed Income": 0.70},
+    },
+    "balanced": {
+        "expected_return": 0.065, "expected_volatility": 0.12,
+        "asset_mix": {"Equity": 0.60, "Fixed Income": 0.40},
+    },
+    "aggressive": {
+        "expected_return": 0.085, "expected_volatility": 0.17,
+        "asset_mix": {"Equity": 0.90, "Fixed Income": 0.10},
+    },
 }
 
 # Order matters for display purposes (low risk -> high risk).
@@ -56,20 +65,18 @@ SCENARIO_ORDER = ["conservative", "balanced", "aggressive"]
 WITHDRAWAL_RATE = 0.04
 
 ASSUMPTIONS_DISCLOSURE = (
-    "This plan is a hypothetical, deterministic projection based on simple "
-    "compound-growth math -- it is not a guarantee of future results and "
-    "actual investment outcomes will vary. Expected-return and volatility "
-    "figures for each scenario are illustrative long-run capital market "
-    "assumptions (a standard, textbook-style estimate for a diversified "
-    "portfolio at that risk level), NOT a live market estimate and NOT a "
-    "forecast for any specific ETF. Projections assume periodic rebalancing "
-    "back to the target allocation, with no rebalancing cost or tax modeled. "
-    "Income-based targets additionally assume a fixed "
-    f"{WITHDRAWAL_RATE:.0%} annual withdrawal rate in retirement (the "
-    "classic \"4% rule\"), which is itself a disclosed assumption, not a "
-    "prediction. This tool does not provide personalized financial, tax, or "
-    "legal advice; consult a qualified professional before making "
-    "investment decisions."
+    "This plan uses educational long-run nominal return and volatility assumptions "
+    "chosen by this project to represent bond-heavy, balanced, and equity-heavy "
+    "portfolio scenarios; they are not calibrated from a live provider and are not "
+    "forecasts for any ETF. The deterministic contribution solver is complemented in "
+    "the UI by Monte Carlo simulations using the same scenario assumptions. The selected "
+    "base currency is a display label only: no FX conversion is performed, so a TWD goal "
+    "paired with foreign-asset examples does not model currency risk. Inflation affects "
+    "purchasing power; the stated goal amount itself is treated as a future nominal amount. "
+    "Projections assume periodic rebalancing back to the target allocation, with no "
+    "rebalancing cost or tax modeled. Income-based targets additionally assume a fixed "
+    f"{WITHDRAWAL_RATE:.0%} annual withdrawal rate in retirement (the classic \"4% rule\"). "
+    "This tool does not provide personalized financial, tax, or legal advice."
 )
 
 VALID_TARGET_MODES = ("total_value", "monthly_income", "annual_income")
@@ -325,6 +332,7 @@ def _build_scenario(
     assumptions = SCENARIO_ASSUMPTIONS[scenario_name]
     annual_return = assumptions["expected_return"]
     annual_volatility = assumptions["expected_volatility"]
+    asset_mix = dict(assumptions["asset_mix"])
 
     projected_value = future_value_of_savings(
         current_capital, monthly_contribution, annual_return, n_months, annual_contribution,
@@ -339,6 +347,7 @@ def _build_scenario(
     return {
         "expected_return": annual_return,
         "expected_volatility": annual_volatility,
+        "asset_mix": asset_mix,
         "projected_value": projected_value,
         "required_monthly_contribution": required_contribution,
         "status": status,
