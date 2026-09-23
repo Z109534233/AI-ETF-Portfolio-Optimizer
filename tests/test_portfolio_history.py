@@ -584,6 +584,32 @@ def test_no_legacy_notice_when_version_matches_current(isolated_db):
     assert not any("created with app version" in i.value for i in at.info)
 
 
+def test_synthetic_demo_portfolio_cannot_be_deleted_by_public_visitor(isolated_db):
+    isolated_db.save_portfolio(
+        name="ProtectedDemo", weights=PORTFOLIO_A_HOLDINGS, investment_amount=10000.0,
+        optimization_method="Custom Allocation", expected_return=0.075,
+        expected_volatility=0.11, sharpe_ratio=0.50,
+        metadata={"schema_version": 1, "synthetic_demo": True},
+    )
+    saved = isolated_db.load_all_portfolios()[0]
+
+    at = _apptest_from_file("pages/7_Portfolio_History.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+
+    delete_select = next(sb for sb in at.selectbox if sb.key == "delete_select")
+    delete_select.set_value(saved["id"])
+    at.run()
+
+    delete_btn = next(b for b in at.button if b.label == "Delete Portfolio")
+    assert delete_btn.disabled is True
+    assert not [c for c in at.checkbox if c.key == f"hist_delete_confirm_{saved['id']}"]
+    info_text = "\n".join(i.value for i in at.info)
+    assert "read-only" in info_text
+    assert len(isolated_db.load_all_portfolios()) == 1
+
+
 # ── Issue #43 item N: delete requires explicit second confirmation ───────
 def test_delete_button_disabled_until_confirmed_then_deletes(isolated_db):
     _seed_portfolio(isolated_db, "ToDelete", PORTFOLIO_A_HOLDINGS)

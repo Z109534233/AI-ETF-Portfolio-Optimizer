@@ -114,6 +114,7 @@ TRANSLATIONS = {
         "home_dashboard_etfs_label": "儀表板 ETF",
         "home_dashboard_etfs_help": "選擇要顯示於儀表板預覽的 ETF",
         "home_loading_market_data": "正在載入市場資料……",
+        "home_first_load_note": "首次開啟或服務剛重新啟動時，市場資料可能需要較久時間載入；頁面正在取得資料，請稍候。",
         "home_live_data_unavailable": "即時市場資料目前無法取得，儀表板顯示範例資料",
         "home_chart_etf_performance_title": "ETF 績效比較",
         "home_chart_etf_performance_sub": "標準化價格，基準 = 100",
@@ -397,14 +398,15 @@ TRANSLATIONS = {
         "etf_holdings_metric_top5": "前五大集中度",
         "etf_holdings_metric_top10": "前十大集中度",
         "etf_holdings_metric_count": "持股檔數",
-        "etf_holdings_metric_effective": "有效持股數",
+        "etf_holdings_metric_effective": "有效持股數（已揭露）",
         "etf_holdings_tooltip_largest": "權重最高的單一持股",
         "etf_holdings_tooltip_top5": "權重最高的五檔持股權重總和",
         "etf_holdings_tooltip_top10": "權重最高的十檔持股權重總和",
         "etf_holdings_tooltip_count": "來源揭露的個別持股檔數（不含現金／債券等彙總部位）",
-        "etf_holdings_tooltip_effective": "1 ÷ Σ(權重²)：權重越集中，有效持股數越接近 1；越分散則越接近實際檔數",
+        "etf_holdings_tooltip_effective": "僅根據來源已揭露的個別持股計算：先將已揭露權重正規化為 100%，再計算 1 ÷ Σ(權重²)。因此數值一定介於 1 與已揭露持股檔數之間，不代表 ETF 全部未揭露持股的有效檔數。",
         "etf_holdings_coverage_label": "已揭露權重總和",
         "etf_holdings_coverage_note": "此數字為來源目前揭露之全部持股（含現金／債券等彙總部位）權重加總。多數來源僅揭露前幾大持股，總和低於 100% 為正常現象，不代表 ETF 完整淨值組成。",
+        "etf_holdings_effective_disclosed_note": "有效持股數僅依目前揭露的 {count} 檔個別持股，先將其權重正規化為 100% 後計算；不代表 ETF 完整持股的有效檔數。",
         "etf_holdings_col_ticker": "代碼",
         "etf_holdings_col_name": "名稱",
         "etf_holdings_col_weight": "權重",
@@ -1408,6 +1410,7 @@ TRANSLATIONS = {
         "gp_80_contribution_label": "80% 路徑月投入",
         "gp_80_contribution_note": "同一批 5,000 條模擬路徑中，使約 80% 路徑達到名目目標的月投入；屬情境分析，不是保證。",
         "gp_simulating_spinner": "正在計算 5,000 條蒙地卡羅路徑與目標達成分布…",
+        "gp_distribution_insight_upside": "情境觀察：在目前 {years} 年長期假設下，積極型的名目達標路徑比例為 {aggressive_share}，高於均衡型的 {balanced_share}；但兩者 P10 分別約為 {aggressive_p10} 與 {balanced_p10} {currency}，下檔結果相近。這表示在這組模型假設中，較高股票比重主要擴大了上檔分布；這不是「股票一定較好」的普遍結論，也不代表所有市場期間會出現相同結果。",
         "gp_asset_mix_label": "示意資產配置：股票 {equity}／債券 {bonds}。比例用於解釋風險層級，不代表系統推薦。",
         "gp_status_on_track": "符合目標進度",
         "gp_status_below_target": "低於目標進度",
@@ -1512,6 +1515,7 @@ TRANSLATIONS = {
         "hist_delete_success": "投資組合已成功刪除。",
         "hist_delete_failed": "刪除投資組合失敗。",
         "hist_delete_warning": "此操作無法復原。",
+        "hist_demo_delete_protected": "展示範投資組合為公開作品集的固定範例，已設為唯讀，訪客無法刪除。",
         "hist_notes_label": "備註",
         "hist_holdings_label": "持股明細",
         "hist_active_holdings_only": "僅顯示有效持股，已隱藏 {count} 檔權重低於 0.1% 的持股",
@@ -1742,9 +1746,10 @@ TRANSLATIONS = {
         "mi_cal_col_when": "時間",
         "mi_cal_col_importance": "重要性",
 
-        "mi_portfolio_no_data": "尚未建立任何已儲存的投資組合。請先至「投資組合最佳化」頁面建立並儲存投資組合，即可查看今日新聞對你投資組合的可能影響。",
-        "mi_portfolio_using": "以下分析基於你最近儲存的投資組合：{name}",
-        "mi_portfolio_using_current": "以下分析基於你目前的投資組合（來自投資組合最佳化）：{name}",
+        "mi_portfolio_no_data": "目前工作階段尚未建立使用中的投資組合，且沒有可用的展示範資料。請先至「投資組合最佳化」建立一組投資組合，再查看市場新聞與配置的關聯。",
+        "mi_portfolio_using": "以下分析基於已儲存的投資組合：{name}",
+        "mi_portfolio_using_current": "使用中的投資組合（本次工作階段，來自投資組合最佳化）：{name}",
+        "mi_portfolio_using_shared_demo": "目前工作階段尚未建立使用中的投資組合，因此以下僅顯示共用展示範投資組合：{name}",
         "mi_portfolio_exposure": "你的投資組合對「{sector}」的曝險比例相對較高，約佔 {weight}。",
         "mi_portfolio_news_line": "今日與 {ticker} 相關的新聞，可能會對你的持股帶來{verb}影響。",
         "mi_impact_positive_verb": "正面",
@@ -1885,6 +1890,7 @@ TRANSLATIONS = {
         "home_dashboard_etfs_label": "Dashboard ETFs",
         "home_dashboard_etfs_help": "Select ETFs for the dashboard preview",
         "home_loading_market_data": "Loading market data for dashboard...",
+        "home_first_load_note": "On a first visit or immediately after a service restart, market data can take longer to load. The dashboard is fetching data now.",
         "home_live_data_unavailable": "Live market data unavailable. Dashboard is showing sample data.",
         "home_chart_etf_performance_title": "ETF Performance Comparison",
         "home_chart_etf_performance_sub": "Normalized price, base = 100",
@@ -2169,14 +2175,15 @@ TRANSLATIONS = {
         "etf_holdings_metric_top5": "Top 5 Concentration",
         "etf_holdings_metric_top10": "Top 10 Concentration",
         "etf_holdings_metric_count": "Number of Holdings",
-        "etf_holdings_metric_effective": "Effective Number of Holdings",
+        "etf_holdings_metric_effective": "Effective Holdings (disclosed)",
         "etf_holdings_tooltip_largest": "The single highest-weighted holding",
         "etf_holdings_tooltip_top5": "Sum of the five highest holding weights",
         "etf_holdings_tooltip_top10": "Sum of the ten highest holding weights",
         "etf_holdings_tooltip_count": "Individually-disclosed holdings from the source (excludes aggregate cash/bond/other buckets)",
-        "etf_holdings_tooltip_effective": "1 / Sum(weight^2): closer to 1 the more concentrated the weights are; closer to the actual count the more evenly spread",
+        "etf_holdings_tooltip_effective": "Calculated only from individually disclosed holdings: disclosed weights are first normalized to 100%, then 1 / Sum(weight^2) is computed. The result is bounded between 1 and the disclosed holding count and is not a fund-wide effective-holdings estimate for undisclosed positions.",
         "etf_holdings_coverage_label": "Total Disclosed Weight",
         "etf_holdings_coverage_note": "This is the sum of every holding currently disclosed by the source (including aggregate cash/bond/other buckets). Most sources only disclose the top holdings, so a total below 100% is expected and does not represent the ETF's complete NAV composition.",
+        "etf_holdings_effective_disclosed_note": "Effective Holdings is calculated only from the {count} individually disclosed positions after normalizing those disclosed weights to 100%; it is not the effective count of the ETF's complete portfolio.",
         "etf_holdings_col_ticker": "Ticker",
         "etf_holdings_col_name": "Name",
         "etf_holdings_col_weight": "Weight",
@@ -3174,6 +3181,7 @@ TRANSLATIONS = {
         "gp_80_contribution_label": "Monthly Amount for 80% of Paths",
         "gp_80_contribution_note": "The monthly amount at which about 80% of the same 5,000 simulated paths reach the nominal target. This is scenario analysis, not a guarantee.",
         "gp_simulating_spinner": "Calculating 5,000 Monte Carlo paths and goal-attainment distribution…",
+        "gp_distribution_insight_upside": "Scenario observation: under the current {years}-year assumptions, the Aggressive case reaches the nominal target in {aggressive_share} of simulated paths versus {balanced_share} for Balanced, while their P10 outcomes remain close at about {aggressive_p10} and {balanced_p10} {currency}. In this model, the higher equity mix mainly expands the upside distribution. This is not general evidence that a higher-equity allocation is always better, and other periods or assumptions can produce different downside outcomes.",
         "gp_asset_mix_label": "Illustrative asset mix: Equity {equity} / Bonds {bonds}. The mix explains the risk scenario; it is not a recommendation.",
         "gp_status_on_track": "On track",
         "gp_status_below_target": "Below target",
@@ -3243,7 +3251,7 @@ TRANSLATIONS = {
         "wl_table_caption": "Live prices for the tickers on your watchlist, so you can track them without adding them as holdings.",
 
         "db_section_title": "Today's Portfolio Brief",
-        "db_section_subtitle": "A summary generated from your holdings, watchlist, and market intelligence -- not buy/sell advice.",
+        "db_section_subtitle": "A summary generated from your holdings, watchlist, and market intelligence — not buy/sell advice.",
         "db_watchpoints_title": "Today's Watchpoints",
         "db_risk_news_title": "Risk/News Attention",
         "db_no_major_change": "No major change detected today.",
@@ -3278,6 +3286,7 @@ TRANSLATIONS = {
         "hist_delete_success": "Portfolio deleted successfully.",
         "hist_delete_failed": "Failed to delete portfolio.",
         "hist_delete_warning": "This action cannot be undone.",
+        "hist_demo_delete_protected": "Demo portfolios are fixed read-only examples for the public portfolio project and cannot be deleted by visitors.",
         "hist_notes_label": "Notes",
         "hist_holdings_label": "Holdings",
         "hist_active_holdings_only": "Active Holdings Only -- {count} holdings below 0.1% weight hidden",
@@ -3508,9 +3517,10 @@ TRANSLATIONS = {
         "mi_cal_col_when": "When",
         "mi_cal_col_importance": "Importance",
 
-        "mi_portfolio_no_data": "You don't have any saved portfolios yet. Build and save one on the Portfolio Optimizer page to see how today's news may affect your holdings.",
-        "mi_portfolio_using": "The analysis below is based on your most recently saved portfolio: {name}",
-        "mi_portfolio_using_current": "The analysis below is based on your current portfolio (from Portfolio Optimizer): {name}",
+        "mi_portfolio_no_data": "There is no active portfolio in this session and no shared demo is available. Build a portfolio in Portfolio Optimizer to relate market news to its allocation.",
+        "mi_portfolio_using": "The analysis below is based on a saved portfolio: {name}",
+        "mi_portfolio_using_current": "Active portfolio (this session, from Portfolio Optimizer): {name}",
+        "mi_portfolio_using_shared_demo": "No active portfolio exists in this session, so the analysis below uses the shared demo portfolio only: {name}",
         "mi_portfolio_exposure": "Your portfolio has a relatively high exposure to {sector} (about {weight}).",
         "mi_portfolio_news_line": "Today's news related to {ticker} may have a {verb} influence on your holdings.",
         "mi_impact_positive_verb": "positive",
@@ -3571,10 +3581,72 @@ TRANSLATIONS = {
 # ============================================================================
 # Core API
 # ============================================================================
+def _normalize_language_code(value):
+    """Map URL/browser language variants to this app's supported codes."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    if value is None:
+        return None
+    code = str(value).strip().lower().replace("_", "-")
+    if code == "en" or code.startswith("en-"):
+        return "en"
+    if code == "zh" or code.startswith("zh-"):
+        return "zh-TW"
+    return None
+
+
+def _language_from_accept_language(header_value):
+    """Use English for non-Chinese browser locales; zh-TW for Chinese."""
+    header = str(header_value or "").strip()
+    if not header:
+        return None
+    for token in header.split(","):
+        code = token.split(";", 1)[0].strip()
+        normalized = _normalize_language_code(code)
+        if normalized:
+            return normalized
+    # The browser declared a locale but none of its preferred locales are
+    # Chinese/English; English is the safest public-portfolio fallback.
+    return "en"
+
+
+def _url_language():
+    try:
+        return _normalize_language_code(st.query_params.get("lang"))
+    except Exception:
+        return None
+
+
+def _browser_language():
+    try:
+        context = getattr(st, "context", None)
+        headers = getattr(context, "headers", None) if context is not None else None
+        if headers:
+            value = headers.get("Accept-Language") or headers.get("accept-language")
+            return _language_from_accept_language(value)
+    except Exception:
+        pass
+    return None
+
+
 def get_language() -> str:
-    """Return the current session language, defaulting to zh-TW on first load."""
+    """Resolve language with URL > session > browser > project default priority.
+
+    A lang query parameter makes application links deterministic for reviewers.
+    Without a URL override, a fresh session follows the browser's
+    Accept-Language header when available; non-Chinese browsers default to
+    English. Existing sessions keep the user's explicit selector choice.
+    """
+    url_lang = _url_language()
+    if url_lang:
+        st.session_state[LANGUAGE_KEY] = url_lang
+        return url_lang
+
     if LANGUAGE_KEY not in st.session_state:
-        st.session_state[LANGUAGE_KEY] = DEFAULT_LANGUAGE
+        st.session_state[LANGUAGE_KEY] = _browser_language() or DEFAULT_LANGUAGE
+
     lang = st.session_state[LANGUAGE_KEY]
     return lang if lang in TRANSLATIONS else DEFAULT_LANGUAGE
 
@@ -3927,28 +3999,41 @@ def t_market_display(markets) -> str:
     return t_country(unique[0])
 
 
+def _on_language_selector_change() -> None:
+    selected_code = st.session_state.get("_language_selector_widget")
+    if selected_code in SUPPORTED_LANGUAGES:
+        set_language(selected_code)
+        try:
+            st.query_params["lang"] = selected_code
+        except Exception:
+            pass
+
+
 def language_selector() -> None:
-    """Render the '語言 / Language' selector. Call once, at the top of the sidebar."""
+    """Render the language selector and keep explicit choices URL-shareable."""
     current = get_language()
     codes = list(LANGUAGE_LABELS.keys())
-    labels = [LANGUAGE_LABELS[c] for c in codes]
     try:
         idx = codes.index(current)
     except ValueError:
         idx = 0
 
+    # Migrate the old widget state (which stored display labels) and honor an
+    # explicit URL override even inside an already-open Streamlit session.
+    prior = st.session_state.get("_language_selector_widget")
+    if prior not in codes or (_url_language() and prior != current):
+        st.session_state["_language_selector_widget"] = current
+
     st.markdown(
         f'<div class="sidebar-nav-label">{t("language_label")}</div>',
         unsafe_allow_html=True,
     )
-    selected_label = st.selectbox(
+    st.selectbox(
         t("language_label"),
-        labels,
+        codes,
         index=idx,
+        format_func=lambda code: LANGUAGE_LABELS[code],
         label_visibility="collapsed",
         key="_language_selector_widget",
+        on_change=_on_language_selector_change,
     )
-    selected_code = codes[labels.index(selected_label)]
-    if selected_code != current:
-        set_language(selected_code)
-        st.rerun()

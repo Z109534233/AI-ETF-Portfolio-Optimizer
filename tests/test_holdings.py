@@ -23,6 +23,9 @@ from src.holdings import (
     get_etf_holdings, itemized_holdings, total_disclosed_weight,
     STATUS_UPDATED, STATUS_CACHED, STATUS_UNAVAILABLE, STATUS_NOT_SUPPORTED,
 )
+from src.financial_metrics import (
+    effective_number_of_disclosed_holdings, effective_number_of_holdings,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -169,3 +172,25 @@ def test_public_adapter_never_fabricates_zero_or_missing_buckets(monkeypatch):
 
     assert snap.holdings == []
     assert snap.status == STATUS_NOT_SUPPORTED
+
+
+
+def test_partial_disclosure_effective_holdings_normalizes_before_inverse_hhi():
+    # Ten disclosed holdings sum to only 37.9% of the fund. Direct inverse-HHI
+    # on raw weights is mathematically invalid for an "effective count" and can
+    # exceed the actual disclosed count.
+    weights = {
+        "A": 0.070, "B": 0.055, "C": 0.050, "D": 0.045, "E": 0.040,
+        "F": 0.035, "G": 0.030, "H": 0.025, "I": 0.015, "J": 0.014,
+    }
+    assert sum(weights.values()) == pytest.approx(0.379)
+
+    raw_wrong = effective_number_of_holdings(weights)
+    corrected = effective_number_of_disclosed_holdings(weights)
+
+    assert raw_wrong > len(weights)
+    assert 1.0 <= corrected <= len(weights)
+
+    total = sum(weights.values())
+    normalized = {k: v / total for k, v in weights.items()}
+    assert corrected == pytest.approx(effective_number_of_holdings(normalized))

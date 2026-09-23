@@ -27,7 +27,8 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from src.i18n import TRANSLATIONS
+import src.i18n as i18n_mod
+from src.i18n import TRANSLATIONS, _normalize_language_code, _language_from_accept_language
 
 PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 T_CALL_RE = re.compile(r"\bt\(\s*[\"'](\w+)[\"']")
@@ -101,3 +102,66 @@ def test_every_t_call_in_source_references_a_real_key():
 
 def test_zh_chart_years_is_a_unit_not_year_count_label():
     assert TRANSLATIONS["zh-TW"]["chart_years"] == "年"
+
+
+
+def test_language_code_normalization_supports_review_links():
+    assert _normalize_language_code("en") == "en"
+    assert _normalize_language_code("en-US") == "en"
+    assert _normalize_language_code("zh-TW") == "zh-TW"
+    assert _normalize_language_code("zh-CN") == "zh-TW"
+    assert _normalize_language_code("zh-Hant-TW") == "zh-TW"
+    assert _normalize_language_code("fr-FR") is None
+
+
+def test_browser_language_prefers_chinese_when_present_otherwise_english():
+    assert _language_from_accept_language("zh-TW,zh;q=0.9,en;q=0.8") == "zh-TW"
+    assert _language_from_accept_language("en-US,en;q=0.9") == "en"
+    assert _language_from_accept_language("fr-FR,fr;q=0.9") == "en"
+    assert _language_from_accept_language("") is None
+
+
+
+class _FakeContext:
+    def __init__(self, headers=None):
+        self.headers = headers or {}
+
+
+class _FakeStreamlitLanguageState:
+    def __init__(self, query_params=None, headers=None, session_state=None):
+        self.query_params = query_params if query_params is not None else {}
+        self.context = _FakeContext(headers)
+        self.session_state = session_state if session_state is not None else {}
+
+
+def test_get_language_url_parameter_overrides_existing_session(monkeypatch):
+    fake = _FakeStreamlitLanguageState(
+        query_params={"lang": "en"},
+        headers={"Accept-Language": "zh-TW,zh;q=0.9"},
+        session_state={"language": "zh-TW"},
+    )
+    monkeypatch.setattr(i18n_mod, "st", fake)
+    assert i18n_mod.get_language() == "en"
+    assert fake.session_state["language"] == "en"
+
+
+def test_get_language_uses_browser_locale_on_fresh_session(monkeypatch):
+    fake = _FakeStreamlitLanguageState(
+        query_params={},
+        headers={"Accept-Language": "en-US,en;q=0.9"},
+        session_state={},
+    )
+    monkeypatch.setattr(i18n_mod, "st", fake)
+    assert i18n_mod.get_language() == "en"
+    assert fake.session_state["language"] == "en"
+
+
+def test_language_selector_callback_persists_shareable_query_parameter(monkeypatch):
+    fake = _FakeStreamlitLanguageState(
+        query_params={},
+        session_state={"_language_selector_widget": "en", "language": "zh-TW"},
+    )
+    monkeypatch.setattr(i18n_mod, "st", fake)
+    i18n_mod._on_language_selector_change()
+    assert fake.session_state["language"] == "en"
+    assert fake.query_params["lang"] == "en"

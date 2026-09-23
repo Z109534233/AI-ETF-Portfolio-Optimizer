@@ -672,27 +672,38 @@ def _render_portfolio_history_tab():
                            format_func=lambda x: portfolio_names[x],
                            key="delete_select")
 
-    # Explicit second confirmation (Issue #43 item N): selecting a portfolio
-    # above never deletes it by itself. The confirmation checkbox is keyed
-    # by `del_id`, so it is a BRAND NEW (unchecked) widget whenever the
-    # selection changes -- switching portfolios automatically invalidates
-    # any prior confirmation without extra session-state bookkeeping. The
-    # Delete button stays disabled until this box is checked.
+    # Public demo protection: curated synthetic demo rows are immutable.
+    # They are shared across visitors and form part of the portfolio showcase,
+    # so a public user must never be able to delete them.
     _del_name = portfolio_names.get(del_id, "")
-    confirm_delete = st.checkbox(
-        t("hist_delete_confirm_checkbox", name=_del_name), key=f"hist_delete_confirm_{del_id}",
-    )
+    _del_portfolio = next((p for p in portfolios if p["id"] == del_id), None)
+    _del_is_demo = bool(((_del_portfolio or {}).get("metadata") or {}).get("synthetic_demo"))
+
+    if _del_is_demo:
+        st.info(t("hist_demo_delete_protected"))
+        confirm_delete = False
+    else:
+        # Explicit second confirmation: selecting a portfolio never deletes it.
+        # The key changes with del_id so confirmation cannot carry over.
+        confirm_delete = st.checkbox(
+            t("hist_delete_confirm_checkbox", name=_del_name), key=f"hist_delete_confirm_{del_id}",
+        )
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button(t("btn_delete_portfolio"), type="secondary", disabled=not confirm_delete):
+        if st.button(
+            t("btn_delete_portfolio"),
+            type="secondary",
+            disabled=_del_is_demo or not confirm_delete,
+        ):
             if delete_portfolio(del_id):
                 st.success(t("hist_delete_success"))
                 st.rerun()
             else:
                 st.error(t("hist_delete_failed"))
     with col2:
-        st.caption(t("hist_delete_warning"))
+        if not _del_is_demo:
+            st.caption(t("hist_delete_warning"))
 
 
 tab_goal, tab_holdings, tab_watchlist, tab_history, tab_brief = st.tabs([
@@ -877,6 +888,24 @@ with tab_goal:
 
             _gp_grid_html = '<div class="gp-scenario-grid">' + "".join(_gp_cards) + "</div>"
             st.markdown(_gp_grid_html.strip(), unsafe_allow_html=True)
+
+            _balanced_mc = _gp_results["balanced"]
+            _aggressive_mc = _gp_results["aggressive"]
+            _target_for_gap = max(float(gp_plan["implied_target_total"]), 1.0)
+            _p10_gap_ratio = abs(_aggressive_mc["p10"] - _balanced_mc["p10"]) / _target_for_gap
+            if (
+                _aggressive_mc["target_share"] > _balanced_mc["target_share"]
+                and _p10_gap_ratio <= 0.03
+            ):
+                st.info(t(
+                    "gp_distribution_insight_upside",
+                    aggressive_share=f"{_aggressive_mc['target_share']:.1%}",
+                    balanced_share=f"{_balanced_mc['target_share']:.1%}",
+                    aggressive_p10=f"{_aggressive_mc['p10']:,.0f}",
+                    balanced_p10=f"{_balanced_mc['p10']:,.0f}",
+                    currency=gp_base_currency,
+                    years=f"{gp_plan['horizon_years']:.0f}",
+                ))
 
             with st.expander(t("gp_assumptions_title"), expanded=False):
                 st.markdown(f"- {t('gp_assumptions_hypothetical')}")
@@ -1074,7 +1103,7 @@ with tab_brief:
     _brief_watchlist = _session_watchlist()
 
     if not _brief_holdings and not _brief_watchlist:
-        empty_state(t("db_empty_no_data"), t("db_section_subtitle"), icon="layers")
+        empty_state(t("db_empty_no_data"), "", icon="layers")
     else:
         try:
             _brief_news = fetch_market_news(limit=10)

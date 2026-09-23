@@ -139,3 +139,23 @@ def test_home_equal_weight_demo_matches_optimizer_equal_weight_result(mocked_inp
     assert round(home_ret, 1) == pytest.approx(round(opt_ret, 1), abs=0.05)
     assert round(home_vol, 1) == pytest.approx(round(opt_vol, 1), abs=0.05)
     assert round(home_sharpe, 2) == pytest.approx(round(opt_sharpe, 2), abs=0.01)
+
+
+
+def test_home_first_load_shows_fetching_feedback(mocked_inputs):
+    at = _apptest_from_file("app.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    info_text = "\n".join(i.value for i in at.info)
+    assert "first visit" in info_text.lower()
+    assert "fetching data" in info_text.lower()
+
+
+def test_home_market_intelligence_card_does_not_claim_full_live_calendar(mocked_inputs):
+    at = _apptest_from_file("app.py", default_timeout=180)
+    at.session_state["language"] = "en"
+    at.run()
+    assert at.exception == []
+    corpus = "\n".join(m.value for m in at.markdown)
+    assert "economic calendar does not yet use a verified live provider" in corpus

@@ -102,6 +102,13 @@ def test_goal_planner_uses_responsive_scenario_grid_and_nominal_label(isolated_d
     assert "80% 路徑月投入" in corpus
 
 
+def test_goal_planner_explains_when_upside_expands_but_p10_is_similar(isolated_db, no_network):
+    at = _run_my_portfolio(lang="zh-TW")
+    info_text = "\n".join(i.value for i in at.info)
+    assert "情境觀察" in info_text
+    assert "不是「股票一定較好」的普遍結論" in info_text
+
+
 def test_goal_planner_html_cards_are_not_rendered_as_code_blocks(isolated_db, no_network):
     at = _run_my_portfolio(lang="zh-TW")
     raw_code = "\n".join(getattr(c, "value", "") for c in at.code)
@@ -249,6 +256,15 @@ def test_daily_brief_empty_state_when_no_holdings_or_watchlist(isolated_db, no_n
     at = _run_my_portfolio()
     corpus = "\n".join(m.value for m in at.markdown)
     assert "Add a ticker to Current Holdings or Watchlist" in corpus
+    # The section subtitle belongs under the section title only; the empty
+    # state should not repeat the exact same disclaimer a second time.
+    subtitle = "A summary generated from your holdings, watchlist, and market intelligence — not buy/sell advice."
+    all_text = "\n".join(
+        [m.value for m in at.markdown]
+        + [c.value for c in at.caption]
+        + [i.value for i in at.info]
+    )
+    assert all_text.count(subtitle) <= 1
 
 
 def test_daily_brief_renders_with_holdings(isolated_db, no_network, monkeypatch):
