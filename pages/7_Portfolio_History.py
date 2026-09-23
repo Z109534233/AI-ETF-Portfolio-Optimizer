@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 import sys
 import os
 import datetime
+import textwrap
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -848,7 +849,7 @@ with tab_goal:
                     t(f"gp_selection_logic_{gp_scenario_name}", market=_market_display)
                     if gp_sdata["example_etfs"] else ""
                 )
-                _gp_cards.append(f"""
+                _gp_cards.append(textwrap.dedent(f"""
                 <div class="gp-scenario-card">
                   <div class="gp-scenario-title">{t_goal_risk(gp_scenario_name)}</div>
                   <div class="gp-metric"><div class="gp-metric-label">{t('gp_expected_return_label')}</div>
@@ -872,12 +873,10 @@ with tab_goal:
                   <div class="gp-note">{_examples}</div>
                   <div class="gp-note">{_selection_logic}</div>
                 </div>
-                """)
+                """).strip())
 
-            st.markdown(
-                '<div class="gp-scenario-grid">' + "".join(_gp_cards) + "</div>",
-                unsafe_allow_html=True,
-            )
+            _gp_grid_html = '<div class="gp-scenario-grid">' + "".join(_gp_cards) + "</div>"
+            st.markdown(_gp_grid_html.strip(), unsafe_allow_html=True)
 
             with st.expander(t("gp_assumptions_title"), expanded=False):
                 st.markdown(f"- {t('gp_assumptions_hypothetical')}")
