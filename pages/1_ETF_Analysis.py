@@ -989,7 +989,7 @@ elif workspace == "Holdings":
         get_etf_holdings, itemized_holdings, total_disclosed_weight, search_holdings,
         STATUS_UPDATED, STATUS_CACHED, STATUS_NOT_SUPPORTED,
     )
-    from src.financial_metrics import largest_position, top_n_concentration, effective_number_of_holdings
+    from src.financial_metrics import largest_position, top_n_concentration, effective_number_of_disclosed_holdings
     from src.etf_database import get_related_tickers
 
     _hld_snapshot = get_etf_holdings(_focus_ticker)
@@ -1041,7 +1041,7 @@ elif workspace == "Holdings":
             _hld_largest_ticker, _hld_largest_weight = largest_position(_hld_weights)
             _hld_top5 = top_n_concentration(_hld_weights, 5)
             _hld_top10 = top_n_concentration(_hld_weights, 10)
-            _hld_effective = effective_number_of_holdings(_hld_weights)
+            _hld_effective = effective_number_of_disclosed_holdings(_hld_weights)
 
             from src.theme import COLORS as _HLD_C
             mcol1, mcol2, mcol3, mcol4, mcol5 = st.columns(5)
