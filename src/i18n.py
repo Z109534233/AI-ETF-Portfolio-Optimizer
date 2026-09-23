@@ -3577,10 +3577,71 @@ TRANSLATIONS = {
 # ============================================================================
 # Core API
 # ============================================================================
+def _normalize_language_code(value):
+    """Map URL/browser language variants to this app's supported codes."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    if value is None:
+        return None
+    code = str(value).strip().lower().replace("_", "-")
+    if code == "en" or code.startswith("en-"):
+        return "en"
+    if code in {"zh", "zh-tw", "zh-hant"} or code.startswith("zh-hant-"):
+        return "zh-TW"
+    return None
+
+
+def _language_from_accept_language(header_value):
+    """Use English for non-Chinese browser locales; zh-TW for Chinese."""
+    header = str(header_value or "").strip()
+    if not header:
+        return None
+    for token in header.split(","):
+        code = token.split(";", 1)[0].strip()
+        normalized = _normalize_language_code(code)
+        if normalized:
+            return normalized
+    # The browser declared a locale but none of its preferred locales are
+    # Chinese/English; English is the safest public-portfolio fallback.
+    return "en"
+
+
+def _url_language():
+    try:
+        return _normalize_language_code(st.query_params.get("lang"))
+    except Exception:
+        return None
+
+
+def _browser_language():
+    try:
+        context = getattr(st, "context", None)
+        headers = getattr(context, "headers", None) if context is not None else None
+        if headers:
+            return _language_from_accept_language(headers.get("Accept-Language"))
+    except Exception:
+        pass
+    return None
+
+
 def get_language() -> str:
-    """Return the current session language, defaulting to zh-TW on first load."""
+    """Resolve language with URL > session > browser > project default priority.
+
+    A lang query parameter makes application links deterministic for reviewers.
+    Without a URL override, a fresh session follows the browser's
+    Accept-Language header when available; non-Chinese browsers default to
+    English. Existing sessions keep the user's explicit selector choice.
+    """
+    url_lang = _url_language()
+    if url_lang:
+        st.session_state[LANGUAGE_KEY] = url_lang
+        return url_lang
+
     if LANGUAGE_KEY not in st.session_state:
-        st.session_state[LANGUAGE_KEY] = DEFAULT_LANGUAGE
+        st.session_state[LANGUAGE_KEY] = _browser_language() or DEFAULT_LANGUAGE
+
     lang = st.session_state[LANGUAGE_KEY]
     return lang if lang in TRANSLATIONS else DEFAULT_LANGUAGE
 
@@ -3957,4 +4018,8 @@ def language_selector() -> None:
     selected_code = codes[labels.index(selected_label)]
     if selected_code != current:
         set_language(selected_code)
+        try:
+            st.query_params["lang"] = selected_code
+        except Exception:
+            pass
         st.rerun()
