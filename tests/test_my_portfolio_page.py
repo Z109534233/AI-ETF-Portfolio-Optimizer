@@ -56,6 +56,36 @@ def _run_my_portfolio(lang="en"):
     return at
 
 
+# ── Guest/session isolation ───────────────────────────────────────────────
+def test_public_page_has_no_auth_not_configured_message(isolated_db, no_network):
+    at = _run_my_portfolio()
+    corpus = "\n".join([c.value for c in at.caption] + [m.value for m in at.markdown])
+    assert "not configured for this deployment" not in corpus
+    assert "shared demo data" not in corpus
+    assert "Guest mode" in corpus
+
+
+def test_holdings_are_isolated_between_fresh_browser_sessions(isolated_db, no_network):
+    first = _run_my_portfolio()
+    first.text_input(key="ch_new_ticker").set_value("VOO")
+    first.number_input(key="ch_new_qty").set_value(10.0)
+    first.button(key="ch_add_btn").click()
+    first.run()
+    assert [h["ticker"] for h in first.session_state["_guest_session_holdings"]] == ["VOO"]
+
+    second = _run_my_portfolio()
+    assert second.session_state["_guest_session_holdings"] == []
+    assert isolated_db.load_user_holdings("demo") == []
+
+
+def test_goal_planner_zh_selection_logic_has_no_english_leak(isolated_db, no_network):
+    at = _run_my_portfolio(lang="zh-TW")
+    corpus = "\n".join(c.value for c in at.caption)
+    assert "Conservative:" not in corpus
+    assert "category 'Fixed Income'" not in corpus
+    assert "非選股結果" in corpus
+
+
 # ── Goal Planner ─────────────────────────────────────────────────────────
 def test_goal_planner_renders_three_scenarios_by_default(isolated_db, no_network):
     at = _run_my_portfolio()
@@ -98,10 +128,13 @@ def test_add_holding_with_known_ticker_succeeds(isolated_db, no_network):
     success_texts = "\n".join(s.value for s in at.success)
     assert "VOO" in success_texts
 
-    holdings = isolated_db.load_user_holdings("demo")
+    holdings = at.session_state["_guest_session_holdings"]
     assert len(holdings) == 1
     assert holdings[0]["ticker"] == "VOO"
     assert holdings[0]["quantity"] == 10.0
+    # Public visitors must never write holdings into the shared SQLite DB.
+    assert at.session_state["_guest_session_holdings"] == []
+    assert isolated_db.load_user_holdings("demo") == []
 
 
 def test_add_holding_with_invalid_ticker_shows_error_and_does_not_persist(isolated_db, no_network):
@@ -123,23 +156,33 @@ def test_add_holding_with_zero_quantity_rejected(isolated_db, no_network):
     at.button(key="ch_add_btn").click()
     at.run()
     assert at.exception == []
+    assert at.session_state["_guest_session_holdings"] == []
     assert isolated_db.load_user_holdings("demo") == []
 
 
 def test_holding_price_unavailable_shown_without_fabricated_value(isolated_db, no_network):
-    isolated_db.add_user_holding("demo", "VOO", 10, 380.0, "USD")
     at = _run_my_portfolio()
+    at.text_input(key="ch_new_ticker").set_value("VOO")
+    at.number_input(key="ch_new_qty").set_value(10.0)
+    at.number_input(key="ch_new_cost").set_value(380.0)
+    at.button(key="ch_add_btn").click()
+    at.run()
     dataframes = [df.value for df in at.dataframe if "VOO" in str(getattr(df.value, "values", ""))]
     assert dataframes, "holdings table not found"
     assert "Unavailable" in str(dataframes[0].values)
 
 
 def test_remove_holding(isolated_db, no_network):
-    isolated_db.add_user_holding("demo", "VOO", 10, 380.0, "USD")
     at = _run_my_portfolio()
+    at.text_input(key="ch_new_ticker").set_value("VOO")
+    at.number_input(key="ch_new_qty").set_value(10.0)
+    at.number_input(key="ch_new_cost").set_value(380.0)
+    at.button(key="ch_add_btn").click()
+    at.run()
     at.button(key="ch_remove_btn").click()
     at.run()
     assert at.exception == []
+    assert at.session_state["_guest_session_holdings"] == []
     assert isolated_db.load_user_holdings("demo") == []
 
 
@@ -150,25 +193,32 @@ def test_add_watchlist_item_with_known_ticker(isolated_db, no_network):
     at.button(key="wl_add_btn").click()
     at.run()
     assert at.exception == []
-    assert [w["ticker"] for w in isolated_db.load_watchlist("demo")] == ["QQQ"]
+    assert [w["ticker"] for w in at.session_state["_guest_session_watchlist"]] == ["QQQ"]
+    assert isolated_db.load_watchlist("demo") == []
 
 
 def test_add_watchlist_item_duplicate_shows_info_not_error(isolated_db, no_network):
-    isolated_db.add_watchlist_item("demo", "QQQ")
     at = _run_my_portfolio()
     at.text_input(key="wl_new_ticker").set_value("QQQ")
     at.button(key="wl_add_btn").click()
     at.run()
+    at.text_input(key="wl_new_ticker").set_value("QQQ")
+    at.button(key="wl_add_btn").click()
+    at.run()
     assert at.exception == []
-    assert len(isolated_db.load_watchlist("demo")) == 1
+    assert len(at.session_state["_guest_session_watchlist"]) == 1
+    assert isolated_db.load_watchlist("demo") == []
 
 
 def test_remove_watchlist_item(isolated_db, no_network):
-    isolated_db.add_watchlist_item("demo", "QQQ")
     at = _run_my_portfolio()
+    at.text_input(key="wl_new_ticker").set_value("QQQ")
+    at.button(key="wl_add_btn").click()
+    at.run()
     at.button(key="wl_remove_btn").click()
     at.run()
     assert at.exception == []
+    assert at.session_state["_guest_session_watchlist"] == []
     assert isolated_db.load_watchlist("demo") == []
 
 
@@ -182,7 +232,11 @@ def test_daily_brief_empty_state_when_no_holdings_or_watchlist(isolated_db, no_n
 def test_daily_brief_renders_with_holdings(isolated_db, no_network, monkeypatch):
     import src.news as news_mod
     monkeypatch.setattr(news_mod, "fetch_market_news", lambda limit=10: [])
-    isolated_db.add_user_holding("demo", "VOO", 10, 380.0, "USD")
     at = _run_my_portfolio()
+    at.text_input(key="ch_new_ticker").set_value("VOO")
+    at.number_input(key="ch_new_qty").set_value(10.0)
+    at.number_input(key="ch_new_cost").set_value(380.0)
+    at.button(key="ch_add_btn").click()
+    at.run()
     corpus = "\n".join(m.value for m in at.markdown)
     assert "No major change detected" in corpus or "No major change" in corpus
