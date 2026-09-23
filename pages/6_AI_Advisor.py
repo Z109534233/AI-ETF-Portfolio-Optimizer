@@ -22,7 +22,7 @@ from src.data_loader import download_etf_data
 from src.data_cleaner import clean_price_data
 from src.etf_database import get_countries, get_tickers_by_country, to_yahoo_symbol, rename_yahoo_columns
 from src.financial_metrics import annualized_return, annualized_volatility, sharpe_ratio, maximum_drawdown
-from src.ai_advisor import build_advisor_context, generate_advisor_narrative
+from src.ai_advisor import build_advisor_context, generate_advisor_narrative, assumption_source_label
 from src.openai_service import is_configured as openai_is_configured
 from src.news import fetch_market_news
 from src.charts import allocation_donut_chart
@@ -282,7 +282,7 @@ with tab_summary:
 
     # ── Deterministic Data (computed, not AI-generated) ──────────────────
     section_header(t("ai_deterministic_data_title"))
-    st.caption(f"{t('ai_as_of_label')}: {context['as_of']}")
+    st.caption(f"{t('ai_as_of_label')}: {context.get('as_of_display', context['as_of'])} ({t('ai_taipei_time')})")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1:
         st.metric(t("metric_annualized_return"), f"{port_ctx['expected_return']:.2%}" if port_ctx["expected_return"] is not None else "N/A")
@@ -326,7 +326,8 @@ with tab_simulation:
         s = fp["summary"]
         st.markdown(t(
             "ai_sim_future_line", years=fp["years"], median=f"${s.get('median_final', 0):,.0f}",
-            prob=f"{s.get('probability_profit', 0):.1%}", source=fp.get("assumption_source", ""),
+            prob=f"{s.get('probability_profit', 0):.1%}",
+            source=assumption_source_label(fp.get("assumption_source", "")),
         ))
     else:
         st.markdown(t("ai_sim_future_unavailable", reason=fp.get("reason", "")))

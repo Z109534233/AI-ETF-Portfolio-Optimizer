@@ -1682,10 +1682,15 @@ def test_ph_j_max_sharpe_handoff_to_ai_advisor():
     ai_result = ai_at.session_state["ai_result"] if "ai_result" in ai_at.session_state else None
     check("PH-J.ai_result_built", ai_result is not None)
     if ai_result is not None:
+        from src.ai_advisor import _active_weights
         ctx = ai_result["context"]
         check("PH-J.context_portfolio_source_is_current", ctx["portfolio_source"] == "current", ctx["portfolio_source"])
-        check("PH-J.context_weights_match_handoff", ctx["portfolio"]["weights"] == cp["weights"],
-              f"{ctx['portfolio']['weights']} vs {cp['weights']}")
+        # AI Advisor filters/renormalizes holdings below the 0.5% active-weight
+        # threshold (tiny optimizer residuals aren't real holdings), so its
+        # context weights are the active subset of the handoff weights, not
+        # the raw dict verbatim.
+        check("PH-J.context_weights_match_handoff", ctx["portfolio"]["weights"] == _active_weights(cp["weights"]),
+              f"{ctx['portfolio']['weights']} vs {_active_weights(cp['weights'])}")
         check("PH-J.context_strategy_matches", ctx["portfolio"]["strategy"] == cp["strategy"], ctx["portfolio"]["strategy"])
         check("PH-J.narrative_mentions_top_holding",
               max(cp["weights"], key=cp["weights"].get) in ai_result["analysis"], "")

@@ -13,8 +13,12 @@ Issue #20 section 6A.
 import os
 import sys
 
+import pytest
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
+
+from src.simulator import conservative_portfolio_return
 
 
 def _apptest_from_file(rel_path, **kwargs):
@@ -73,3 +77,15 @@ def test_monte_carlo_stale_warning_clears_after_rerun():
     at.run()
     assert at.exception == []
     assert not _stale_warning_shown(at), "after re-running, the stale-result warning must clear"
+
+
+
+def test_conservative_portfolio_return_does_not_reuse_optimizer_expected_return():
+    # 50% equity at 6.5% + 50% fixed income at 3.5% = 5.0%.
+    value = conservative_portfolio_return({"VOO": 0.50, "BND": 0.50})
+    assert value == pytest.approx(0.05)
+
+
+def test_conservative_portfolio_return_ignores_zero_weight_assets():
+    value = conservative_portfolio_return({"VOO": 1.0, "BND": 0.0, "TLT": 0.0})
+    assert value == pytest.approx(0.065)

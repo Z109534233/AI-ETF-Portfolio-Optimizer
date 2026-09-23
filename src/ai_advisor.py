@@ -30,12 +30,15 @@ metric that isn't present in it.
 """
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 from src.financial_metrics import portfolio_diagnosis
 from src.risk_analytics import historical_var_cvar
-from src.i18n import t, get_language
+from src.i18n import (
+    t, get_language, t_opt_method, t_investment_objective, t_risk_level,
+)
 from src.openai_service import cached_generate, fingerprint, is_configured
 
 
@@ -43,6 +46,39 @@ DISCLAIMER = (
     "This content is for educational purposes only and does not constitute financial advice. "
     "Always consult a qualified financial adviser before making investment decisions."
 )
+
+# "Holding" means an economically meaningful current position in Advisor
+# logic. Tiny optimizer residuals and explicit 0% allocations must not count
+# as holdings in counts, ML eligibility, or news relevance.
+ADVISOR_ACTIVE_WEIGHT_THRESHOLD = 0.005
+
+
+def _active_weights(weights: dict) -> dict:
+    active = {k: float(v) for k, v in (weights or {}).items() if float(v) >= ADVISOR_ACTIVE_WEIGHT_THRESHOLD}
+    total = sum(active.values())
+    if total <= 0:
+        return {}
+    return {k: v / total for k, v in active.items()}
+
+
+def _format_as_of_taipei(utc_iso: str) -> str:
+    try:
+        dt = datetime.fromisoformat(utc_iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo("Asia/Taipei")).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return utc_iso
+
+
+def assumption_source_label(source: str) -> str:
+    """Translate simulator assumption-source storage values for display."""
+    return {
+        "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+        "Conservative Assumptions": t("sim_assumption_source_conservative"),
+        "Market Scenario": t("sim_market_scenario"),
+        "Custom Assumptions": t("sim_assumption_source_custom"),
+    }.get(source, source or "—")
 
 _ADVISOR_SYSTEM_INSTRUCTIONS = (
     "You are a professional educational financial analyst. Only discuss numbers "
@@ -66,7 +102,7 @@ def _risk_context(weights: dict, portfolio_prices=None) -> dict:
     else:
         var_cvar = {
             "available": False,
-            "reason": "no price history loaded for this portfolio in this session",
+            "reason": t("ai_reason_no_price_history"),
         }
     return {"available": True, "concentration": concentration, "var_cvar": var_cvar}
 
@@ -76,11 +112,11 @@ def _simulator_context(portfolio: dict, portfolio_source: str,
                         hist_result=None, hist_params=None) -> dict:
     future_unavailable = {
         "available": False,
-        "reason": "run Investment Simulator (Future Projection) with the current portfolio to include this",
+        "reason": t("ai_reason_run_future_sim"),
     }
     historical_unavailable = {
         "available": False,
-        "reason": "run Investment Simulator (Historical Simulation) with the current portfolio to include this",
+        "reason": t("ai_reason_run_historical_sim"),
     }
 
     if portfolio_source != "current":
@@ -114,13 +150,13 @@ def _simulator_context(portfolio: dict, portfolio_source: str,
 def _ml_context(portfolio: dict, portfolio_source: str, tickers: list,
                  ml_result=None, ml_ticker=None) -> dict:
     if portfolio_source != "current" or not ml_result:
-        return {"available": False, "reason": "no Machine Learning run available in this session"}
+        return {"available": False, "reason": t("ai_reason_no_ml_run")}
     if ml_result.get("error"):
         return {"available": False, "reason": ml_result["error"]}
     if ml_ticker not in tickers:
         return {
             "available": False,
-            "reason": f"the last Machine Learning run ({ml_ticker}) is not a current holding",
+            "reason": t("ai_reason_ml_not_holding", ticker=ml_ticker),
         }
     metrics = ml_result.get("metrics", {}) or {}
     # src.machine_learning._compute_metrics() keys this "Accuracy"
@@ -142,7 +178,7 @@ def _ml_context(portfolio: dict, portfolio_source: str, tickers: list,
 
 def _news_context(portfolio: dict, tickers: list, news_items=None) -> dict:
     if not news_items:
-        return {"available": False, "reason": "no market news available in this session"}
+        return {"available": False, "reason": t("ai_reason_no_market_news")}
     from src.market_intelligence import get_affected_etfs, analyze_portfolio_impact
 
     affected = get_affected_etfs(news_items, tickers=tickers) if tickers else []
@@ -176,24 +212,44 @@ def build_advisor_context(
     ever applies to "current" since those cached runs are keyed to the
     canonical portfolio's strategy/market, not to an arbitrary custom one.
     """
+    _as_of = datetime.now(timezone.utc).isoformat()
     context = {
-        "as_of": datetime.now(timezone.utc).isoformat(),
+        "as_of": _as_of,
+        "as_of_display": _format_as_of_taipei(_as_of),
         "portfolio_source": portfolio_source,
     }
 
     if not portfolio or not portfolio.get("weights"):
-        context["portfolio"] = {"available": False, "reason": "no portfolio built yet"}
-        context["risk"] = {"available": False, "reason": "no portfolio available"}
+        context["portfolio"] = {"available": False, "reason": t("ai_reason_no_portfolio")}
+        context["risk"] = {"available": False, "reason": t("ai_reason_no_portfolio")}
         context["simulator"] = {
-            "future_projection": {"available": False, "reason": "no portfolio available"},
-            "historical_simulation": {"available": False, "reason": "no portfolio available"},
+            "future_projection": {"available": False, "reason": t("ai_reason_no_portfolio")},
+            "historical_simulation": {"available": False, "reason": t("ai_reason_no_portfolio")},
         }
-        context["ml"] = {"available": False, "reason": "no portfolio available"}
-        context["news"] = {"available": False, "reason": "no portfolio available"}
+        context["ml"] = {"available": False, "reason": t("ai_reason_no_portfolio")}
+        context["news"] = {"available": False, "reason": t("ai_reason_no_portfolio")}
         return context
 
-    weights = portfolio["weights"]
-    tickers = portfolio.get("tickers") or list(weights.keys())
+    weights = _active_weights(portfolio["weights"])
+    tickers = list(weights.keys())
+
+    if not weights:
+        context["portfolio"] = {"available": False, "reason": t("ai_reason_no_active_holdings")}
+        context["risk"] = {"available": False, "reason": t("ai_reason_no_active_holdings")}
+        context["simulator"] = {
+            "future_projection": {"available": False, "reason": t("ai_reason_no_active_holdings")},
+            "historical_simulation": {"available": False, "reason": t("ai_reason_no_active_holdings")},
+        }
+        context["ml"] = {"available": False, "reason": t("ai_reason_no_active_holdings")}
+        context["news"] = {"available": False, "reason": t("ai_reason_no_active_holdings")}
+        return context
+
+    # Downstream "holding" logic intentionally uses only >=0.5% positions.
+    # This removes 0% optimizer residuals from counts, ML eligibility and
+    # news relevance while preserving the portfolio's relative allocation.
+    active_portfolio = dict(portfolio)
+    active_portfolio["weights"] = weights
+    active_portfolio["tickers"] = tickers
 
     context["portfolio"] = {
         "available": True,
@@ -206,14 +262,15 @@ def build_advisor_context(
         "volatility": portfolio.get("volatility"),
         "sharpe_ratio": portfolio.get("sharpe_ratio"),
         "max_drawdown": portfolio.get("max_drawdown"),
+        "risk_tolerance": portfolio.get("risk_tolerance"),
         "generated_at": portfolio.get("generated_at"),
     }
     context["risk"] = _risk_context(weights, portfolio_prices)
     context["simulator"] = _simulator_context(
-        portfolio, portfolio_source, sim_result, sim_params, hist_result, hist_params
+        active_portfolio, portfolio_source, sim_result, sim_params, hist_result, hist_params
     )
-    context["ml"] = _ml_context(portfolio, portfolio_source, tickers, ml_result, ml_ticker)
-    context["news"] = _news_context(portfolio, tickers, news_items)
+    context["ml"] = _ml_context(active_portfolio, portfolio_source, tickers, ml_result, ml_ticker)
+    context["news"] = _news_context(active_portfolio, tickers, news_items)
     return context
 
 
@@ -247,7 +304,7 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
         weights_str = "\n".join(f"  - {tk}: {w:.1%}" for tk, w in sorted(
             p["weights"].items(), key=lambda kv: kv[1], reverse=True))
         lines.append(
-            f"CURRENT PORTFOLIO (source: {context['portfolio_source']}, strategy: {p['strategy']}, "
+            f"CURRENT PORTFOLIO (source: {context['portfolio_source']}, strategy: {t_opt_method(p['strategy'])}, "
             f"market: {p['market']}):\n{weights_str}\n"
             f"Expected annual return: {_fmt_pct(p['expected_return'])}\n"
             f"Expected annual volatility: {_fmt_pct(p['volatility'])}\n"
@@ -284,9 +341,10 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
         s = fp["summary"]
         lines.append(
             f"\nINVESTMENT SIMULATOR -- Future Projection (Monte Carlo, {fp['n_simulations']} paths, "
-            f"assumptions: {fp['assumption_source']}): median value after {fp['years']} years "
-            f"{_fmt_money(s.get('median_final'))}; probability of profit {_fmt_pct(s.get('probability_profit'))}. "
-            f"This is a projection, not a guarantee."
+            f"assumptions: {assumption_source_label(fp['assumption_source'])}): median value after {fp['years']} years "
+            f"{_fmt_money(s.get('median_final'))}; share of simulated paths ending above cumulative contributions "
+            f"{_fmt_pct(s.get('probability_profit'))}. This is a simulated-path share under the stated assumptions, "
+            f"not a real-world probability of profit or a guarantee."
         )
     else:
         lines.append(f"\nINVESTMENT SIMULATOR -- Future Projection: not available ({fp.get('reason')}).")
@@ -325,12 +383,33 @@ def _build_prompt(context: dict, investment_objective: str, risk_level: str,
     else:
         lines.append(f"\nMARKET INTELLIGENCE: not available ({news.get('reason')}).")
 
+    # Deterministic consistency check is included in the AI prompt too, so
+    # the OpenAI-assisted path cannot omit a mismatch that the rule-based
+    # path would flag.
+    if p.get("available") and str(risk_level).lower() == "conservative":
+        concentration = context.get("risk", {}).get("concentration", {})
+        top_weight = concentration.get("largest_weight", 0)
+        effective = concentration.get("effective_holdings", 0)
+        vol = p.get("volatility")
+        if ((isinstance(vol, (int, float)) and vol > 0.12)
+                or top_weight > 0.40 or effective < 3):
+            lines.append(
+                "\nRISK-PROFILE CONSISTENCY CHECK: MISMATCH. The user selected Conservative, "
+                f"while annualized volatility is {_fmt_pct(vol)}, the largest holding is "
+                f"{_fmt_pct(top_weight)}, and effective holdings are {_fmt_num(effective, 1)}. "
+                "State explicitly that this allocation is inconsistent with the selected Conservative "
+                "profile under the app's rule (volatility >12%, largest holding >40%, or effective holdings <3)."
+            )
+
     language_instruction = (
         "Respond entirely in Traditional Chinese (zh-TW/繁體中文), including all section "
-        "headings and body text."
+        "headings and body text. Translate app labels into Traditional Chinese; do not leave "
+        "English strategy names, assumption-source labels, or unavailable-reason boilerplate in the final report."
         if get_language() == "zh-TW"
         else "Respond entirely in English."
     )
+    objective_display = t_investment_objective(investment_objective)
+    risk_display = t_risk_level(risk_level)
 
     return f"""You are an educational financial analyst assistant. Using ONLY the structured
 data below (never invent a number that is not printed here -- if a section says "not
@@ -339,7 +418,7 @@ clear, structured educational explanation.
 
 {language_instruction}
 
-Investor profile: {investment_objective} objective, {risk_level} risk tolerance, {investment_horizon}-year horizon.
+Investor profile: {objective_display} objective, {risk_display} risk tolerance, {investment_horizon}-year horizon.
 
 {chr(10).join(lines)}
 
@@ -350,7 +429,7 @@ Please provide a structured analysis including:
 4. Machine Learning Signal (only if available, framed as experimental/probabilistic)
 5. Market Intelligence / News Relevance (only if available)
 6. Main Risks and Tradeoffs
-7. Educational Suggestions
+7. Educational Review Points
 
 Keep the tone professional and educational. Do not provide personalised financial advice.
 For every section marked "not available" above, say so explicitly rather than fabricating content.
@@ -435,8 +514,10 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     if not p["available"]:
         return t("ai_no_portfolio_data")
 
+    _objective_display = t_investment_objective(investment_objective)
+    _risk_display = t_risk_level(risk_level)
     lines = [t("ai_report_title"), t(
-        "ai_report_meta", objective=investment_objective, risk=risk_level, horizon=investment_horizon
+        "ai_report_meta", objective=_objective_display, risk=_risk_display, horizon=investment_horizon
     ) + "\n"]
 
     weights = p["weights"]
@@ -452,21 +533,26 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
         return record.category if record else None
 
     equity_weight = sum(w for tk, w in weights.items() if _category(tk) == "Equity")
-    focus = t("ai_report_focus_equity") if equity_weight > 0.5 else t("ai_report_focus_diversified")
+    concentration = context.get("risk", {}).get("concentration", {})
+    _effective_holdings = concentration.get("effective_holdings", n_holdings)
+    if top_weight > 0.40 or _effective_holdings < 3:
+        focus = t("ai_report_focus_concentrated")
+    else:
+        focus = t("ai_report_focus_equity") if equity_weight > 0.5 else t("ai_report_focus_diversified")
 
     lines.append(t("ai_report_section1"))
     lines.append(t(
         "ai_report_summary_text",
         n_holdings=n_holdings, focus=focus, top_holding=top_holding,
-        top_weight=_fmt_pct(top_weight), horizon=investment_horizon, risk_lower=risk_level.lower(),
+        top_weight=_fmt_pct(top_weight), horizon=investment_horizon, risk=_risk_display,
     ))
     lines.append(t(
         "ai_synthesis_portfolio_metrics",
         ret=_fmt_pct(p["expected_return"]), vol=_fmt_pct(p["volatility"]),
-        sharpe=_fmt_num(p["sharpe_ratio"]), strategy=p["strategy"],
+        sharpe=_fmt_num(p["sharpe_ratio"]), strategy=t_opt_method(p["strategy"]),
     ))
 
-    lines.append("\n" + t("ai_section_risk"))
+    lines.append("\n" + t("ai_report_section2_risk"))
     r = context["risk"]
     if r.get("available"):
         c = r["concentration"]
@@ -486,14 +572,15 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_section_unavailable", reason=r.get("reason", "")))
 
-    lines.append("\n" + t("ai_section_simulator"))
+    lines.append("\n" + t("ai_report_section3_simulator"))
     sim = context["simulator"]
     fp = sim["future_projection"]
     if fp.get("available"):
         s = fp["summary"]
         lines.append(t(
             "ai_sim_future_line", years=fp["years"], median=_fmt_money(s.get("median_final")),
-            prob=_fmt_pct(s.get("probability_profit")), source=fp.get("assumption_source", ""),
+            prob=_fmt_pct(s.get("probability_profit")),
+            source=assumption_source_label(fp.get("assumption_source", "")),
         ))
     else:
         lines.append(t("ai_sim_future_unavailable", reason=fp.get("reason", "")))
@@ -507,7 +594,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_sim_historical_unavailable", reason=hs.get("reason", "")))
 
-    lines.append("\n" + t("ai_section_ml"))
+    lines.append("\n" + t("ai_report_section4_ml"))
     ml = context["ml"]
     if ml.get("available"):
         beats = t("ai_ml_beats") if ml["beats_baseline"] else t("ai_ml_below")
@@ -519,7 +606,7 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_section_unavailable", reason=ml.get("reason", "")))
 
-    lines.append("\n" + t("ai_section_news"))
+    lines.append("\n" + t("ai_report_section5_news"))
     news = context["news"]
     if news.get("available"):
         lines.append(t(
@@ -530,14 +617,23 @@ def generate_rule_based_narrative(context: dict, investment_objective: str = "Lo
     else:
         lines.append(t("ai_section_unavailable", reason=news.get("reason", "")))
 
-    lines.append("\n" + t("ai_report_section4"))
+    lines.append("\n" + t("ai_report_section6_risks"))
     if top_weight > 0.5:
         lines.append("- " + t("ai_report_risk_concentration", ticker=top_holding, weight=_fmt_pct(top_weight)))
+    if str(risk_level).lower() == "conservative":
+        _vol = p.get("volatility")
+        if ((_vol is not None and _vol > 0.12) or top_weight > 0.40 or _effective_holdings < 3):
+            lines.append("- " + t(
+                "ai_report_risk_profile_mismatch",
+                volatility=_fmt_pct(_vol),
+                largest_weight=_fmt_pct(top_weight),
+                effective_holdings=_fmt_num(_effective_holdings, 1),
+            ))
     if equity_weight > 0.9:
         lines.append("- " + t("ai_report_risk_equity_market"))
     lines.append("- " + t("ai_report_risk_market"))
 
-    lines.append("\n" + t("ai_report_section8"))
+    lines.append("\n" + t("ai_report_section7_education"))
     lines.append("- " + t("ai_report_edu_correlation"))
     lines.append("- " + t("ai_report_edu_simulator"))
     lines.append("- " + t("ai_report_edu_tax"))

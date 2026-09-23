@@ -99,6 +99,81 @@ def fetch_market_indices() -> dict:
     return result
 
 
+def summarize_market_snapshot(indices: dict) -> dict:
+    """Deterministic market direction from displayed index data.
+
+    Equity direction is determined from S&P 500, NASDAQ, Dow and Russell
+    2000 daily changes. VIX is interpreted separately from both its LEVEL
+    and daily change. News sentiment is intentionally not used here.
+    """
+    equity_keys = ["sp500", "nasdaq", "dow", "russell"]
+    available = [indices.get(k, {}) for k in equity_keys if indices.get(k, {}).get("available")]
+    up = sum(1 for x in available if x.get("change_pct", 0) > 0)
+    down = sum(1 for x in available if x.get("change_pct", 0) < 0)
+
+    if not available:
+        direction = "Unavailable"
+    elif up >= 3:
+        direction = "Rising"
+    elif down >= 3:
+        direction = "Falling"
+    else:
+        direction = "Mixed"
+
+    details = ", ".join(
+        f"{x.get('label', '')} {x.get('change_pct', 0):+.2f}%"
+        for x in available
+    )
+
+    vix = indices.get("vix", {})
+    vix_text = ""
+    vix_level = None
+    vix_change = None
+    vix_level_desc = None
+    vix_change_desc = None
+    if vix.get("available"):
+        vix_level = float(vix.get("price", 0))
+        vix_change = float(vix.get("change_pct", 0))
+        if vix_level < 15:
+            vix_level_desc = "low"
+        elif vix_level < 20:
+            vix_level_desc = "moderate"
+        elif vix_level < 30:
+            vix_level_desc = "elevated"
+        else:
+            vix_level_desc = "high"
+        vix_change_desc = "falling" if vix_change < -0.05 else "rising" if vix_change > 0.05 else "little changed"
+        vix_text = f"VIX {vix_level:.2f} ({vix_change:+.2f}%), {vix_level_desc} and {vix_change_desc}"
+
+    return {
+        "direction": direction,
+        "equity_up": up,
+        "equity_down": down,
+        "equity_available": len(available),
+        "equity_details": details,
+        "vix_text": vix_text,
+        "vix_level": vix_level,
+        "vix_change": vix_change,
+        "vix_level_desc": vix_level_desc,
+        "vix_change_desc": vix_change_desc,
+    }
+
+
+def localized_vix_text(snapshot: dict) -> str:
+    """Language-aware VIX interpretation for user-facing rule-based prose."""
+    if snapshot.get("vix_level") is None:
+        return ""
+    if get_language() == "zh-TW":
+        level_map = {"low": "偏低", "moderate": "中等", "elevated": "偏高", "high": "高檔"}
+        change_map = {"falling": "下降", "rising": "上升", "little changed": "變化不大"}
+        return (
+            f"VIX 為 {snapshot['vix_level']:.2f}（{snapshot['vix_change']:+.2f}%），"
+            f"水準{level_map.get(snapshot['vix_level_desc'], snapshot['vix_level_desc'])}且"
+            f"{change_map.get(snapshot['vix_change_desc'], snapshot['vix_change_desc'])}"
+        )
+    return snapshot.get("vix_text", "")
+
+
 def fetch_fear_greed_index() -> dict:
     """
     Placeholder for the Fear & Greed Index. No free, keyless data source is
@@ -341,6 +416,24 @@ def _market_impact_score_to_stars(score: int) -> int:
     return 1
 
 
+_COMMENTARY_TITLE_MARKERS = (
+    "opinion:", "opinion ", "commentary:", "commentary ", "column:",
+    "column ", "interview:", "interview ", "comments on", "views on",
+    "perspective on",
+)
+
+
+def _is_commentary_news_item(item: dict) -> bool:
+    """Conservative title-only detection for commentary/opinion content.
+
+    The news feed does not expose a reliable article-type field, so only
+    explicit editorial markers are used. Hard-news headlines are never
+    downgraded merely for being the only article in the feed.
+    """
+    title = str((item or {}).get("title") or "").lower()
+    return any(marker in title for marker in _COMMENTARY_TITLE_MARKERS)
+
+
 def calculate_market_impact(news_items: list) -> dict:
     """
     Market Impact Score: a 0-100 score for today's news, built from *event
@@ -355,9 +448,9 @@ def calculate_market_impact(news_items: list) -> dict:
         that category is known to hit our supported markets
       - Affected Industry   (20%) -- EVENT_INDUSTRY_BREADTH, how broadly
         that category tends to reach across industries/sectors
-      - News Frequency      (15%) -- what share of today's headlines are
-        about that same dominant category (a repeated theme signals a
-        bigger, more pervasive story than a single one-off mention)
+      - News Frequency      (15%) -- absolute corroborating headline count
+        for the dominant category (a repeated theme signals a bigger,
+        more pervasive story than a single one-off mention)
     A transparent rule-based heuristic, not a prediction of market
     direction.
 
@@ -384,7 +477,12 @@ def calculate_market_impact(news_items: list) -> dict:
 
     affected_industry = EVENT_INDUSTRY_BREADTH.get(dominant, 15)
 
-    news_frequency = min(100, round(category_counts[dominant] / len(news_items) * 100))
+    # Absolute corroboration matters more than share-of-feed. With the old
+    # formula, one single article in a one-article feed received 100/100 for
+    # "frequency", which could overstate a commentary piece mentioning the
+    # Federal Reserve. One mention now contributes only 25/100; four or more
+    # independent matching headlines are needed to max this component.
+    news_frequency = min(100, category_counts[dominant] * 25)
 
     score = round(
         event_importance * 0.40
@@ -392,6 +490,15 @@ def calculate_market_impact(news_items: list) -> dict:
         + affected_industry * 0.20
         + news_frequency * 0.15
     )
+    # Explicit commentary/opinion pieces should not become 4-5 star
+    # "market impact" events just because they mention a high-weight term
+    # such as "Federal Reserve". Do NOT cap ordinary hard news merely
+    # because only one headline is available.
+    dominant_items = [
+        item for item in news_items if classify_event(item["title"]) == dominant
+    ]
+    if len(dominant_items) == 1 and _is_commentary_news_item(dominant_items[0]):
+        score = min(score, 69)
     score = max(0, min(100, score))
     stars = _market_impact_score_to_stars(score)
 
@@ -784,20 +891,13 @@ def calculate_market_sentiment(news_items: list) -> dict:
 
 
 def get_economic_calendar() -> list:
+    """Return only verified economic-calendar events.
+
+    No live calendar provider is currently connected, so returning an empty
+    list is more accurate than presenting sample Fed/CPI dates as if they
+    were current. The UI explicitly explains this unavailable state.
     """
-    Static, clearly-labelled placeholder economic calendar (Fed Meeting, CPI,
-    PPI, GDP, NFP, FOMC). Intentionally simple and easy to swap for a live
-    data source (e.g. FRED, Trading Economics) later without changing the
-    page that renders it.
-    """
-    return [
-        {"event": "CPI (Consumer Price Index)", "when": t("mi_cal_this_week"), "importance": t("mi_cal_high")},
-        {"event": "FOMC / Fed Interest Rate Decision", "when": t("mi_cal_this_week"), "importance": t("mi_cal_high")},
-        {"event": "PPI (Producer Price Index)", "when": t("mi_cal_this_week"), "importance": t("mi_cal_medium")},
-        {"event": "Non-Farm Payrolls (NFP)", "when": t("mi_cal_upcoming"), "importance": t("mi_cal_high")},
-        {"event": "GDP Growth Rate", "when": t("mi_cal_upcoming"), "importance": t("mi_cal_medium")},
-        {"event": "Fed Chair Speech", "when": t("mi_cal_upcoming"), "importance": t("mi_cal_medium")},
-    ]
+    return []
 
 
 _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS = (
@@ -809,7 +909,7 @@ _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS = (
 
 
 def generate_market_summary(news_items: list, sentiment: dict, affected_etfs: list,
-                             session_state=None) -> dict:
+                             session_state=None, market_indices: dict = None) -> dict:
     """
     Generate a ~100-200 word "Today's Market Summary" from current headlines
     and the app's OWN deterministic classifications (sentiment split,
@@ -827,7 +927,7 @@ def generate_market_summary(news_items: list, sentiment: dict, affected_etfs: li
     if not news_items:
         return {"text": t("mi_summary_no_news"), "source": "rule_based"}
 
-    prompt = _market_summary_prompt(news_items, sentiment, affected_etfs)
+    prompt = _market_summary_prompt(news_items, sentiment, affected_etfs, market_indices)
 
     if session_state is not None:
         fp = fingerprint(
@@ -835,6 +935,7 @@ def generate_market_summary(news_items: list, sentiment: dict, affected_etfs: li
             tuple(n["title"] for n in news_items[:8]),
             sentiment.get("bullish_pct"), sentiment.get("neutral_pct"), sentiment.get("bearish_pct"),
             tuple(e["ticker"] for e in affected_etfs),
+            tuple((k, v.get("price"), v.get("change_pct")) for k, v in sorted((market_indices or {}).items())),
         )
         result = cached_generate(session_state, "_mi_openai_summary_cache", fp,
                                   _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS, prompt, max_output_tokens=350)
@@ -843,12 +944,13 @@ def generate_market_summary(news_items: list, sentiment: dict, affected_etfs: li
 
     if result["available"]:
         return {"text": result["text"], "source": "ai"}
-    return {"text": _generate_rule_based_summary(news_items, sentiment, affected_etfs), "source": "rule_based"}
+    return {"text": _generate_rule_based_summary(news_items, sentiment, affected_etfs, market_indices), "source": "rule_based"}
 
 
-def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: list) -> str:
+def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: list, market_indices: dict = None) -> str:
     headlines = "\n".join(f"- {n['title']}" for n in news_items[:8])
     affected_str = ", ".join(f"{e['ticker']} ({e['sector']}: {e['impact_label']})" for e in affected_etfs) or "N/A"
+    snapshot = summarize_market_snapshot(market_indices or {})
     language_instruction = (
         "Respond entirely in Traditional Chinese (zh-TW/繁體中文). Headlines "
         "are English-language source material and must stay source-faithful "
@@ -858,7 +960,12 @@ def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: lis
         "quoted source title distinct from your own Chinese prose."
         if get_language() == "zh-TW" else "Respond entirely in English."
     )
-    return f"""Based on today's headlines and classifications below (already computed by the app -- do not recompute or contradict them), write a "Today's Market Summary" of about 100-200 words covering: the main market events today, overall market sentiment, which sectors are affected, and which ETFs may be affected. Do not predict future prices or give personalised investment advice. {language_instruction}
+    return f"""Based on the deterministic market snapshot and today's headlines below, write a "Today's Market Summary" of about 100-200 words. MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT; headline sentiment is supplementary context and must never override or contradict the index direction. VIX wording must follow its displayed level and daily change. Do not invent upcoming Fed decisions, releases, or calendar events. Do not predict future prices or give personalised investment advice. {language_instruction}
+
+Actual index snapshot (authoritative for market direction):
+Direction: {snapshot['direction']}
+Equity indices: {snapshot['equity_details'] or 'N/A'}
+Volatility: {snapshot['vix_text'] or 'N/A'}
 
 Headlines:
 {headlines}
@@ -868,8 +975,10 @@ Potentially affected ETFs (already computed): {affected_str}
 """
 
 
-def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etfs: list) -> str:
+def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etfs: list,
+                                 market_indices: dict = None) -> str:
     top_titles = [n["title"] for n in news_items[:3]]
+    snapshot = summarize_market_snapshot(market_indices or {})
 
     if sentiment["bullish_pct"] > sentiment["bearish_pct"] + 10:
         tilt = t("mi_tilt_bullish")
@@ -881,7 +990,29 @@ def _generate_rule_based_summary(news_items: list, sentiment: dict, affected_etf
     positive_etfs = [e["ticker"] for e in affected_etfs if e["impact"] == "Positive"]
     negative_etfs = [e["ticker"] for e in affected_etfs if e["impact"] == "Negative"]
 
-    parts = [t("mi_summary_intro", headline=top_titles[0] if top_titles else "")]
+    if get_language() == "zh-TW":
+        direction_text = {
+            "Rising": "實際主要股價指數今日整體走揚",
+            "Falling": "實際主要股價指數今日整體下跌",
+            "Mixed": "實際主要股價指數今日漲跌互見",
+            "Unavailable": "目前無法取得足夠的主要指數資料",
+        }[snapshot["direction"]]
+        snapshot_text = f"{direction_text}（{snapshot['equity_details']}）。" if snapshot["equity_details"] else f"{direction_text}。"
+        _vix = localized_vix_text(snapshot)
+        if _vix:
+            snapshot_text += f" {_vix}。"
+    else:
+        direction_text = {
+            "Rising": "Major equity indices are broadly higher today",
+            "Falling": "Major equity indices are broadly lower today",
+            "Mixed": "Major equity indices are mixed today",
+            "Unavailable": "Sufficient major-index data is currently unavailable",
+        }[snapshot["direction"]]
+        snapshot_text = f"{direction_text} ({snapshot['equity_details']})." if snapshot["equity_details"] else f"{direction_text}."
+        if snapshot["vix_text"]:
+            snapshot_text += f" {snapshot['vix_text']}."
+
+    parts = [snapshot_text, t("mi_summary_intro", headline=top_titles[0] if top_titles else "")]
     if len(top_titles) > 1:
         # Raw source headlines must stay visually/grammatically distinct
         # from the surrounding prose rather than reading as an unmarked run
@@ -992,18 +1123,18 @@ _ETF_TYPE_REGION_ZH = {
 # mood -> a forward-looking "Investment Insight" phrase per language, used
 # only by generate_today_ai_summary()'s paragraph 3.
 _INSIGHT_PHRASE_EN = {
-    "Bearish": "Bond ETFs may benefit if investors move towards defensive assets.",
-    "Bullish": "Growth and technology ETFs may continue to benefit if this momentum holds.",
-    "Neutral": "With mixed signals today, diversified broad-market exposure may be the steadier choice.",
+    "Bearish": "Headline classification is tilted negative; this is a news signal, not a forecast of market direction.",
+    "Bullish": "Headline classification is tilted positive; this is a news signal, not a forecast of market direction.",
+    "Neutral": "Headline classification is mixed; it should be treated as context rather than a directional forecast.",
 }
 _INSIGHT_PHRASE_ZH = {
-    "Bearish": "若投資人轉向防禦性資產，債券型 ETF 可能因此受惠。",
-    "Bullish": "若這股動能持續，成長型與科技型 ETF 可能持續受惠。",
-    "Neutral": "今天訊號較為分歧，分散配置的大盤型 ETF 可能是相對穩健的選擇。",
+    "Bearish": "新聞分類偏負面；這是新聞訊號，不代表市場方向預測。",
+    "Bullish": "新聞分類偏正面；這是新聞訊號，不代表市場方向預測。",
+    "Neutral": "新聞分類訊號較分歧；應視為背景資訊，而非方向預測。",
 }
 
 
-def generate_today_ai_summary(news_items: list) -> dict:
+def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> dict:
     """
     "Today's AI Summary" -- a three-paragraph template-generated summary
     meant for the very top of the Market Intelligence page (above
@@ -1058,6 +1189,7 @@ def generate_today_ai_summary(news_items: list) -> dict:
     category = impact["category"] or "Other"
     category_en, category_zh = _CATEGORY_PHRASE.get(category, _CATEGORY_PHRASE["Other"])
     mood = global_sentiment["mood"] if global_sentiment else "Neutral"
+    snapshot = summarize_market_snapshot(market_indices or {})
 
     type_impact = EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {})
     top_type = max(type_impact, key=lambda et: type_impact[et], default=None)
@@ -1065,9 +1197,15 @@ def generate_today_ai_summary(news_items: list) -> dict:
         top_type = None  # Broad Market is the baseline itself -- nothing to contrast it against
 
     if lang == "zh-TW":
+        _dir = {"Rising": "整體走揚", "Falling": "整體下跌", "Mixed": "漲跌互見", "Unavailable": "方向資料不足"}[snapshot["direction"]]
         overview_text = (
-            f"今天市場{_MOOD_PHRASE_ZH.get(mood, '持穩')}，因為投資人對{category_zh}相關發展做出反應。"
+            f"依實際主要股價指數，今天市場{_dir}。新聞分類則偏向"
+            f"{'正面' if mood == 'Bullish' else '負面' if mood == 'Bearish' else '中性'}，"
+            f"主要涉及{category_zh}相關發展；新聞情緒僅作補充，不覆蓋實際指數方向。"
         )
+        _vix = localized_vix_text(snapshot)
+        if _vix:
+            overview_text += f" {_vix}。"
         if top_type:
             why_text = (
                 f"{_ETF_TYPE_REGION_ZH.get(top_type, top_type)} ETF 預期將比"
@@ -1079,10 +1217,14 @@ def generate_today_ai_summary(news_items: list) -> dict:
         headings = ("今日市場概況", "今天市場為何波動", "投資洞察")
         disclaimer = "此摘要為規則式生成，僅供教育用途，不構成投資建議或價格預測。"
     else:
+        _dir = {"Rising": "broadly higher", "Falling": "broadly lower", "Mixed": "mixed", "Unavailable": "not classifiable from available index data"}[snapshot["direction"]]
         overview_text = (
-            f"Markets are {_MOOD_PHRASE_EN.get(mood, 'holding steady')} today because investors reacted to "
-            f"{category_en} developments."
+            f"Based on the actual major equity indices, markets are {_dir} today. "
+            f"Headline classification is {mood.lower()} and is treated only as supplementary context, "
+            f"with {category_en} developments the main classified theme."
         )
+        if snapshot["vix_text"]:
+            overview_text += f" {snapshot['vix_text']}."
         if top_type:
             why_text = (
                 f"{_ETF_TYPE_REGION_EN.get(top_type, top_type)} ETFs are expected to experience stronger "
@@ -1245,8 +1387,9 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
     "Affected ETFs" is every DEFAULT_ETF_IMPACT_WATCHLIST ticker whose
     calculate_etf_impact() rating for this single headline is 4+ stars.
 
-    Returns a list of dicts, sorted by score descending: headline, score
-    (0-100), stars (1-5), star_label (e.g. "★★★★★"), category, sentiment
+    Returns a list of dicts, sorted by score descending: headline,
+    publisher, published/published_text, score (0-100), stars (1-5),
+    star_label (e.g. "★★★★★"), category, sentiment
     (raw mood), sentiment_label (translated), sentiment_variant (badge
     color), affected_markets (list of translated country names, may be
     empty), affected_etfs (list of tickers, may be empty).
@@ -1270,8 +1413,13 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
             if any(EVENT_MARKET_IMPACT.get(et, {}).get(m, 0) >= 3 for et in event_types)
         ]
 
+        _published = item.get("published")
+        _published_text = _published.strftime("%Y-%m-%d %H:%M") if hasattr(_published, "strftime") else ""
         events.append({
             "headline": item["title"],
+            "publisher": item.get("publisher") or "",
+            "published": _published,
+            "published_text": _published_text,
             "score": impact["score"],
             "stars": impact["stars"],
             "star_label": "★" * impact["stars"] + "☆" * (5 - impact["stars"]),
@@ -1503,46 +1651,48 @@ _ACTION_REASON_ZH = {
     "Other": "今日市場動態",
 }
 
-# category -> an "upcoming catalyst to watch" phrase per language.
+# category -> a verified-information follow-up phrase per language.
+# These deliberately avoid claiming a specific future release/event unless
+# a live calendar source has actually provided one.
 _ACTION_CATALYST_EN = {
-    "Interest Rate": "Investors should watch upcoming Fed announcements.",
-    "Inflation": "Investors should watch upcoming inflation data releases.",
-    "Trade Policy": "Investors should watch upcoming trade policy developments.",
-    "Technology": "Investors should watch upcoming big-tech earnings.",
-    "Semiconductor": "Investors should watch upcoming semiconductor earnings and export data.",
-    "Energy": "Investors should watch upcoming energy supply developments.",
-    "Geopolitics": "Investors should watch how geopolitical tensions develop.",
-    "Economy": "Investors should watch upcoming economic growth data.",
-    "AI": "Investors should watch upcoming AI-industry announcements.",
-    "Banking": "Investors should watch upcoming banking-sector developments.",
-    "Cryptocurrency": "Investors should watch upcoming crypto regulatory news.",
-    "Other": "Investors should stay alert for further market-moving news.",
+    "Interest Rate": "Follow verified Federal Reserve or central-bank updates related to this theme.",
+    "Inflation": "Follow verified inflation releases or reporting related to this theme.",
+    "Trade Policy": "Follow verified trade-policy developments.",
+    "Technology": "Follow verified technology-sector developments.",
+    "Semiconductor": "Follow verified semiconductor-sector developments.",
+    "Energy": "Follow verified energy-supply developments.",
+    "Geopolitics": "Follow verified geopolitical developments.",
+    "Economy": "Follow verified economic-data releases.",
+    "AI": "Follow verified AI-industry developments.",
+    "Banking": "Follow verified banking-sector developments.",
+    "Cryptocurrency": "Follow verified cryptocurrency regulatory developments.",
+    "Other": "Follow verified market-moving developments.",
 }
 _ACTION_CATALYST_ZH = {
-    "Interest Rate": "投資人應留意即將公布的 Fed 決策。",
-    "Inflation": "投資人應留意即將公布的通膨數據。",
-    "Trade Policy": "投資人應留意後續貿易政策發展。",
-    "Technology": "投資人應留意即將公布的大型科技股財報。",
-    "Semiconductor": "投資人應留意半導體財報與出口數據。",
-    "Energy": "投資人應留意能源供給相關發展。",
-    "Geopolitics": "投資人應留意地緣政治情勢後續發展。",
-    "Economy": "投資人應留意即將公布的經濟成長數據。",
-    "AI": "投資人應留意 AI 產業相關公告。",
-    "Banking": "投資人應留意銀行業後續發展。",
-    "Cryptocurrency": "投資人應留意加密貨幣相關監管消息。",
-    "Other": "投資人應留意後續市場動態。",
+    "Interest Rate": "請以已驗證的聯準會或央行最新資訊追蹤此主題。",
+    "Inflation": "請以已驗證的通膨數據或相關報導追蹤此主題。",
+    "Trade Policy": "請追蹤已驗證的後續貿易政策發展。",
+    "Technology": "請追蹤已驗證的科技產業發展。",
+    "Semiconductor": "請追蹤已驗證的半導體產業發展。",
+    "Energy": "請追蹤已驗證的能源供給發展。",
+    "Geopolitics": "請追蹤已驗證的地緣政治情勢發展。",
+    "Economy": "請追蹤已驗證的經濟數據發布。",
+    "AI": "請追蹤已驗證的 AI 產業發展。",
+    "Banking": "請追蹤已驗證的銀行業發展。",
+    "Cryptocurrency": "請追蹤已驗證的加密貨幣監管發展。",
+    "Other": "請追蹤已驗證的後續市場動態。",
 }
 
 # mood -> a general portfolio-positioning action phrase per language.
 _ACTION_MOOD_EN = {
-    "Bullish": "Consider maintaining growth exposure while momentum remains positive.",
-    "Bearish": "Maintain diversification while market volatility remains elevated.",
-    "Neutral": "Stay balanced with a diversified allocation amid mixed signals.",
+    "Bullish": "Headline sentiment is positive; treat it as context rather than a market-direction signal, and read it alongside the actual index and VIX data.",
+    "Bearish": "Headline sentiment is negative; treat it as context rather than a market-direction signal, and read it alongside the actual index and VIX data.",
+    "Neutral": "Headline sentiment is mixed; treat it as context rather than a market-direction signal, and read it alongside the actual index and VIX data.",
 }
 _ACTION_MOOD_ZH = {
-    "Bullish": "在動能持續之際，可考慮維持成長型資產部位。",
-    "Bearish": "市場波動升高之際，建議維持分散配置。",
-    "Neutral": "訊號較為分歧，建議維持均衡、分散的資產配置。",
+    "Bullish": "新聞情緒偏正面；這只是背景訊號，應搭配實際指數與 VIX 數據解讀，不應直接視為市場方向。",
+    "Bearish": "新聞情緒偏負面；這只是背景訊號，應搭配實際指數與 VIX 數據解讀，不應直接視為市場方向。",
+    "Neutral": "新聞情緒較分歧；這只是背景訊號，應搭配實際指數與 VIX 數據解讀，不應直接視為市場方向。",
 }
 
 # ETF Type -> a short lowercase sector word per language, used only by

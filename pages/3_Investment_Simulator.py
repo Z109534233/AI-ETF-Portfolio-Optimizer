@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.simulator import (
     simulate_investment, compound_growth_projection, scenario_comparison, MARKET_SCENARIOS,
     historical_backtest, find_common_data_range, prepare_historical_prices,
+    conservative_portfolio_return,
 )
 from src.database import save_simulation, init_database
 from src.data_loader import download_etf_data
@@ -134,15 +135,19 @@ with st.sidebar:
             and current_portfolio.get("volatility") is not None
         )
         _asrc_options = (
-            (["Portfolio Historical Statistics"] if _portfolio_stats_available else [])
+            (["Portfolio Historical Statistics", "Conservative Assumptions"] if _portfolio_stats_available else [])
             + ["Market Scenario", "Custom Assumptions"]
         )
         _asrc_labels = {
             "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+            "Conservative Assumptions": t("sim_assumption_source_conservative"),
             "Market Scenario": t("sim_market_scenario"),
             "Custom Assumptions": t("sim_assumption_source_custom"),
         }
-        _asrc_default = "Portfolio Historical Statistics" if _portfolio_stats_available else "Market Scenario"
+        # Default away from the optimizer's in-sample expected return. A
+        # long-horizon projection should not silently treat the optimized
+        # Maximum-Sharpe estimate as a future return forecast.
+        _asrc_default = "Conservative Assumptions" if _portfolio_stats_available else "Market Scenario"
         _ask, _asv = _shadow_default("projection_assumption_source", _asrc_default)
         _asrc_index = _asrc_options.index(_asv) if _asv in _asrc_options else 0
         projection_assumption_source = st.selectbox(
@@ -166,6 +171,18 @@ with st.sidebar:
                 f"{t('metric_expected_volatility')}: {annual_volatility:.2%}"
             )
             st.caption(t("sim_portfolio_stats_source_note"))
+            if current_portfolio.get("strategy") == "Maximum Sharpe Ratio":
+                st.warning(t("sim_optimizer_curse_warning"))
+        elif projection_assumption_source == "Conservative Assumptions":
+            annual_return = conservative_portfolio_return(current_portfolio.get("weights", {}))
+            # Keep observed historical volatility as the risk scale while
+            # replacing only the most selection-biased input: expected return.
+            annual_volatility = current_portfolio["volatility"]
+            st.caption(
+                f"{t('sim_assumed_return_label')}: {annual_return:.1%} | "
+                f"{t('sim_assumed_volatility_label')}: {annual_volatility:.1%}"
+            )
+            st.caption(t("sim_conservative_assumption_note"))
         elif projection_assumption_source == "Market Scenario":
             _scenario_labels = {k: t_market_scenario(k) for k in MARKET_SCENARIOS}
             _scenario_options = list(MARKET_SCENARIOS.keys())
@@ -576,6 +593,7 @@ sim_params = st.session_state.sim_params
 # a re-run. This is what actually produced the numbers below.
 _asrc_display_labels = {
     "Portfolio Historical Statistics": t("sim_assumption_source_portfolio"),
+    "Conservative Assumptions": t("sim_assumption_source_conservative"),
     "Market Scenario": t("sim_market_scenario"),
     "Custom Assumptions": t("sim_assumption_source_custom"),
 }
@@ -658,7 +676,7 @@ with st.container(border=True):
     ])
 
     with tab1:
-        fig_mc = monte_carlo_paths_chart(paths_df, t("chart_monte_carlo_simulation") + f" — {years}")
+        fig_mc = monte_carlo_paths_chart(paths_df, t("chart_monte_carlo_simulation") + f" — {years} {t('chart_years')}")
         st.plotly_chart(fig_mc, use_container_width=True, key="sim_monte_carlo_paths")
         chart_caption(t("sim_monte_carlo_chart_caption"))
         _mc_context = (
@@ -667,7 +685,7 @@ with st.container(border=True):
             f"Median final value: ${summary['median_final']:,.0f}, "
             f"Optimistic (90th pct): ${summary['optimistic_final']:,.0f}, "
             f"Pessimistic (10th pct): ${summary['pessimistic_final']:,.0f}, "
-            f"Probability of a positive outcome: {summary['probability_profit']:.1%}"
+            f"Share of simulated paths ending above contributions under these assumptions: {summary['probability_profit']:.1%}"
         )
         ai_interpret_button("sim_monte_carlo_ai_interpret", st.session_state, _mc_context)
 

@@ -96,3 +96,8 @@ def test_every_t_call_in_source_references_a_real_key():
             if key not in en_keys:
                 missing.setdefault(key, set()).add(os.path.relpath(path, REPO_ROOT))
     assert missing == {}, {k: sorted(v) for k, v in missing.items()}
+
+
+
+def test_zh_chart_years_is_a_unit_not_year_count_label():
+    assert TRANSLATIONS["zh-TW"]["chart_years"] == "年"

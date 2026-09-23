@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from src.data_cleaner import get_common_date_range
+from src.etf_database import get_etf
 
 
 MARKET_SCENARIOS = {
@@ -15,6 +16,42 @@ MARKET_SCENARIOS = {
     "Bear Market": {"return": 0.02, "volatility": 0.25},
     "Sideways Market": {"return": 0.04, "volatility": 0.10},
 }
+
+# Illustrative long-run capital-market assumptions used only by the
+# simulator's "Conservative Assumptions" option. They intentionally do NOT
+# reuse the optimizer's in-sample expected-return estimate. The figures are
+# simple educational assumptions, not forecasts or live market estimates.
+CONSERVATIVE_RETURN_BY_CATEGORY = {
+    "Equity": 0.065,
+    "Fixed Income": 0.035,
+    "Commodity": 0.040,
+    "Real Estate": 0.050,
+    "Cash": 0.025,
+}
+DEFAULT_CONSERVATIVE_RETURN = 0.050
+
+
+def conservative_portfolio_return(weights: dict) -> float:
+    """Weighted illustrative long-run return assumption by ETF asset class.
+
+    Near-zero/negative weights are excluded because this option is meant for
+    ordinary long-only educational projections. Unknown asset classes use a
+    neutral 5% fallback. The result is independent of the optimizer's
+    in-sample expected-return estimate, reducing optimizer-selection bias in
+    long-horizon projections.
+    """
+    active = {k: float(v) for k, v in (weights or {}).items() if float(v) > 0}
+    total = sum(active.values())
+    if total <= 0:
+        return DEFAULT_CONSERVATIVE_RETURN
+
+    expected = 0.0
+    for ticker, weight in active.items():
+        record = get_etf(ticker)
+        category = record.category if record else None
+        assumption = CONSERVATIVE_RETURN_BY_CATEGORY.get(category, DEFAULT_CONSERVATIVE_RETURN)
+        expected += (weight / total) * assumption
+    return float(expected)
 
 
 def simulate_investment(

@@ -34,7 +34,9 @@ import streamlit as st
 import src.market_intelligence as mi_mod
 from src.market_intelligence import (
     generate_market_summary, _generate_rule_based_summary, _market_summary_prompt,
-    stars_to_impact_label, fetch_fear_greed_index,
+    stars_to_impact_label, fetch_fear_greed_index, calculate_market_impact,
+    get_economic_calendar, generate_today_ai_summary, get_todays_major_events,
+    generate_todays_market_action,
 )
 from src.ui import star_rating_html, _star_salience_class
 
@@ -249,3 +251,99 @@ def test_generate_market_summary_ai_tag_only_on_mocked_success(monkeypatch):
     result_configured = generate_market_summary(_sample_news(), _sample_sentiment(), [])
     assert result_configured["source"] == "ai"
     assert result_configured["text"] == "AI-written market summary."
+
+
+
+def _all_up_indices():
+    return {
+        "sp500": {"label": "S&P 500", "available": True, "price": 6900.0, "change_pct": 0.97},
+        "nasdaq": {"label": "NASDAQ", "available": True, "price": 24000.0, "change_pct": 1.57},
+        "dow": {"label": "Dow Jones", "available": True, "price": 47000.0, "change_pct": 0.40},
+        "russell": {"label": "Russell 2000", "available": True, "price": 2500.0, "change_pct": 0.55},
+        "vix": {"label": "VIX", "available": True, "price": 14.61, "change_pct": -4.20},
+    }
+
+
+def test_rule_based_summary_uses_actual_indices_before_bearish_news(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "zh-TW")
+    bearish = {"bullish_pct": 10.0, "neutral_pct": 10.0, "bearish_pct": 80.0}
+    text = _generate_rule_based_summary(
+        _sample_news(), bearish, [], market_indices=_all_up_indices(),
+    )
+    assert "實際主要股價指數今日整體走揚" in text
+    assert "VIX 為 14.61" in text
+    assert "偏低且下降" in text
+    assert "市場承壓" not in text
+
+
+def test_top_market_overview_uses_index_direction_not_headline_mood(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "zh-TW")
+    # Make every headline negative while the actual displayed indices rise.
+    news = [
+        {"title": "Stocks face tariff concerns", "impact": "Negative"},
+        {"title": "Fed warns of inflation risk", "impact": "Negative"},
+    ]
+    result = generate_today_ai_summary(news, _all_up_indices())
+    overview = result["sections"][0]["text"]
+    assert "市場整體走揚" in overview
+    assert "新聞分類" in overview
+    assert "市場承壓" not in overview
+
+
+def test_single_uncorroborated_fed_headline_cannot_receive_high_impact_rating():
+    one_story = [{
+        "title": "Howard Marks comments on Federal Reserve policy",
+        "impact": "Neutral", "publisher": "Example", "link": "", "published": None,
+    }]
+    result = calculate_market_impact(one_story)
+    assert result["score"] <= 69
+    assert result["stars"] <= 3
+
+
+def test_unverified_static_economic_calendar_is_not_presented_as_live():
+    assert get_economic_calendar() == []
+
+
+def test_market_summary_prompt_makes_index_snapshot_authoritative(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "en")
+    prompt = _market_summary_prompt(
+        _sample_news(), _sample_sentiment(), [], market_indices=_all_up_indices(),
+    )
+    assert "MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT" in prompt
+    assert "Do not invent upcoming Fed decisions" in prompt
+    assert "S&P 500 +0.97%" in prompt
+
+
+
+def test_major_event_cards_have_source_and_publish_time_metadata():
+    events = get_todays_major_events(_sample_news(), limit=5)
+    assert events
+    assert all("publisher" in event and "published_text" in event for event in events)
+    assert any(event["publisher"] == "Reuters" for event in events)
+    assert any(event["published_text"].startswith("2026-09-14") for event in events)
+
+
+
+def test_market_action_does_not_invent_upcoming_events_or_vix_state(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "en")
+    action_en = generate_todays_market_action(_sample_news())
+    text_en = " ".join(action_en["items"]).lower()
+    assert "upcoming" not in text_en
+    assert "volatility remains elevated" not in text_en
+
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "zh-TW")
+    action_zh = generate_todays_market_action(_sample_news())
+    text_zh = " ".join(action_zh["items"])
+    assert "即將公布" not in text_zh
+    assert "市場波動升高" not in text_zh
+
+
+
+def test_single_hard_news_event_can_still_receive_high_impact_rating():
+    hard_news = [{
+        "title": "Federal Reserve cuts interest rates by 50 basis points",
+        "impact": "Positive", "publisher": "Reuters", "link": "", "published": None,
+    }]
+    result = calculate_market_impact(hard_news)
+    assert result["score"] >= 70
+    assert result["stars"] >= 4

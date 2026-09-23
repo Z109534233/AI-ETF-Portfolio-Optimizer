@@ -28,6 +28,7 @@ sys.path.insert(0, REPO_ROOT)
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import src.portfolio_optimizer as portfolio_optimizer_mod
 from src.portfolio_optimizer import (
@@ -485,3 +486,36 @@ def test_boundary_copy_is_bilingual_and_reviewer_safe():
 if __name__ == "__main__":
     import pytest as _pytest
     raise SystemExit(_pytest.main([__file__, "-v"]))
+
+
+
+def test_boundary_pattern_requires_at_least_five_percent_inclusion():
+    """Regression: 1 inclusion in 200 draws (0.5%) must not be described as
+    a meaningful boundary/sensitivity pattern even if that one draw is large."""
+    weights_by_ticker = {
+        "BND": [0.40] + [0.0] * 199,
+        "VOO": [0.60] + [1.0] * 199,
+    }
+    summary = {
+        "BND": {"median": 0.0, "p95": 0.0, "max": 0.40},
+        "VOO": {"median": 1.0, "p95": 1.0, "max": 1.0},
+    }
+    metrics = bootstrap_boundary_metrics(weights_by_ticker, summary)
+    assert metrics["BND"]["positive_inclusion_rate"] == pytest.approx(0.005)
+    assert metrics["BND"]["is_boundary_pattern"] is False
+
+
+
+def test_bootstrap_click_does_not_clear_optimized_portfolio_result():
+    """Regression for reviewer item #10: an unrelated Bootstrap rerun must
+    preserve the canonical optimizer result/current_portfolio."""
+    at = _setup_bootstrap_page(lang="en", method="Maximum Sharpe Ratio")
+    assert at.session_state["opt_result"] is not None
+    assert at.session_state["current_portfolio"] is not None
+    before_id = at.session_state["current_portfolio"]["portfolio_id"]
+
+    at = _click_bootstrap_button(at)
+
+    assert at.session_state["opt_result"] is not None
+    assert at.session_state["current_portfolio"] is not None
+    assert at.session_state["current_portfolio"]["portfolio_id"] == before_id
