@@ -303,13 +303,18 @@ def rule_based_etf_interpretation(signals: dict, lang: str) -> str:
     )
 
     if lang == "zh-TW":
+        trend_zh = {
+            TREND_BULLISH: "偏多",
+            TREND_NEUTRAL: "中性",
+            TREND_BEARISH: "偏空",
+        }.get(trend, trend)
         relation = (
             "兩個訊號方向一致。"
             if aligned
             else "兩個標籤看似不同，但並不矛盾，因為它們使用不同的時間範圍與判斷方式。"
         )
         return (
-            f"趨勢訊號「{trend}」只反映近 {TREND_LOOKBACK_DAYS} 個交易日的價格方向；"
+            f"趨勢訊號「{trend_zh}」只反映近 {TREND_LOOKBACK_DAYS} 個交易日的價格方向；"
             f"投資組合觀點則由完整區間的量化評分決定，目前評分 {score} 落在{score_band_zh}。"
             f"{relation}"
             "量化評分同時納入完整區間的年化報酬、Sharpe、10 日動能、波動度與最大回撤，"
