@@ -230,7 +230,11 @@ def _sample_signals():
 def test_interpretation_rule_based_with_no_api_key():
     result = generate_etf_interpretation("VOO", "en", "2024-01-01", "2024-06-01", _sample_signals())
     assert result["source"] == "rule_based"
-    assert result["text"] is None
+    assert result["text"]
+    assert "trailing 60 trading days" in result["text"]
+    assert "Quant Score" in result["text"]
+    assert "Neutral band (36–64)" in result["text"]
+    assert "Cumulative return over the period is strong" not in result["text"]
     assert result["error"]
 
 
@@ -254,7 +258,8 @@ def test_interpretation_falls_back_to_rule_based_on_api_error(monkeypatch):
 
     result = generate_etf_interpretation("VOO", "en", "2024-01-01", "2024-06-01", _sample_signals())
     assert result["source"] == "rule_based"
-    assert result["text"] is None
+    assert result["text"]
+    assert "different horizons and rules" in result["text"]
 
 
 def test_interpretation_caches_by_fingerprint_avoiding_repeat_calls(monkeypatch):
@@ -288,3 +293,14 @@ def test_interpretation_fingerprint_stable_for_identical_inputs():
     fp1 = interpretation_fingerprint("VOO", "en", "2024-01-01", "2024-06-01", signals)
     fp2 = interpretation_fingerprint("VOO", "en", "2024-01-01", "2024-06-01", dict(signals))
     assert fp1 == fp2
+
+
+
+def test_rule_based_interpretation_zh_has_no_raw_english_trend_label():
+    result = generate_etf_interpretation(
+        "VOO", "zh-TW", "2024-01-01", "2024-06-01", _sample_signals()
+    )
+    assert result["source"] == "rule_based"
+    assert "趨勢訊號「偏多」" in result["text"]
+    assert "Bullish" not in result["text"]
+    assert "中立區間（36–64）" in result["text"]
