@@ -27,7 +27,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from src.i18n import TRANSLATIONS
+from src.i18n import TRANSLATIONS, _normalize_language_code, _language_from_accept_language
 
 PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 T_CALL_RE = re.compile(r"\bt\(\s*[\"'](\w+)[\"']")
@@ -101,3 +101,19 @@ def test_every_t_call_in_source_references_a_real_key():
 
 def test_zh_chart_years_is_a_unit_not_year_count_label():
     assert TRANSLATIONS["zh-TW"]["chart_years"] == "年"
+
+
+
+def test_language_code_normalization_supports_review_links():
+    assert _normalize_language_code("en") == "en"
+    assert _normalize_language_code("en-US") == "en"
+    assert _normalize_language_code("zh-TW") == "zh-TW"
+    assert _normalize_language_code("zh-Hant-TW") == "zh-TW"
+    assert _normalize_language_code("fr-FR") is None
+
+
+def test_browser_language_prefers_chinese_when_present_otherwise_english():
+    assert _language_from_accept_language("zh-TW,zh;q=0.9,en;q=0.8") == "zh-TW"
+    assert _language_from_accept_language("en-US,en;q=0.9") == "en"
+    assert _language_from_accept_language("fr-FR,fr;q=0.9") == "en"
+    assert _language_from_accept_language("") is None
