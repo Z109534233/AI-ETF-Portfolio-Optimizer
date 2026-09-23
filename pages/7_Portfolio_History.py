@@ -904,6 +904,7 @@ with tab_goal:
                     aggressive_p10=f"{_aggressive_mc['p10']:,.0f}",
                     balanced_p10=f"{_balanced_mc['p10']:,.0f}",
                     currency=gp_base_currency,
+                    years=f"{gp_plan['horizon_years']:.0f}",
                 ))
 
             with st.expander(t("gp_assumptions_title"), expanded=False):
