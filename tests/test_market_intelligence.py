@@ -36,7 +36,7 @@ from src.market_intelligence import (
     generate_market_summary, _generate_rule_based_summary, _market_summary_prompt,
     stars_to_impact_label, fetch_fear_greed_index, calculate_market_impact,
     get_economic_calendar, generate_today_ai_summary, get_todays_major_events,
-    generate_todays_market_action,
+    generate_todays_market_action, analyze_portfolio_impact,
 )
 from src.ui import star_rating_html, _star_salience_class
 
@@ -390,3 +390,23 @@ def test_portfolio_impact_demo_fallback_is_explicitly_labeled(mocked_market_data
     assert "No active portfolio exists in this session" in corpus
     assert "shared demo portfolio only" in corpus
     assert "Global_Diversified" in corpus
+    assert "The shared demo portfolio's holdings" in corpus
+    assert "Your current portfolio's holdings" not in corpus
+
+
+
+def test_demo_portfolio_impact_narrative_never_calls_demo_holdings_yours(monkeypatch):
+    monkeypatch.setattr(mi_mod, "get_language", lambda: "en")
+    holdings = {"VOO": 0.70, "BND": 0.30}
+    affected = [{
+        "ticker": "VOO",
+        "impact": "Positive",
+        "impact_label": "High Impact",
+        "sector": "Broad Market",
+    }]
+    text = analyze_portfolio_impact(holdings, affected, portfolio_source="demo")
+    assert "The demo portfolio has" in text
+    assert "demo portfolio" in text
+    assert "Your portfolio" not in text
+    assert "your holdings" not in text
+    assert "your current holdings" not in text
