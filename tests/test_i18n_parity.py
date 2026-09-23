@@ -109,6 +109,7 @@ def test_language_code_normalization_supports_review_links():
     assert _normalize_language_code("en") == "en"
     assert _normalize_language_code("en-US") == "en"
     assert _normalize_language_code("zh-TW") == "zh-TW"
+    assert _normalize_language_code("zh-CN") == "zh-TW"
     assert _normalize_language_code("zh-Hant-TW") == "zh-TW"
     assert _normalize_language_code("fr-FR") is None
 
