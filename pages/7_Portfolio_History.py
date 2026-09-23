@@ -19,10 +19,7 @@ import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import (
-    load_all_portfolios, delete_portfolio, init_database,
-    add_user_holding, load_user_holdings, delete_user_holding,
-    add_watchlist_item, load_watchlist, remove_watchlist_item,
-    APP_VERSION,
+    load_all_portfolios, delete_portfolio, init_database, APP_VERSION,
 )
 from src.etf_database import get_country, get_etf, to_yahoo_symbol
 from src.data_loader import _download_single_ticker
@@ -39,11 +36,11 @@ from src.i18n import (
     t_return_estimator, t_covariance_estimator, t_market_display,
     get_language,
 )
-from src.auth import get_current_user_id, is_authenticated, render_auth_status
 from src.goal_planner import (
     build_goal_plan, VALID_TARGET_MODES, VALID_MARKET_PREFERENCES,
     VALID_RISK_TOLERANCES, VALID_BASE_CURRENCIES,
 )
+from src.simulator import simulate_investment
 from src.daily_brief import build_brief_context, generate_daily_brief
 from src.news import fetch_market_news
 from src.theme import COLORS
@@ -62,12 +59,139 @@ page_header(t("my_portfolio_title"), t("my_portfolio_subtitle"))
 with st.sidebar:
     render_sidebar_nav()
     st.markdown(f"### {t('my_portfolio_title')}")
-    render_auth_status(t("mp_auth_sign_in"), t("mp_auth_sign_out"), t("mp_auth_signed_in_as"))
     render_sidebar_footer()
 
-current_user_id = get_current_user_id()
-if not is_authenticated():
-    st.caption(t("mp_demo_mode_note"))
+# Public portfolio demo deliberately has no login wall. Visitor-entered
+# Current Holdings and Watchlist data live only in this Streamlit session,
+# so one visitor can never see or overwrite another visitor's data.
+st.caption(t("mp_guest_mode_note"))
+st.caption(t("mp_session_privacy_note"))
+
+_SESSION_HOLDINGS_KEY = "_guest_session_holdings"
+_SESSION_WATCHLIST_KEY = "_guest_session_watchlist"
+_SESSION_HOLDING_SEQ = "_guest_holding_seq"
+_SESSION_WATCHLIST_SEQ = "_guest_watchlist_seq"
+
+
+def _session_holdings() -> list:
+    if _SESSION_HOLDINGS_KEY not in st.session_state:
+        st.session_state[_SESSION_HOLDINGS_KEY] = []
+    return st.session_state[_SESSION_HOLDINGS_KEY]
+
+
+def _session_watchlist() -> list:
+    if _SESSION_WATCHLIST_KEY not in st.session_state:
+        st.session_state[_SESSION_WATCHLIST_KEY] = []
+    return st.session_state[_SESSION_WATCHLIST_KEY]
+
+
+def _next_session_id(counter_key: str) -> int:
+    st.session_state[counter_key] = int(st.session_state.get(counter_key, 0)) + 1
+    return st.session_state[counter_key]
+
+
+def _add_session_holding(ticker: str, quantity: float, average_cost: float,
+                         currency: str, purchase_date: str = None) -> None:
+    rows = list(_session_holdings())
+    rows.append({
+        "id": _next_session_id(_SESSION_HOLDING_SEQ),
+        "ticker": ticker,
+        "quantity": float(quantity),
+        "average_cost": float(average_cost),
+        "currency": currency,
+        "purchase_date": purchase_date,
+        "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+    })
+    st.session_state[_SESSION_HOLDINGS_KEY] = rows
+
+
+def _delete_session_holding(holding_id: int) -> None:
+    st.session_state[_SESSION_HOLDINGS_KEY] = [
+        row for row in _session_holdings() if row["id"] != holding_id
+    ]
+
+
+def _add_session_watchlist(ticker: str) -> None:
+    rows = list(_session_watchlist())
+    rows.append({
+        "id": _next_session_id(_SESSION_WATCHLIST_SEQ),
+        "ticker": ticker,
+        "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+    })
+    st.session_state[_SESSION_WATCHLIST_KEY] = rows
+
+
+def _delete_session_watchlist(item_id: int) -> None:
+    st.session_state[_SESSION_WATCHLIST_KEY] = [
+        row for row in _session_watchlist() if row["id"] != item_id
+    ]
+
+
+def _holdings_weights_from_live_values(live_values: dict) -> dict:
+    total = sum(float(v) for v in live_values.values() if float(v) > 0)
+    if total <= 0:
+        return {}
+    return {ticker: float(value) / total for ticker, value in live_values.items() if float(value) > 0}
+
+
+def _set_holdings_as_current_portfolio(holdings_rows: list, live_values: dict) -> dict:
+    weights = _holdings_weights_from_live_values(live_values)
+    if not weights:
+        return {}
+    countries = [get_country(tk) for tk in weights if get_country(tk)]
+    unique_countries = list(dict.fromkeys(countries))
+    market = unique_countries[0] if len(unique_countries) == 1 else "Mixed"
+    diag = portfolio_diagnosis(weights)
+    st.session_state["current_portfolio"] = {
+        "portfolio_id": "guest-current-holdings",
+        "strategy": "Current Holdings",
+        "market": market,
+        "tickers": list(weights),
+        "weights": weights,
+        "investment_amount": sum(live_values.values()),
+        "investment_goal": None,
+        "risk_tolerance": None,
+        "investment_horizon": None,
+        "expected_return": None,
+        "volatility": None,
+        "sharpe_ratio": None,
+        "max_drawdown": None,
+        "largest_position": diag.get("largest_weight"),
+        "effective_holdings": diag.get("effective_holdings"),
+        "historical_start_date": None,
+        "historical_end_date": None,
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "source": "guest_session_holdings",
+    }
+    return weights
+
+
+@st.cache_data(show_spinner=False)
+def _simulate_goal_scenario(initial_capital: float, monthly_contribution: float,
+                            annual_contribution: float, years: int,
+                            annual_return: float, annual_volatility: float,
+                            target_amount: float, n_simulations: int = 5000) -> dict:
+    result = simulate_investment(
+        initial_investment=initial_capital,
+        monthly_contribution=monthly_contribution,
+        years=years,
+        annual_return=annual_return,
+        annual_volatility=annual_volatility,
+        annual_contribution=annual_contribution,
+        n_simulations=n_simulations,
+        seed=42,
+    )
+    finals = np.asarray(result["all_final_values"], dtype=float)
+    summary = result["summary"]
+    return {
+        "target_share": float(np.mean(finals >= float(target_amount))),
+        "p10": float(np.percentile(finals, 10)),
+        "median": float(np.percentile(finals, 50)),
+        "p90": float(np.percentile(finals, 90)),
+        "real_median": float(summary["real_median_final"]),
+        "n_simulations": int(n_simulations),
+    }
+
 
 IMPACT_VARIANT = {"Positive": "green", "Negative": "red", "Neutral": "neutral"}
 
@@ -652,27 +776,53 @@ with tab_goal:
             gp_scenario_cols = st.columns(3)
             for gp_col, gp_scenario_name in zip(gp_scenario_cols, ["conservative", "balanced", "aggressive"]):
                 gp_sdata = gp_plan["scenarios"][gp_scenario_name]
+                gp_mc = _simulate_goal_scenario(
+                    float(gp_current_capital), float(gp_monthly_contribution),
+                    float(gp_annual_contribution), int(round(gp_plan["horizon_years"])),
+                    float(gp_sdata["expected_return"]), float(gp_sdata["expected_volatility"]),
+                    float(gp_plan["implied_target_total"]),
+                )
                 with gp_col:
                     with st.container(border=True):
                         st.markdown(f"**{t_goal_risk(gp_scenario_name)}**")
                         st.metric(t("gp_expected_return_label"), f"{gp_sdata['expected_return']:.1%}")
                         st.metric(t("gp_expected_volatility_label"), f"{gp_sdata['expected_volatility']:.1%}")
-                        st.metric(t("gp_projected_value_label"), f"{gp_sdata['projected_value']:,.0f} {gp_base_currency}")
+                        st.metric(t("gp_target_attainment_label"), f"{gp_mc['target_share']:.1%}")
+                        st.metric(t("gp_sim_median_label"), f"{gp_mc['median']:,.0f} {gp_base_currency}")
+                        st.caption(t(
+                            "gp_sim_range_caption",
+                            p10=f"{gp_mc['p10']:,.0f}", p90=f"{gp_mc['p90']:,.0f}",
+                            currency=gp_base_currency, n=f"{gp_mc['n_simulations']:,}",
+                        ))
                         st.metric(t("gp_required_contribution_label"), f"{gp_sdata['required_monthly_contribution']:,.0f} {gp_base_currency}")
                         st.markdown(
                             f"<span style='color:{_gp_status_color[gp_sdata['status']]};font-weight:700;'>"
                             f"{t_goal_status(gp_sdata['status'])}</span>",
                             unsafe_allow_html=True,
                         )
+                        _mix = gp_sdata.get("asset_mix", {})
+                        if _mix:
+                            st.caption(t(
+                                "gp_asset_mix_label",
+                                equity=f"{_mix.get('Equity', 0):.0%}",
+                                bonds=f"{_mix.get('Fixed Income', 0):.0%}",
+                            ))
                         if gp_sdata["example_etfs"]:
                             st.caption(f"{t('gp_example_etfs_label')}: {', '.join(gp_sdata['example_etfs'])}")
-                            st.caption(f"{t('gp_selection_logic_label')}: {gp_sdata['selection_logic']}")
+                            _market_display = t("gp_market_mixed") if gp_market_preference == "Mixed" else t_country(gp_market_preference)
+                            st.caption(t(
+                                f"gp_selection_logic_{gp_scenario_name}",
+                                market=_market_display,
+                            ))
                         else:
                             st.caption(t("gp_no_examples"))
 
             with st.expander(t("gp_assumptions_title"), expanded=False):
                 st.markdown(f"- {t('gp_assumptions_hypothetical')}")
                 st.markdown(f"- {t('gp_assumptions_return_source')}")
+                st.markdown(f"- {t('gp_assumptions_monte_carlo')}")
+                st.markdown(f"- {t('gp_assumptions_currency')}")
+                st.markdown(f"- {t('gp_assumptions_inflation')}")
                 st.markdown(f"- {t('gp_assumptions_rebalance')}")
                 if gp_plan["withdrawal_rate"] is not None:
                     gp_rate_str = f"{gp_plan['withdrawal_rate']:.0%}"
@@ -706,7 +856,7 @@ with tab_holdings:
             elif not _is_known_or_live_ticker(ch_ticker):
                 st.error(t("ch_invalid_ticker_error", ticker=ch_ticker))
             else:
-                add_user_holding(current_user_id, ch_ticker, ch_qty, ch_cost, ch_ccy, str(ch_date) if ch_date else None)
+                _add_session_holding(ch_ticker, ch_qty, ch_cost, ch_ccy, str(ch_date) if ch_date else None)
                 st.session_state["_ch_just_added"] = ch_ticker
                 st.rerun()
 
@@ -718,19 +868,23 @@ with tab_holdings:
     if _ch_just_added:
         st.success(t("ch_added_success", ticker=_ch_just_added))
 
-    holdings_rows = load_user_holdings(current_user_id)
+    holdings_rows = _session_holdings()
     if not holdings_rows:
         empty_state(t("ch_empty_title"), t("ch_empty_desc"), icon="layers")
     else:
         section_header(t("ch_table_title"))
         ch_table_rows = []
+        _ch_live_values = {}
+        _ch_missing_price = False
         for _h in holdings_rows:
             _price = _fetch_latest_price(_h["ticker"])
             if _price is not None:
                 _mv = _price * _h["quantity"]
                 _pl = (_price - _h["average_cost"]) * _h["quantity"]
+                _ch_live_values[_h["ticker"]] = _ch_live_values.get(_h["ticker"], 0.0) + _mv
                 _price_str, _mv_str, _pl_str = f"{_price:,.2f}", f"{_mv:,.2f}", f"{_pl:,.2f}"
             else:
+                _ch_missing_price = True
                 _price_str = _mv_str = _pl_str = t("ch_price_unavailable")
             ch_table_rows.append({
                 t("ch_col_ticker"): _h["ticker"],
@@ -751,12 +905,44 @@ with tab_holdings:
             f"market value {row[t('ch_col_market_value')]}, unrealized P/L {row[t('ch_col_unrealized_pl')]}"
             for row in ch_table_rows
         )
-        ai_interpret_button(f"ch_holdings_ai_interpret_{current_user_id}", st.session_state, _ch_context_text)
+        ai_interpret_button("ch_holdings_ai_interpret_guest_session", st.session_state, _ch_context_text)
+
+        _handoff_weights = _holdings_weights_from_live_values(_ch_live_values)
+        if _handoff_weights and not _ch_missing_price:
+            st.caption(t("ch_handoff_note"))
+            _risk_col, _opt_col = st.columns(2)
+            with _risk_col:
+                if st.button(t("ch_analyze_risk_button"), key="ch_analyze_risk", use_container_width=True, type="primary"):
+                    _set_holdings_as_current_portfolio(holdings_rows, _ch_live_values)
+                    _countries = [get_country(tk) for tk in _handoff_weights if get_country(tk)]
+                    _unique_countries = list(dict.fromkeys(_countries))
+                    _risk_region = _unique_countries[0] if len(_unique_countries) == 1 else t("field_all_regions")
+                    st.session_state["_selected_region_shadow"] = _risk_region
+                    st.session_state["selected_region"] = _risk_region
+                    _shadow_map = dict(st.session_state.get("_selected_etfs_shadow", {}))
+                    _shadow_map[_risk_region] = list(_handoff_weights)
+                    st.session_state["_selected_etfs_shadow"] = _shadow_map
+                    for _tk, _w in _handoff_weights.items():
+                        st.session_state[f"w_{_tk}"] = float(_w) * 100.0
+                    st.switch_page("pages/4_Risk_Analytics.py")
+            with _opt_col:
+                if st.button(t("ch_optimize_button"), key="ch_optimize", use_container_width=True):
+                    _countries = [get_country(tk) for tk in _handoff_weights if get_country(tk)]
+                    _unique_countries = list(dict.fromkeys(_countries))
+                    if _unique_countries:
+                        st.session_state["_selected_regions_shadow"] = _unique_countries
+                        st.session_state["selected_regions"] = _unique_countries
+                        st.session_state["_selected_etfs_multi_master"] = list(_handoff_weights)
+                        _widget_key = "selected_etfs_portfolio_" + "+".join(sorted(_unique_countries))
+                        st.session_state[_widget_key] = list(_handoff_weights)
+                    st.switch_page("pages/2_Portfolio_Optimizer.py")
+        elif _ch_missing_price:
+            st.caption(t("ch_handoff_requires_prices"))
 
         ch_del_map = {_h["id"]: f"{_h['ticker']} ({_h['quantity']:g} @ {_h['average_cost']:g})" for _h in holdings_rows}
         ch_del_id = st.selectbox(t("ch_remove_button"), options=list(ch_del_map.keys()), format_func=lambda x: ch_del_map[x], key="ch_remove_select")
         if st.button(t("ch_remove_button"), key="ch_remove_btn"):
-            delete_user_holding(current_user_id, ch_del_id)
+            _delete_session_holding(ch_del_id)
             st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -772,7 +958,7 @@ with tab_watchlist:
         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
         wl_add_clicked = st.button(t("wl_add_button"), type="primary", key="wl_add_btn", use_container_width=True)
 
-    watchlist_rows = load_watchlist(current_user_id)
+    watchlist_rows = _session_watchlist()
     _wl_existing = {w["ticker"] for w in watchlist_rows}
 
     if wl_add_clicked and wl_ticker:
@@ -781,7 +967,7 @@ with tab_watchlist:
         elif not _is_known_or_live_ticker(wl_ticker):
             st.error(t("wl_invalid_ticker_error", ticker=wl_ticker))
         else:
-            add_watchlist_item(current_user_id, wl_ticker)
+            _add_session_watchlist(wl_ticker)
             st.session_state["_wl_just_added"] = wl_ticker
             st.rerun()
 
@@ -808,7 +994,7 @@ with tab_watchlist:
         wl_del_map = {_w["id"]: _w["ticker"] for _w in watchlist_rows}
         wl_del_id = st.selectbox(t("wl_remove_button"), options=list(wl_del_map.keys()), format_func=lambda x: wl_del_map[x], key="wl_remove_select")
         if st.button(t("wl_remove_button"), key="wl_remove_btn"):
-            remove_watchlist_item(current_user_id, wl_del_id)
+            _delete_session_watchlist(wl_del_id)
             st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -823,8 +1009,8 @@ with tab_history:
 # ══════════════════════════════════════════════════════════════════════════
 with tab_brief:
     section_header(t("db_section_title"), t("db_section_subtitle"))
-    _brief_holdings = load_user_holdings(current_user_id)
-    _brief_watchlist = load_watchlist(current_user_id)
+    _brief_holdings = _session_holdings()
+    _brief_watchlist = _session_watchlist()
 
     if not _brief_holdings and not _brief_watchlist:
         empty_state(t("db_empty_no_data"), t("db_section_subtitle"), icon="layers")
