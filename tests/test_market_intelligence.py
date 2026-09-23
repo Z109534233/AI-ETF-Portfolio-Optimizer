@@ -396,7 +396,8 @@ def test_portfolio_impact_demo_fallback_is_explicitly_labeled(mocked_market_data
 
 
 def test_demo_portfolio_impact_narrative_never_calls_demo_holdings_yours(monkeypatch):
-    monkeypatch.setattr(mi_mod, "get_language", lambda: "en")
+    import src.i18n as i18n_mod
+    monkeypatch.setattr(i18n_mod, "get_language", lambda: "en")
     holdings = {"VOO": 0.70, "BND": 0.30}
     affected = [{
         "ticker": "VOO",
