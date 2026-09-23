@@ -500,6 +500,24 @@ def effective_number_of_holdings(weights: dict) -> float:
     return float(1.0 / hhi)
 
 
+def effective_number_of_disclosed_holdings(weights: dict) -> float:
+    """Effective count within a partially disclosed holdings subset.
+
+    ETF data providers often expose only top holdings, so their raw weights
+    can sum to far below 100%. Applying 1 / sum(w^2) directly to those raw
+    weights can produce an impossible result larger than the number of
+    disclosed holdings. Normalize the positive disclosed weights to 100%
+    first, then compute inverse-HHI. The result therefore describes only the
+    disclosed subset; it is not the fund-wide effective number of holdings.
+    """
+    positive = {k: float(v) for k, v in (weights or {}).items() if float(v) > 0}
+    total = sum(positive.values())
+    if total <= 0:
+        return 0.0
+    normalized = {k: v / total for k, v in positive.items()}
+    return effective_number_of_holdings(normalized)
+
+
 def active_position_count(weights: dict, tolerance: float = ACTIVE_POSITION_TOLERANCE) -> int:
     """Count of holdings with a materially non-zero weight (> tolerance).
 
