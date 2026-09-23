@@ -82,6 +82,13 @@ with st.sidebar:
 if not demo_etfs:
     demo_etfs = resolve_demo_tickers(DEFAULT_ETFS)
 
+# Render feedback before the first potentially slow market-data call. This
+# cannot mask a platform-level cold start before Streamlit itself is serving,
+# but it prevents the app from looking blank while market data is fetched.
+if "_home_first_load_notice_seen" not in st.session_state:
+    st.info(t("home_first_load_note"))
+    st.session_state["_home_first_load_notice_seen"] = True
+
 with st.spinner(t("home_loading_market_data")):
     # download_etf_data_with_status() (not download_etf_data()) is required
     # here: a full-fallback simulated DataFrame is never empty, so an
@@ -256,7 +263,7 @@ if _why_lang == "zh-TW":
     _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程"
     why_featured = {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置，是本平台的核心分析引擎"}
     why_items = [
-        {"icon": "newspaper", "title": "市場情報", "desc": "即時新聞、事件分類與市場摘要（部分摘要由 AI 輔助生成）"},
+        {"icon": "newspaper", "title": "市場情報", "desc": "市場新聞與規則式摘要（經濟行事曆目前為範例／未驗證資料）"},
         {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析"},
         {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境"},
         {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析"},
@@ -268,7 +275,7 @@ else:
     _why_title, _why_subtitle = "Why Choose This Platform", "Eight core modules spanning the full journey from analysis to decision."
     why_featured = {"icon": "target", "title": "Portfolio Optimization", "desc": "Five methods to find the optimal risk-adjusted mix -- the platform's core analysis engine."}
     why_items = [
-        {"icon": "newspaper", "title": "Market Intelligence", "desc": "Real-time news, event tagging, and market summaries (some summaries are AI-assisted)."},
+        {"icon": "newspaper", "title": "Market Intelligence", "desc": "Market news and rule-based summaries; the economic calendar is currently sample/unverified data."},
         {"icon": "bar-chart", "title": "ETF Analysis", "desc": "Cross-market ETF price, return, and risk analysis."},
         {"icon": "trending-up", "title": "Investment Simulator", "desc": "Monte Carlo projections for long-term growth."},
         {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, CVaR, Beta, and stress-test scenarios."},
