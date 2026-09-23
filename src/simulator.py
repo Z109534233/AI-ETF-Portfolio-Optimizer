@@ -166,6 +166,108 @@ def simulate_investment(
     }
 
 
+
+def goal_attainment_analysis(
+    initial_investment: float,
+    monthly_contribution: float,
+    annual_contribution: float,
+    years: int,
+    annual_return: float,
+    annual_volatility: float,
+    target_amount: float,
+    reference_monthly_contribution: float = None,
+    target_path_share: float = 0.80,
+    inflation_rate: float = 0.025,
+    annual_fee: float = 0.001,
+    n_simulations: int = 5000,
+    seed: int = 42,
+) -> dict:
+    """Monte Carlo goal analysis with a simulated-path contribution threshold.
+
+    This is specialized for Goal Planner. It uses the same monthly return,
+    volatility, fee, inflation and random-normal assumptions as
+    simulate_investment, but also tracks the path-specific future-value
+    coefficient of a level monthly contribution. Because terminal wealth is
+    linear in that contribution for any fixed return path, the monthly amount
+    needed on each simulated path can be solved directly rather than running
+    a slow binary-search loop.
+
+    monthly_for_target_path_share is the requested quantile of those
+    path-specific required contributions. For example, with
+    target_path_share=0.80, roughly 80% of the simulated paths reach the
+    nominal target at or below that monthly contribution. It is a scenario
+    frequency under the stated assumptions, not a real-world success
+    probability or guarantee.
+    """
+    if years <= 0 or n_simulations <= 0 or target_amount <= 0:
+        return {
+            "target_share": 0.0,
+            "target_count": 0,
+            "n_simulations": int(max(n_simulations, 0)),
+            "p10": 0.0, "median": 0.0, "p90": 0.0, "real_median": 0.0,
+            "monthly_for_target_path_share": 0.0,
+            "target_path_share": float(target_path_share),
+            "reference_target_share": None,
+        }
+
+    rng = np.random.default_rng(seed)
+    months = int(years) * 12
+    monthly_return = (1 + annual_return) ** (1 / 12) - 1
+    monthly_vol = annual_volatility / np.sqrt(12)
+    monthly_fee = (1 + annual_fee) ** (1 / 12) - 1
+
+    # base_terminal contains growth of the initial investment plus fixed
+    # annual contributions. monthly_factor is the terminal-value coefficient
+    # of one currency unit contributed at the end of each month.
+    base_terminal = np.full(n_simulations, float(initial_investment), dtype=float)
+    monthly_factor = np.zeros(n_simulations, dtype=float)
+
+    for month in range(1, months + 1):
+        growth = 1.0 + rng.normal(
+            monthly_return - monthly_fee, monthly_vol, n_simulations
+        )
+        base_terminal *= growth
+        monthly_factor = monthly_factor * growth + 1.0
+        if annual_contribution and month % 12 == 0:
+            base_terminal += float(annual_contribution)
+
+    final_values = base_terminal + float(monthly_contribution) * monthly_factor
+    target_hits = final_values >= float(target_amount)
+
+    safe_factor = np.where(monthly_factor > 0, monthly_factor, np.nan)
+    required_by_path = np.maximum(
+        (float(target_amount) - base_terminal) / safe_factor,
+        0.0,
+    )
+    required_by_path = required_by_path[np.isfinite(required_by_path)]
+    q = min(max(float(target_path_share), 0.0), 1.0)
+    monthly_for_share = (
+        float(np.quantile(required_by_path, q)) if required_by_path.size else 0.0
+    )
+
+    reference_share = None
+    if reference_monthly_contribution is not None:
+        reference_final = (
+            base_terminal
+            + float(reference_monthly_contribution) * monthly_factor
+        )
+        reference_share = float(np.mean(reference_final >= float(target_amount)))
+
+    inflation_factor = (1.0 + inflation_rate) ** float(years)
+    return {
+        "target_share": float(np.mean(target_hits)),
+        "target_count": int(np.sum(target_hits)),
+        "n_simulations": int(n_simulations),
+        "p10": float(np.percentile(final_values, 10)),
+        "median": float(np.percentile(final_values, 50)),
+        "p90": float(np.percentile(final_values, 90)),
+        "real_median": float(np.median(final_values / inflation_factor)),
+        "monthly_for_target_path_share": monthly_for_share,
+        "target_path_share": q,
+        "reference_target_share": reference_share,
+    }
+
+
 def compound_growth_projection(
     initial_investment: float,
     monthly_contribution: float,
