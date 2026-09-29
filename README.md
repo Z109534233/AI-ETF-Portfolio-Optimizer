@@ -1,243 +1,277 @@
 # AI ETF Portfolio Optimizer
 
-**ETF Portfolio Analytics & Quantitative Decision Platform** -- performance analysis, portfolio
-optimization, risk analytics, simulation, and machine learning, with AI-assisted interpretation.
+**Quantitative ETF portfolio analytics, optimization, risk validation, simulation, and model evaluation in one Streamlit dashboard.**
 
-A professional FinTech web application built with Python and Streamlit, designed as a portfolio project for UK Master's programme applications in Business Analytics, Finance Analytics, Financial Technology, and Data Analytics.
-
----
-
-## Overview
-
-The AI ETF Portfolio Optimizer is a comprehensive investment analytics platform that enables users to:
-
-- Analyse historical ETF performance with advanced risk metrics
-- Optimise portfolio allocations using mean-variance and risk parity methods
-- Simulate long-term investment outcomes with Monte Carlo methods
-- Assess portfolio risk with stress testing and scenario analysis
-- Apply machine learning models for educational return direction prediction
-- Generate AI-powered portfolio explanations with OpenAI GPT integration
-- Save and compare portfolios using a local SQLite database
+[Live Demo](https://ai-etf-portfolio-optimizer.onrender.com) · [Source Code](https://github.com/Z109534233/AI-ETF-Portfolio-Optimizer) · MIT License
 
 ---
 
-## Features
+## Why this project
 
-| Feature | Description |
+This project explores a practical question:
+
+> How can an ETF portfolio dashboard make optimization results useful **without overstating the reliability of historical estimates**?
+
+Instead of presenting a single optimizer output as the “answer,” the dashboard adds uncertainty analysis, validation, and methodology disclosure around the result. The emphasis is on **quantitative reasoning, reproducibility, and transparent limitations**.
+
+The application supports Taiwan, U.S., and U.K. ETF workflows and provides a bilingual **English / Traditional Chinese** interface.
+
+---
+
+## Quick review path
+
+If you are reviewing this project for a technical or academic portfolio, the fastest path is:
+
+1. Open **Portfolio Optimizer** and run a Maximum Sharpe portfolio.
+2. Inspect **Bootstrap Weight Stability** to see how allocation weights change under joint historical resampling.
+3. Open **Risk Analytics** for historical VaR/CVaR, drawdown, stress testing, and rolling VaR backtesting.
+4. Open **Machine Learning** to inspect chronological holdout results and expanding-window walk-forward validation.
+5. Open **Investment Simulator / Goal Planner** to compare deterministic assumptions with Monte Carlo outcome distributions.
+
+**Live dashboard:** https://ai-etf-portfolio-optimizer.onrender.com
+
+---
+
+## Key quantitative methods
+
+### Portfolio optimization
+
+The optimizer currently supports:
+
+- Equal Weight
+- Maximum Sharpe Ratio
+- Minimum Volatility
+- Target Return
+- Risk Parity
+
+For the mean-variance methods, historical daily arithmetic returns are annualized and used with an annualized sample covariance matrix. The dashboard discloses the active assumptions, constraints, historical window, risk-free-rate source, and numerical diagnostics instead of hiding them behind the final weights.
+
+Mixed-market portfolios are converted to a selected base currency before returns and covariance are calculated.
+
+### Bootstrap weight stability
+
+Maximum Sharpe results can be sensitive to estimation error, especially in expected returns.
+
+The dashboard therefore includes an on-demand bootstrap sensitivity analysis that:
+
+- performs **200 joint-row bootstrap resamples** of historical daily returns;
+- preserves same-day cross-asset dependence by resampling rows jointly;
+- re-runs the same Maximum Sharpe objective and constraints on each successful resample;
+- excludes failed optimizer solves rather than replacing them with artificial fallback weights;
+- reports median, IQR, 5th–95th percentile ranges, inclusion frequency, and top-holding frequency;
+- overlays the original point-estimate portfolio on the bootstrap weight distribution.
+
+This is presented as a **sensitivity analysis**, not as a forecast and not as an implementation of proprietary resampled-efficiency methods.
+
+### Risk analytics and VaR validation
+
+Risk Analytics includes:
+
+- annualized volatility and maximum drawdown;
+- Sharpe, Sortino, and Calmar ratios;
+- historical VaR and CVaR;
+- diversification and concentration diagnostics;
+- benchmark-relative Beta, Alpha, Tracking Error, and Information Ratio;
+- historical stress scenarios;
+- rolling one-step-ahead historical VaR exception backtesting;
+- **Kupiec Proportion-of-Failures unconditional coverage test**.
+
+The Kupiec p-value is presented as evidence about compatibility between observed exception frequency and the stated VaR confidence level; it is not treated as proof that the model is “correct.”
+
+### Monte Carlo simulation and goal planning
+
+The simulation layer separates in-sample historical optimizer statistics from forward-looking educational assumptions.
+
+Features include:
+
+- Monte Carlo long-horizon wealth paths;
+- nominal and inflation-adjusted outcomes;
+- P10 / median / P90 terminal values;
+- target-attainment path share;
+- deterministic contribution estimates shown separately from stochastic results;
+- an estimated monthly contribution associated with approximately **80% of simulated paths** reaching a nominal goal.
+
+Scenario assumptions are explicitly labeled as educational assumptions rather than return forecasts.
+
+### Machine learning evaluation
+
+The ML page provides an educational ETF return-direction classification workflow using:
+
+- Logistic Regression;
+- Random Forest;
+- chronological train/test splitting;
+- Accuracy, Precision, Recall, F1, ROC AUC, and confusion matrix;
+- a training-set majority-class baseline;
+- **expanding-window walk-forward validation** inside the pre-holdout training period.
+
+The final holdout set is kept separate from the walk-forward folds to reduce leakage. Fold dispersion is described as temporal instability, not evidence of future predictability.
+
+---
+
+## Data and model safeguards
+
+Several design choices were added specifically to reduce misleading outputs:
+
+- **Risk-free rate provenance:** FRED DGS3MO is the primary source, Yahoo Finance `^IRX` is a clearly labeled secondary live proxy, and a fixed fallback is used only if both live sources fail.
+- **Covariance diagnostics:** rank, condition number, and average pairwise correlation are surfaced before interpreting concentrated optimizer results.
+- **No fabricated live holdings prices:** cross-page analysis from guest holdings is disabled if a required live price cannot be obtained.
+- **Guest-session isolation:** public holdings and watchlist entries are stored only in the current Streamlit session and are not shared between visitors.
+- **AI separation:** AI-generated text interprets already-computed metrics; the financial calculations themselves are deterministic Python code. A rule-based fallback is available when no OpenAI API key is configured.
+- **Bilingual parity:** English and Traditional Chinese UI strings are covered by regression checks.
+
+---
+
+## Main dashboard modules
+
+| Module | Purpose |
 |---|---|
-| **ETF Analysis** | Historical prices, return distributions, correlation heatmaps, technical indicators |
-| **Portfolio Optimizer** | 5 optimization methods, efficient frontier, Monte Carlo simulation, backtesting |
-| **Investment Simulator** | Monte Carlo projection, compound growth, scenario comparison |
-| **Risk Analytics** | VaR, CVaR, Beta, Alpha, Tracking Error, stress testing |
-| **Machine Learning** | Logistic Regression & Random Forest for direction prediction |
-| **AI Portfolio Analyst** | OpenAI-powered synthesis of already-computed portfolio metrics, with rule-based fallback |
-| **Portfolio History** | SQLite storage, portfolio comparison, CSV export |
+| **ETF Analysis** | Historical performance, distributions, rolling metrics, correlations, technical indicators |
+| **Portfolio Optimizer** | Mean-variance optimization, Risk Parity, efficient frontier, backtesting, bootstrap weight stability |
+| **Investment Simulator** | Monte Carlo investment projection and long-horizon scenario analysis |
+| **Risk Analytics** | VaR/CVaR, drawdown, benchmark metrics, stress tests, VaR exception backtesting |
+| **Machine Learning** | Direction classification, holdout testing, baseline comparison, walk-forward validation |
+| **AI Advisor** | Structured interpretation of computed portfolio metrics with rule-based fallback |
+| **My Portfolio** | Goal Planner, session-only holdings/watchlist, saved portfolio comparison |
+| **Market Intelligence** | Major-index snapshot, curated market news, and rule-based/AI-assisted summaries |
 
 ---
 
-## Screenshots
+## Technology stack
 
-> *Deploy the application and add screenshots here.*
-
----
-
-## Technology Stack
-
-| Layer | Technology |
+| Area | Technology |
 |---|---|
-| **Frontend / App** | Streamlit 1.32+ |
-| **Data Processing** | Pandas 2.0+, NumPy 1.26+ |
-| **Visualisation** | Plotly 5.18+ |
-| **Optimisation** | SciPy 1.11+ |
-| **Machine Learning** | Scikit-learn 1.3+ |
-| **Market Data** | yfinance 0.2.36+ |
-| **Database** | SQLite + SQLAlchemy 2.0+ |
-| **PDF Reports** | ReportLab 4.0+ |
-| **AI Integration** | OpenAI 1.12+ |
+| Application | Python, Streamlit |
+| Data | pandas, NumPy, yfinance |
+| Optimization | SciPy |
+| Machine Learning | scikit-learn |
+| Visualization | Plotly |
+| Statistical / Risk Logic | Custom Python modules |
+| Persistence | SQLite / SQLAlchemy for saved optimizer history |
+| Reports | ReportLab |
+| AI Interpretation | OpenAI API with deterministic rule-based fallback |
+| Deployment | Render |
 
 ---
 
-## Local Installation
+## Repository structure
 
-### Prerequisites
-
-- Python 3.10 or higher
-- pip
-
-### Steps
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/yourusername/AI-ETF-Portfolio-Optimizer.git
-cd AI-ETF-Portfolio-Optimizer
-
-# 2. Create a virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate       # macOS / Linux
-venv\Scripts\activate          # Windows
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Run the application
-streamlit run app.py
-```
-
-The application will open at `http://localhost:8501`.
-
----
-
-## How to Run
-
-```bash
-streamlit run app.py
-```
-
-The main entry file is `app.py` in the project root. All pages are in the `pages/` directory and are automatically discovered by Streamlit.
-
----
-
-## Streamlit Cloud Deployment
-
-### Steps
-
-1. Push the project to a public GitHub repository.
-2. Go to [share.streamlit.io](https://share.streamlit.io).
-3. Click **New app**.
-4. Select your repository, branch, and set the main file to `app.py`.
-5. Click **Deploy**.
-
-### Important Notes
-
-- Ensure `requirements.txt` is in the project root.
-- Do **not** commit `.streamlit/secrets.toml` to GitHub.
-- The SQLite database is created automatically on first run.
-- The application works without an OpenAI API key (uses rule-based fallback).
-
----
-
-## OpenAI Setup (Secret Key Configuration)
-
-All OpenAI calls in this app go through a single module, `src/openai_service.py`
-(the current **Responses API** -- `client.responses.create`, not the legacy
-Chat Completions API). It reads `OPENAI_API_KEY` (required) and an optional
-`OPENAI_MODEL` override from Streamlit secrets or the environment -- **never**
-hard-code a key in source. The app works fully without a key configured:
-every AI-backed feature (ETF Analysis "AI Interpretation", AI Portfolio
-Analyst synthesis, Market Intelligence "Today's Market Summary") falls back
-to a clearly-labeled Rule-Based result instead of failing.
-
-### Local Development
-
-Create `.streamlit/secrets.toml` (already excluded via `.gitignore` -- never
-commit this file):
-
-```toml
-OPENAI_API_KEY = "sk-your-openai-api-key-here"
-OPENAI_MODEL = "gpt-5.6-luna"  # optional -- defaults to a cost-conscious current model
-```
-
-### Streamlit Community Cloud
-
-1. Go to your app settings on Streamlit Cloud.
-2. Click **Secrets**.
-3. Add:
-
-```toml
-OPENAI_API_KEY = "sk-your-openai-api-key-here"
-OPENAI_MODEL = "gpt-5.6-luna"  # optional
-```
-
-Never commit the real key to the repository. The application functions
-fully without an OpenAI key -- AI Portfolio Analyst, ETF Analysis's "AI
-Interpretation", and Market Intelligence's market summary all use
-rule-based analysis as a fallback, and the UI labels which one produced
-the result you're looking at ("AI-Generated" vs "Rule-Based").
-
----
-
-## Project Structure
-
-```
+```text
 AI-ETF-Portfolio-Optimizer/
-│
-├── app.py                          # Main landing page
-├── requirements.txt                # Python dependencies
-├── README.md                       # This file
-├── .gitignore                      # Git ignore rules
-├── LICENSE                         # MIT License
-│
-├── .streamlit/
-│   └── config.toml                 # Streamlit theme and server settings
-│
+├── app.py
 ├── pages/
-│   ├── 1_ETF_Analysis.py           # ETF price and risk analysis
-│   ├── 2_Portfolio_Optimizer.py    # Mean-variance optimization
-│   ├── 3_Investment_Simulator.py   # Monte Carlo simulation
-│   ├── 4_Risk_Analytics.py         # Portfolio risk metrics
-│   ├── 5_Machine_Learning.py       # ML direction prediction
-│   ├── 6_AI_Advisor.py             # AI portfolio explanation
-│   └── 7_Portfolio_History.py      # Saved portfolio management
-│
+│   ├── 1_ETF_Analysis.py
+│   ├── 2_Portfolio_Optimizer.py
+│   ├── 3_Investment_Simulator.py
+│   ├── 4_Risk_Analytics.py
+│   ├── 5_Machine_Learning.py
+│   ├── 6_AI_Advisor.py
+│   ├── 7_Portfolio_History.py
+│   └── 8_Market_Intelligence.py
 ├── src/
-│   ├── __init__.py
-│   ├── data_loader.py              # yfinance data download with caching
-│   ├── data_cleaner.py             # Data validation and preprocessing
-│   ├── financial_metrics.py        # Sharpe, Sortino, VaR, CVaR, etc.
-│   ├── technical_indicators.py     # SMA, EMA, RSI, MACD, Bollinger Bands
-│   ├── portfolio_optimizer.py      # Mean-variance, risk parity, Monte Carlo
-│   ├── simulator.py                # Long-term investment simulation
-│   ├── machine_learning.py         # ML pipeline with time-series splitting
-│   ├── ai_advisor.py               # OpenAI integration with fallback
-│   ├── database.py                 # SQLite/SQLAlchemy ORM
-│   ├── report_generator.py         # ReportLab PDF generation
-│   ├── charts.py                   # Plotly chart functions
-│   └── utils.py                    # Helper utilities and CSS loader
-│
+│   ├── portfolio_optimizer.py
+│   ├── financial_metrics.py
+│   ├── risk_analytics.py
+│   ├── simulator.py
+│   ├── machine_learning.py
+│   ├── risk_free_rate.py
+│   ├── ai_advisor.py
+│   ├── data_loader.py
+│   ├── charts.py
+│   ├── database.py
+│   └── ...
+├── tests/
 ├── assets/
-│   └── style.css                   # Custom CSS styling
-│
 ├── data/
-│   └── sample_etf_data.csv         # Fallback sample data
-│
-├── database/
-│   └── portfolio.db                # SQLite database (auto-created)
-│
-├── reports/                        # Generated PDF reports
-└── images/                         # Chart exports
+└── requirements.txt
 ```
 
----
-
-## Educational Disclaimer
-
-This platform is developed as a **portfolio project for academic purposes**, specifically for applications to UK Master's programmes in:
-
-- Business Analytics
-- Finance Analytics
-- Financial Technology (FinTech)
-- Data Analytics
-
-**This application is for educational and demonstration purposes only.** It does not constitute financial advice, investment recommendations, or a solicitation to buy or sell any securities. Past performance is not indicative of future results. Always consult a qualified financial adviser before making investment decisions.
+The repository currently contains a broad automated test suite across financial logic, Streamlit page behavior, internationalization, cross-page state handoff, and regression cases.
 
 ---
 
-## Future Improvements
+## Run locally
 
-- Real-time price streaming with WebSocket integration
-- Multi-currency support and FX hedging analysis
-- ESG scoring and sustainable investing filters
-- Factor model analysis (Fama-French 3/5 factor)
-- Options pricing and Greeks calculation
-- Portfolio rebalancing scheduler
-- Email alerts for portfolio threshold breaches
-- Advanced backtesting with transaction cost modelling
-- Integration with broker APIs for live portfolio tracking
-- Mobile-responsive Progressive Web App (PWA) version
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Z109534233/AI-ETF-Portfolio-Optimizer.git
+cd AI-ETF-Portfolio-Optimizer
+```
+
+### 2. Create and activate a virtual environment
+
+```bash
+python -m venv venv
+```
+
+macOS / Linux:
+
+```bash
+source venv/bin/activate
+```
+
+Windows:
+
+```powershell
+venv\Scripts\activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Run the dashboard
+
+```bash
+streamlit run app.py
+```
+
+The application will normally open at `http://localhost:8501`.
 
 ---
 
-## Author
+## Optional OpenAI configuration
 
-Portfolio project for UK Master's programme applications.
-Built with Python, Streamlit, and modern FinTech data science tools.
+The dashboard works without an OpenAI API key. AI-assisted explanations fall back to deterministic rule-based output when the key is unavailable.
+
+For local development, create a private `.streamlit/secrets.toml` file:
+
+```toml
+OPENAI_API_KEY = "your-key-here"
+```
+
+Do not commit secrets to the repository.
+
+---
+
+## Methodological limitations
+
+This project intentionally surfaces limitations rather than treating model output as investment advice.
+
+Key limitations include:
+
+- historical mean returns are noisy estimates and can produce unstable optimizer weights;
+- bootstrap dispersion measures sensitivity to the historical sample, not future return probabilities;
+- Monte Carlo results depend on the stated return, volatility, fee, inflation, and distribution assumptions;
+- historical VaR can fail during regime shifts and tail events;
+- ML classification performance is period-dependent and does not establish persistent predictive skill;
+- market data quality and availability depend on external providers;
+- Goal Planner currency labels do not imply that all foreign-exchange risk is modeled.
+
+These limitations are part of the project design and are shown in the dashboard where relevant.
+
+---
+
+## Educational use
+
+This repository is an independent quantitative finance / FinTech portfolio project.
+
+It is intended for **educational and analytical demonstration purposes only**. Nothing in the dashboard constitutes financial advice, a recommendation, or a solicitation to buy or sell securities.
+
+---
+
+## License
+
+MIT License.
