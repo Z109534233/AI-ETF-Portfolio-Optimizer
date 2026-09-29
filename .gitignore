@@ -1,7 +1,35 @@
-# Secrets -- never commit a real OpenAI (or any other) API key.
+# Secrets
 .streamlit/secrets.toml
 .env
+.env.*
 
-# Python
+# Python bytecode / caches
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments / editor files
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
+
+# One-off provider probes and raw download artifacts.
+# The reproducible ETF universe used by the app lives under data/etf_universe/
+# and is refreshed by scripts/refresh_etf_universe.py.
+/justetf_probe.html
+/lse_market_data_etf.html
+/ishares_screener_page.html
+/twse_etf_productlist.html
+/twse_strmode*_raw.bin
+/tpex_strmode*_raw.bin
+/nasdaqlisted.txt
+/otherlisted.txt
+/twse_etf_list.json
+/tpex_etf_list.json
+/us_nasdaq_etfs.json
+/us_other_etfs.json
