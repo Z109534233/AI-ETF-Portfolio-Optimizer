@@ -46,6 +46,7 @@ from src.backtesting import (
     walk_forward_backtest, DEFAULT_TRAIN_YEARS,
     DEFAULT_REBALANCE_MONTHS, DEFAULT_TRANSACTION_COST_BPS,
 )
+from src.portfolio_statistics import estimate_moments
 from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
     sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis,
@@ -1352,40 +1353,28 @@ elif opt_workspace == "Allocation":
             n_tickers = len(prices_df.columns)
 
             with st.spinner(t("msg_running_optimization")):
-                returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
-                mean_returns = returns_df.mean().values
-                cov_df = covariance_matrix(prices_df)
-                cov = cov_df.values.copy()
+                returns_df, mean_returns, cov_df = estimate_moments(
+                    prices_df, estimator=result.get("covariance_estimator", "Ledoit-Wolf")
+                )
+                cov = cov_df.to_numpy(dtype=float, copy=True)
 
-                if cov.shape != (n_tickers, n_tickers):
+                if (
+                    returns_df.empty
+                    or cov.shape != (n_tickers, n_tickers)
+                    or not np.isfinite(cov).all()
+                ):
                     error_state(
                         t("msg_no_price_data_title"),
-                        f"Internal error: covariance matrix shape {cov.shape} does not "
-                        f"match {n_tickers} selected ETFs. Please re-run the optimization."
+                        "Insufficient common-date observations for an internally consistent "
+                        "efficient-frontier estimate. Widen the date range or choose ETFs "
+                        "with more overlapping trading history."
                     )
                     st.stop()
 
-                if not np.isfinite(cov).all():
-                    diag_nan = ~np.isfinite(np.diag(cov))
-                    if diag_nan.any():
-                        bad_tickers = [prices_df.columns[i] for i in range(n_tickers) if diag_nan[i]]
-                        error_state(
-                            t("msg_no_price_data_title"),
-                            f"No valid price data for: {', '.join(bad_tickers)}. "
-                            "Remove these tickers or widen the date range, then re-run "
-                            "the optimization."
-                        )
-                    else:
-                        error_state(
-                            t("msg_no_price_data_title"),
-                            "Some selected ETFs have no overlapping trading dates with "
-                            "each other. Widen the date range or choose ETFs with more "
-                            "shared trading history."
-                        )
-                    st.stop()
-
                 cov += np.eye(n_tickers) * 1e-8
-                mc_df = monte_carlo_simulation(mean_returns, cov, n_simulations, risk_free_rate)
+                mc_df = monte_carlo_simulation(
+                    mean_returns, cov, n_simulations, risk_free_rate, seed=42
+                )
 
                 # ~40 points, within the 30-60 range called for, kept cheap
                 # since each point is one small SLSQP solve on already-loaded
