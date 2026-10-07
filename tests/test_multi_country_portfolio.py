@@ -102,8 +102,24 @@ def _build(at, countries, tickers, base_currency=None):
 def mock_download(monkeypatch):
     def _apply(tickers, seed=7):
         import src.data_loader as data_loader_mod
+        import src.fx as fx_mod
         prices = _synthetic_prices(tickers, seed=seed)
         monkeypatch.setattr(data_loader_mod, "download_etf_data", _mock_download_by_display_ticker(prices))
+
+        # These selection/handoff tests are not FX-provider integration tests.
+        # Keep them fully offline with a deterministic identity conversion;
+        # tests that exercise FX-specific behavior override this mock locally.
+        def _offline_fx(prices_df, ticker_currency_map, base_currency, start_date, end_date):
+            return {
+                "converted_prices": prices_df.copy(),
+                "unavailable_tickers": [],
+                "fx_source": "TEST-FX",
+                "conversion_method": "TEST-METHOD",
+                "base_currency": base_currency,
+                "currency_adjusted": bool(set(ticker_currency_map.values()) - {base_currency}),
+            }
+
+        monkeypatch.setattr(fx_mod, "convert_prices_to_base_currency", _offline_fx)
         return prices
     return _apply
 
