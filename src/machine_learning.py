@@ -43,7 +43,7 @@ def prepare_ml_dataset(prices: pd.Series, volume: pd.Series = None,
         return None, None, None
 
     X = combined.drop(columns=["Target"])
-    y = combined["Target"]
+    y = combined["Target"].astype(int)
 
     return X, y, combined.index
 
