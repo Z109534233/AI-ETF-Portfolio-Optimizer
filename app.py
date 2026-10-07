@@ -291,15 +291,15 @@ if _validation_lang == "zh-TW":
     _validation_title = "驗證與方法"
     _validation_subtitle = "將分析結果與模型假設、抽樣不確定性及樣本外表現分開檢視"
     validation_featured = {
-        "icon": "check-circle",
+        "icon": "target",
         "title": "模型驗證",
         "desc": "使用 walk-forward／時間序列切分與樣本外指標評估預測模型，避免只呈現訓練期結果。",
     }
     validation_items = [
         {"icon": "activity", "title": "Bootstrap 不確定性", "desc": "以重抽樣呈現估計值的穩定性與不確定性。"},
         {"icon": "shield", "title": "壓力測試", "desc": "在不利市場情境下檢查投資組合的下檔風險。"},
-        {"icon": "database", "title": "資料來源揭露", "desc": "區分即時資料、示範資料與資料來源的 as-of 資訊。"},
-        {"icon": "book-open", "title": "方法限制", "desc": "明確揭露預期報酬、共變異數與模型假設的限制。"},
+        {"icon": "layers", "title": "資料來源揭露", "desc": "區分即時資料、示範資料與資料來源的 as-of 資訊。"},
+        {"icon": "book", "title": "方法限制", "desc": "明確揭露預期報酬、共變異數與模型假設的限制。"},
     ]
 else:
     _validation_title = "Validation & Methodology"
