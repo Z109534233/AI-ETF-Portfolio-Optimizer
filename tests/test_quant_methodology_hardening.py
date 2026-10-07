@@ -48,6 +48,20 @@ def test_optimizer_reports_common_sample_and_ledoit_wolf():
     assert result["estimation_observations"] == len(aligned_returns(prices))
 
 
+
+def test_risk_parity_failure_is_surfaced(monkeypatch):
+    import src.portfolio_optimizer as optimizer
+
+    def _failed_risk_parity(cov):
+        n = cov.shape[0]
+        return np.full(n, 1.0 / n), False
+
+    monkeypatch.setattr(optimizer, "optimize_risk_parity", _failed_risk_parity)
+    result = optimizer.run_optimization(_prices(n_days=500), "Risk Parity")
+    assert result["error_code"] == "optimizer_failed"
+    assert result["error"]
+    assert "Risk Parity" in result["error"]
+
 def test_efficient_frontier_monte_carlo_is_deterministic_by_default():
     mean = np.array([0.0004, 0.0003, 0.0002])
     cov = np.array([[0.02, 0.004, 0.002], [0.004, 0.015, 0.003], [0.002, 0.003, 0.01]])
