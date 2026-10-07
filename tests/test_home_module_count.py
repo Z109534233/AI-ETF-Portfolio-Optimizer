@@ -93,7 +93,7 @@ def test_home_feature_module_count_excludes_home_itself(mocked_inputs, lang):
     assert str(len(NAV_ITEMS)) not in values, values
 
 
-@pytest.mark.parametrize("lang,label", [("en", "Feature Modules"), ("zh-TW", "功能模組")])
+@pytest.mark.parametrize("lang,label", [("en", "Analysis Modules"), ("zh-TW", "分析模組")])
 def test_home_feature_module_stat_label_excludes_home_wording(mocked_inputs, lang, label):
     at = _apptest_from_file("app.py", default_timeout=180)
     at.session_state["language"] = lang
