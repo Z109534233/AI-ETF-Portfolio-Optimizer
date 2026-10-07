@@ -30,6 +30,7 @@ import logging
 import time
 
 import requests
+import pandas as pd
 import streamlit as st
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,120 @@ def _http_get_fred_csv(timeout: float = REQUEST_TIMEOUT_SECONDS) -> str:
     # Unreachable in practice (the loop always returns or raises above),
     # but keeps this function's return type honest for static analysis.
     raise last_exc if last_exc else RuntimeError("FRED fetch failed with no captured exception")
+
+
+def _http_get_fred_history_csv(start_date, end_date,
+                               timeout: float = REQUEST_TIMEOUT_SECONDS) -> str:
+    """Fetch a bounded DGS3MO history window from FRED's public CSV export.
+
+    This is a separate network boundary from the latest-observation fetch so
+    tests can mock historical-rate retrieval without touching live HTTP.
+    """
+    start = pd.Timestamp(start_date).strftime("%Y-%m-%d")
+    end = pd.Timestamp(end_date).strftime("%Y-%m-%d")
+    url = f"{FRED_CSV_URL}&cosd={start}&coed={end}"
+
+    last_exc = None
+    for attempt in range(MAX_FETCH_ATTEMPTS):
+        is_last_attempt = attempt == MAX_FETCH_ATTEMPTS - 1
+        try:
+            response = requests.get(url, timeout=timeout, headers=_FRED_REQUEST_HEADERS)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_exc = e
+            if is_last_attempt:
+                raise
+            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+            continue
+
+        if response.status_code in _RETRYABLE_STATUS_CODES and not is_last_attempt:
+            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+            continue
+
+        response.raise_for_status()
+        text = response.text
+        if not text or not text.strip():
+            raise ValueError("FRED historical response body was empty")
+        return text
+
+    raise last_exc if last_exc else RuntimeError("FRED historical fetch failed")
+
+
+def _parse_fred_history(csv_text: str) -> pd.Series:
+    """Parse DGS3MO CSV into a decimal annual-rate Series indexed by date."""
+    if not csv_text:
+        return pd.Series(dtype=float, name=FRED_SERIES_ID)
+
+    rows = []
+    lines = [ln.strip() for ln in csv_text.strip().splitlines() if ln.strip()]
+    for line in lines[1:]:
+        parts = line.split(",")
+        if len(parts) != 2:
+            continue
+        date_str, value_str = parts[0].strip(), parts[1].strip()
+        if not value_str or value_str == ".":
+            continue
+        try:
+            dt = pd.Timestamp(date_str)
+            value = float(value_str) / 100.0
+        except (ValueError, TypeError):
+            continue
+        rows.append((dt, value))
+
+    if not rows:
+        return pd.Series(dtype=float, name=FRED_SERIES_ID)
+
+    series = pd.Series(
+        [value for _, value in rows],
+        index=pd.DatetimeIndex([dt for dt, _ in rows]),
+        dtype=float,
+        name=FRED_SERIES_ID,
+    )
+    return series[~series.index.duplicated(keep="last")].sort_index()
+
+
+def get_historical_risk_free_rates(start_date, end_date,
+                                   timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
+    """Return historical FRED DGS3MO observations for a backtest window.
+
+    Historical walk-forward evaluation uses the rate available on or before
+    each rebalance date rather than today's rate. If FRED history cannot be
+    retrieved, this returns an empty series and an explicit unavailable
+    status; callers may then use a disclosed fallback assumption.
+    """
+    try:
+        csv_text = _http_get_fred_history_csv(start_date, end_date, timeout=timeout)
+        series = _parse_fred_history(csv_text)
+    except Exception as e:
+        reason = f"{type(e).__name__}: {e}"
+        logging.warning("Historical FRED fetch failed: %s", reason)
+        return {
+            "series": pd.Series(dtype=float, name=FRED_SERIES_ID),
+            "series_id": FRED_SERIES_ID,
+            "source": FRED_SOURCE_NAME,
+            "status": "unavailable",
+            "reason": reason,
+        }
+
+    if series.empty:
+        reason = "response contained no usable historical observations"
+        logging.warning("Historical FRED fetch failed: %s", reason)
+        return {
+            "series": series,
+            "series_id": FRED_SERIES_ID,
+            "source": FRED_SOURCE_NAME,
+            "status": "unavailable",
+            "reason": reason,
+        }
+
+    return {
+        "series": series,
+        "series_id": FRED_SERIES_ID,
+        "source": FRED_SOURCE_NAME,
+        "status": "live_history",
+        "reason": None,
+        "start_date": series.index.min().strftime("%Y-%m-%d"),
+        "end_date": series.index.max().strftime("%Y-%m-%d"),
+    }
 
 
 def _parse_latest_observation(csv_text: str):
@@ -291,6 +406,12 @@ def get_risk_free_rate(timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def get_cached_historical_risk_free_rates(start_date, end_date) -> dict:
+    """Cached historical DGS3MO window for walk-forward evaluation."""
+    return get_historical_risk_free_rates(start_date, end_date)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def get_cached_risk_free_rate() -> dict:
     """Streamlit-cached wrapper -- the ONE function every page should call
     so a Streamlit rerun never re-hits FRED/^IRX on every rerun, and every
@@ -360,5 +481,6 @@ def format_rate_provenance(rf: dict, lang: str = "en", selected_rate: float = No
 __all__ = [
     "FRED_SERIES_ID", "FRED_SOURCE_NAME", "IRX_TICKER", "IRX_SOURCE_NAME",
     "DEFAULT_FALLBACK_RATE", "get_risk_free_rate", "get_cached_risk_free_rate",
+    "get_historical_risk_free_rates", "get_cached_historical_risk_free_rates",
     "format_rate_provenance", "is_manual_override",
 ]
