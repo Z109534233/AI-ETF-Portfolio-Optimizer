@@ -31,43 +31,37 @@ PORTFOLIO_OPTIMIZATION_METHODOLOGY = {
     "expected_return": {
         "price_field": "Close (split/dividend-adjusted via yfinance auto_adjust=True)",
         "return_type": "simple daily percentage returns (DataFrame.pct_change)",
-        "sampling_frequency": "daily",
-        "estimator": "arithmetic mean of daily returns",
+        "sampling_frequency": "common observed trading dates",
+        "estimator": "arithmetic mean of aligned daily returns",
         "annualization": "mean daily return * 252 trading days",
         "missing_data_handling": (
-            "dates missing for every ticker are dropped; dates missing for "
-            "only some tickers are kept (each pair's statistics are computed "
-            "from their own overlapping dates). No ETF's price is ever "
-            "forward- or back-filled before its own first valid trading date."
+            "prices are aligned to dates where every selected asset has an "
+            "observed price before returns are computed; missing market holidays "
+            "are therefore not converted into artificial zero returns"
         ),
         "common_history_window": (
-            "every selected ETF is sliced to the common valid-data window "
-            "(the latest first-valid-date to the earliest last-valid-date "
-            "across the selection) before optimization, so a later-inception "
-            "ETF shortens the analysis window instead of being backfilled."
+            "every selected ETF is first sliced to the common valid-data window "
+            "and then restricted to common observed dates; a later-inception ETF "
+            "shortens the usable sample instead of being backfilled before inception"
         ),
     },
     "covariance": {
-        "estimator": "sample covariance (pandas DataFrame.cov())",
-        "sampling_frequency": "daily",
+        "estimator": "Ledoit-Wolf shrinkage covariance (scikit-learn LedoitWolf) by default",
+        "sampling_frequency": "same common-date daily returns used for expected returns",
         "annualization": "daily covariance matrix * 252 trading days",
         "alignment": (
-            "pandas .cov() uses pairwise-complete observations per ticker "
-            "pair; rows where every ticker is missing are dropped first, but "
-            "no ticker is ever excluded from the matrix outright."
+            "one complete common-date return matrix is used for every asset, so "
+            "expected returns and covariance are estimated from exactly the same rows"
         ),
         "nan_handling": (
-            "a ticker with zero valid overlapping data produces NaN on its "
-            "own diagonal; run_optimization() detects this explicitly and "
-            "reports it as an error rather than treating it as zero risk."
+            "rows with any missing selected-asset price are excluded before returns; "
+            "insufficient common observations produce an explicit optimization error"
         ),
         "psd_stabilization": (
-            "a small ridge term (identity * 1e-8) is added to the diagonal "
-            "only to keep the matrix numerically solvable during "
-            "optimization; this is not shrinkage of the estimator itself "
-            "and does not materially change reported risk."
+            "Ledoit-Wolf shrinkage improves covariance stability; a small identity * "
+            "1e-8 ridge is additionally applied only for numerical solver stability"
         ),
-        "shrinkage": "none -- no Ledoit-Wolf or other shrinkage estimator is applied",
+        "shrinkage": "Ledoit-Wolf shrinkage is the default covariance estimator",
     },
     "max_sharpe": {
         "objective": (
@@ -76,43 +70,32 @@ PORTFOLIO_OPTIMIZATION_METHODOLOGY = {
         ),
         "solver": "scipy.optimize.minimize, method='SLSQP'",
         "risk_free_rate": (
-            "user-configurable annual rate, used directly as a flat annual "
-            "rate in the Sharpe ratio numerator -- not compounded or "
-            "converted to a daily rate. The slider's default value is the "
-            "latest live FRED DGS3MO (3-Month Treasury) observation when "
-            "available (src.risk_free_rate); if a live observation cannot "
-            "be fetched, it falls back to a fixed 5% default with that "
-            "status disclosed, never presented as if it were current"
+            "user-configurable annual rate, used directly as a flat annual rate in "
+            "the Sharpe numerator; the default is sourced from FRED DGS3MO when "
+            "available, with a clearly labeled fallback if live retrieval fails"
         ),
         "constraints": (
-            "sum(weights) == 1 (fully invested, no cash); per-asset weight "
-            "bounded to [min_weight, max_weight], or [-max_weight, max_weight] "
-            "if short selling is allowed"
+            "sum(weights) == 1; per-asset weight bounded to [min_weight, max_weight], "
+            "or [-max_weight, max_weight] if short selling is allowed"
         ),
     },
     "insufficient_history": {
         "policy": (
-            "no ETF is ever silently dropped for insufficient history. If "
-            "fewer than 2 ETFs have overlapping valid price data, or fewer "
-            "than 20 overlapping trading days / 10 overlapping daily returns "
-            "exist, the page stops with an explicit error instead of running "
-            "optimization on a smaller or fabricated dataset."
+            "no ETF is silently dropped for insufficient history. Fewer than two "
+            "usable ETFs or fewer than ten common-date return observations produces "
+            "an explicit error rather than an optimized result on a hidden subset"
         ),
     },
     "backtest_label": {
-        "type": "Fixed-Allocation Historical Backtest",
+        "type": "Walk-Forward Out-of-Sample Backtest",
         "explanation": (
-            "the single set of weights produced by the CURRENT optimization "
-            "run is applied unchanged across the entire historical price "
-            "window to compute a hypothetical value path. It is NOT a "
-            "walk-forward backtest: weights are never re-optimized at any "
-            "point using only data available as of that date, so it does not "
-            "reflect how the strategy would actually have been selected and "
-            "rebalanced in real time."
+            "weights are estimated from a trailing three-year window using only "
+            "information available before each holding period, re-optimized every "
+            "three months, allowed to drift between rebalances, and charged 10 bps "
+            "times one-way turnover at subsequent rebalances"
         ),
     },
 }
-
 
 # ============================================================================
 # Bootstrap Weight Stability (Issue #50)
@@ -133,9 +116,9 @@ BOOTSTRAP_WEIGHT_STABILITY_METHODOLOGY = {
         "dependence structure"
     ),
     "per_resample_estimation": (
-        "arithmetic mean of the resampled daily returns and sample "
-        "covariance x252 (same conventions as run_optimization()), with the "
-        "same 1e-8 diagonal ridge for numerical solvability"
+        "arithmetic mean of the resampled daily returns and the same covariance "
+        "estimator selected by run_optimization() (Ledoit-Wolf by default), annualized "
+        "x252, with the same 1e-8 diagonal ridge for numerical solvability"
     ),
     "objective": "the SAME optimize_max_sharpe() objective, with the current risk_free_rate/min_weight/max_weight/allow_short forwarded unchanged",
     "failed_solves": "a resample whose SLSQP solve does not converge is skipped entirely -- never replaced with an equal-weight fallback in the reported distribution",
