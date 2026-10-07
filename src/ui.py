@@ -729,7 +729,7 @@ def hero_section(composition: list = None, metrics: list = None, is_sample: bool
     # brand/browser tab title (see st.set_page_config elsewhere) may still
     # say "AI ETF Portfolio Optimizer".
     if lang == "zh-TW":
-        title = "ETF 投資組合分析與量化決策平台"
+        title = "ETF 投資組合量化分析"
         subtitle = "整合績效分析、投資組合最佳化、風險分析、模擬、機器學習與 AI 輔助解讀。"
         btn_primary = "開始分析"
         btn_secondary = "探索功能"
@@ -738,7 +738,7 @@ def hero_section(composition: list = None, metrics: list = None, is_sample: bool
         composition_label = "等權重示範"
         sample_word = "示範資料"
     else:
-        title = "ETF Portfolio Analytics & Quantitative Decision Platform"
+        title = "Quantitative ETF Portfolio Analytics"
         subtitle = "Performance analysis, portfolio optimization, risk analytics, simulation, machine learning, and AI-assisted interpretation, in one platform."
         btn_primary = "Start Analysis"
         btn_secondary = "Explore Features"
@@ -752,7 +752,7 @@ def hero_section(composition: list = None, metrics: list = None, is_sample: bool
 
     with st.container(border=True):
         st.markdown('<div class="hero-marker"></div>', unsafe_allow_html=True)
-        col_left, col_right = st.columns([1.15, 1], gap="large")
+        col_left, col_right = st.columns([1.45, 0.9], gap="large")
 
         with col_left:
             st.markdown(
