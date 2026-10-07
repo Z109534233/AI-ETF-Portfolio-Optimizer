@@ -6,6 +6,8 @@
 
 [Live Demo](https://ai-etf-portfolio-optimizer.onrender.com) · [Source Code](https://github.com/Z109534233/AI-ETF-Portfolio-Optimizer) · MIT License
 
+**Author:** Tzu-Hsin Tseng · National Taipei University of Business (NTUB)
+
 ---
 
 ## Why this project
@@ -53,13 +55,15 @@ Mixed-market portfolios are converted to a selected base currency before the com
 
 ### Walk-forward out-of-sample backtest
 
-The strategy-evaluation chart no longer applies full-sample optimized weights back onto the same history. It now uses a rolling out-of-sample procedure:
+The strategy-evaluation chart uses a rolling out-of-sample procedure:
 
 - use the trailing **3 years** of data to estimate portfolio weights;
+- default to a **10-year historical window** in Portfolio Optimizer when the selected ETFs have sufficient history;
 - rebalance every **3 months**;
 - hold the resulting weights over the next period without daily reset;
 - allow weights to drift between rebalances;
 - charge **10 bps × one-way turnover** at each subsequent rebalance;
+- use the **historical FRED DGS3MO rate available at each rebalance** for Maximum Sharpe rather than today's rate; the reported out-of-sample Sharpe also uses the historical rate series;
 - compare the current strategy against Equal Weight, Maximum Sharpe, and Minimum Volatility where applicable;
 - surface optimizer failures instead of silently relabeling a fallback portfolio.
 
@@ -129,7 +133,7 @@ The final holdout set is kept separate from the walk-forward folds to reduce lea
 
 Several design choices were added specifically to reduce misleading outputs:
 
-- **Risk-free rate provenance:** FRED DGS3MO is the primary source, Yahoo Finance `^IRX` is a clearly labeled secondary live proxy, and a fixed fallback is used only if both live sources fail.
+- **Risk-free rate provenance:** current single-run analysis uses FRED DGS3MO as the primary source, Yahoo Finance `^IRX` as a labeled secondary live proxy, and a fixed fallback only if both live sources fail. Walk-forward evaluation separately retrieves historical FRED DGS3MO and uses the observation available at each rebalance.
 - **Aligned estimation sample:** every selected asset uses the same observed dates for return and covariance estimation.
 - **Shrinkage covariance:** Ledoit-Wolf is the default covariance estimator for portfolio construction and the efficient frontier.
 - **Covariance diagnostics:** rank, condition number, and average pairwise correlation are surfaced before interpreting concentrated optimizer results.
@@ -278,11 +282,18 @@ Key limitations include:
 - historical VaR can fail during regime shifts and tail events;
 - ML classification performance is period-dependent and does not establish persistent predictive skill;
 - market data quality and availability depend on external providers;
+- cross-market daily returns can be asynchronous because Taiwan, U.K., and U.S. markets close at different times; same-calendar-date alignment does not fully eliminate non-synchronous trading effects and may understate or distort measured correlations;
 - Goal Planner currency labels do not imply that all foreign-exchange risk is modeled.
 
 These limitations are part of the project design and are shown in the dashboard where relevant.
 
 ---
+
+## Development attribution
+
+This project was designed, integrated, and validated by **Tzu-Hsin Tseng**. Generative AI tools were used as development assistants for tasks such as code review, debugging, refactoring suggestions, test generation, and documentation support. Financial-methodology choices, feature scope, integration decisions, validation criteria, and the final submitted implementation were reviewed and directed by the author.
+
+AI-generated text inside the application is kept separate from deterministic financial calculations; the application can fall back to rule-based interpretation when no OpenAI API key is configured.
 
 ## Educational use
 
