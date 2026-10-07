@@ -1096,6 +1096,48 @@ def _build_backtest_reference_lines(reference_results: dict) -> list:
         lines.append((_label, _df, _color, _dash, _width))
     return lines
 
+# ── Walk-forward out-of-sample comparison ───────────────────────────────────
+def _compute_walk_forward_results() -> dict:
+    """Evaluate the current strategy and reference strategies out of sample."""
+    plan = build_backtest_reference_plan(optimization_method, _REFERENCE_METHODS)
+    methods = []
+    for method, _ in plan:
+        if method not in methods:
+            methods.append(method)
+
+    results = {}
+    for method in methods:
+        results[method] = walk_forward_backtest(
+            prices_df=prices_df,
+            method=method,
+            initial_investment=investment_amount,
+            risk_free_rate=risk_free_rate,
+            min_weight=min_weight,
+            max_weight=max_weight,
+            allow_short=allow_short,
+            target_return=target_return_pct if method == "Target Return" else None,
+            covariance_estimator=result.get("covariance_estimator", "Ledoit-Wolf"),
+            train_years=DEFAULT_TRAIN_YEARS,
+            rebalance_months=DEFAULT_REBALANCE_MONTHS,
+            transaction_cost_bps=DEFAULT_TRANSACTION_COST_BPS,
+        )
+    return results
+
+
+def _build_walk_forward_lines(wf_results: dict) -> list:
+    """Attach localized labels and chart styles to walk-forward histories."""
+    plan = build_backtest_reference_plan(optimization_method, _REFERENCE_METHODS)
+    lines = []
+    for method, is_current in plan:
+        item = wf_results.get(method, {})
+        history = item.get("history", pd.DataFrame())
+        label = t_opt_method(method) + (" ★" if is_current else "")
+        color = COLORS["primary"] if is_current else _REFERENCE_COLORS.get(method, COLORS["text_muted"])
+        dash = None if is_current else "dash"
+        width = 2.5 if is_current else 1.5
+        lines.append((method, label, history, color, dash, width))
+    return lines
+
 
 # ── Top-Level Workspace Navigation ───────────────────────────────────────────
 # st.segmented_control (NOT st.tabs -- see module docstring). Canonical
