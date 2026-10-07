@@ -521,6 +521,9 @@ if run_btn:
                 t("opt_error_infeasible_max_weight", n=len(selected_etfs), max=f"{max_weight:.0%}"),
             )
             st.stop()
+        elif _err_code in ("insufficient_common_observations", "covariance_estimation_failed"):
+            error_state(t("opt_error_title"), result["error"])
+            st.stop()
         elif _err_code == "optimizer_failed":
             st.warning(t("opt_error_optimizer_failed", method=t_opt_method(optimization_method)))
         elif result.get("error"):
