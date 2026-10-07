@@ -262,7 +262,7 @@ def test_backtest_methodology_line_uses_localized_punctuation_zh_tw():
     line = f"- **{label}** — {value}{sep}{desc}\n"
 
     assert sep == "。"
-    assert "固定配置歷史回測。系統將" in line
+    assert "Walk-Forward 樣本外回測。使用過去 3 年" in line
     # The exact bug this regresses: an ASCII period directly after the
     # Chinese label, instead of the full-width Chinese period.
     assert "固定配置歷史回測. " not in line
@@ -278,7 +278,7 @@ def test_backtest_methodology_line_uses_localized_punctuation_en():
     line = f"- **{label}** — {value}{sep}{desc}\n"
 
     assert sep == ". "
-    assert "Fixed-Allocation Historical Backtest. The CURRENT" in line
+    assert "Walk-Forward Out-of-Sample Backtest. Weights are estimated from the trailing 3 years" in line
 
 
 # ── Streamlit AppTest: on-demand panel wiring ─────────────────────────────
