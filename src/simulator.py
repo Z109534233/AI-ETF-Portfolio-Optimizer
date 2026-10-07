@@ -65,6 +65,7 @@ def simulate_investment(
     n_simulations: int = 1000,
     seed: int = 42,
     annual_contribution: float = 0.0,
+    annual_return_is_arithmetic: bool = False,
 ) -> dict:
     """
     Run Monte Carlo simulation for long-term investment growth.
@@ -76,7 +77,11 @@ def simulate_investment(
     """
     np.random.seed(seed)
     months = years * 12
-    monthly_return = (1 + annual_return) ** (1 / 12) - 1
+    monthly_return = (
+        annual_return / 12
+        if annual_return_is_arithmetic
+        else (1 + annual_return) ** (1 / 12) - 1
+    )
     monthly_vol = annual_volatility / np.sqrt(12)
     monthly_fee = (1 + annual_fee) ** (1 / 12) - 1
     monthly_inflation = (1 + inflation_rate) ** (1 / 12) - 1
@@ -119,6 +124,7 @@ def simulate_investment(
         # contributions") instead of implying a real-world guaranteed
         # probability -- see pages/3_Investment_Simulator.py.
         "positive_outcome_count": int(np.sum(final_values > total_contributed)),
+        "annual_return_is_arithmetic": bool(annual_return_is_arithmetic),
         "n_simulations": int(n_simulations),
     }
 
