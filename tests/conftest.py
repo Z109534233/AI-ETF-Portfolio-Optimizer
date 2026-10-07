@@ -27,3 +27,28 @@ def _no_live_holdings_primary_adapter_by_default(monkeypatch):
     """
     import src.holdings as _holdings_mod
     monkeypatch.setattr(_holdings_mod, "_cached_fetch_public", lambda yahoo_symbol: (None, None, False))
+
+
+@pytest.fixture(autouse=True)
+def _block_external_network_by_default(monkeypatch):
+    """Fail fast if a test accidentally reaches the public internet.
+
+    Individual tests that exercise an HTTP boundary must monkeypatch that
+    boundary explicitly. This keeps CI deterministic and prevents Yahoo/FRED
+    rate limits or outages from deciding whether the test suite passes.
+    """
+    import requests
+
+    def _blocked(*args, **kwargs):
+        raise RuntimeError(
+            "External network access is disabled under pytest; mock the network boundary."
+        )
+
+    monkeypatch.setattr(requests, "get", _blocked)
+    monkeypatch.setattr(requests.sessions.Session, "request", _blocked)
+
+    try:
+        import yfinance as yf
+        monkeypatch.setattr(yf, "download", _blocked)
+    except ImportError:
+        pass

@@ -47,6 +47,57 @@ def _normalized_weights(weights: dict, columns: list) -> np.ndarray:
     return arr / total
 
 
+def _normalise_risk_free_series(series) -> pd.Series:
+    """Return a sorted decimal annual-rate series, or an empty Series."""
+    if series is None:
+        return pd.Series(dtype=float)
+    if not isinstance(series, pd.Series):
+        series = pd.Series(series)
+    if series.empty:
+        return pd.Series(dtype=float)
+    cleaned = pd.to_numeric(series, errors="coerce").dropna().astype(float)
+    cleaned.index = pd.to_datetime(cleaned.index)
+    return cleaned[~cleaned.index.duplicated(keep="last")].sort_index()
+
+
+def risk_free_rate_asof(series: pd.Series, date, fallback: float) -> tuple[float, bool]:
+    """Return the latest annual risk-free rate observed on/before date.
+
+    The boolean indicates whether a historical observation was available.
+    A pre-normalized DatetimeIndex Series is handled without copying/sorting
+    on every holding-day lookup.
+    """
+    if series is None or not isinstance(series, pd.Series) or series.empty:
+        return float(fallback), False
+    if not isinstance(series.index, pd.DatetimeIndex) or not series.index.is_monotonic_increasing:
+        series = _normalise_risk_free_series(series)
+    if series.empty:
+        return float(fallback), False
+    pos = int(series.index.searchsorted(pd.Timestamp(date), side="right")) - 1
+    if pos < 0:
+        return float(fallback), False
+    return float(series.iloc[pos]), True
+
+
+def historical_excess_sharpe(history: pd.DataFrame,
+                             periods_per_year: int = 252) -> float:
+    """Annualized Sharpe ratio using the historical risk-free series."""
+    if history is None or history.empty or "Daily Return" not in history:
+        return float("nan")
+    returns = pd.to_numeric(history["Daily Return"], errors="coerce")
+    if "Risk-Free Rate" in history:
+        annual_rf = pd.to_numeric(history["Risk-Free Rate"], errors="coerce")
+    else:
+        annual_rf = pd.Series(0.0, index=history.index)
+    frame = pd.concat([returns.rename("r"), annual_rf.rename("rf")], axis=1).dropna()
+    if len(frame) < 2:
+        return float("nan")
+    vol = float(frame["r"].std(ddof=1) * np.sqrt(periods_per_year))
+    if not np.isfinite(vol) or vol <= 0:
+        return 0.0
+    annual_excess = float((frame["r"] - frame["rf"] / periods_per_year).mean() * periods_per_year)
+    return annual_excess / vol
+
 def walk_forward_backtest(
     prices_df: pd.DataFrame,
     method: str,
@@ -61,8 +112,9 @@ def walk_forward_backtest(
     rebalance_months: int = DEFAULT_REBALANCE_MONTHS,
     transaction_cost_bps: float = DEFAULT_TRANSACTION_COST_BPS,
     min_train_observations: int = MIN_TRAIN_OBSERVATIONS,
+    risk_free_rate_series: pd.Series = None,
 ) -> dict:
-    """Run an expanding calendar walk-forward backtest.
+    """Run a fixed-length rolling-window walk-forward backtest.
 
     For each rebalance, the optimizer receives only the trailing training
     window ending before the first held return. The resulting weights are
@@ -71,6 +123,7 @@ def walk_forward_backtest(
     not charged because the comparison focuses on rebalancing costs.
     """
     columns = list(prices_df.columns)
+    historical_rf = _normalise_risk_free_series(risk_free_rate_series)
     panel = common_observation_prices(prices_df[columns]) if columns else pd.DataFrame()
     if panel.empty or len(columns) < 2:
         return {"history": pd.DataFrame(), "rebalance_log": pd.DataFrame(),
@@ -89,6 +142,8 @@ def walk_forward_backtest(
     total_turnover = 0.0
     total_cost = 0.0
     failures = 0
+    historical_rf_rebalances = 0
+    fallback_rf_rebalances = 0
     cost_rate = float(transaction_cost_bps) / 10000.0
 
     for i, rebalance_date in enumerate(rebalance_dates):
@@ -97,8 +152,16 @@ def walk_forward_backtest(
         if len(train) < min_train_observations:
             continue
 
+        rebalance_rf, rf_is_historical = risk_free_rate_asof(
+            historical_rf, rebalance_date, risk_free_rate
+        )
+        if rf_is_historical:
+            historical_rf_rebalances += 1
+        else:
+            fallback_rf_rebalances += 1
+
         result = run_optimization(
-            train, method=method, risk_free_rate=risk_free_rate,
+            train, method=method, risk_free_rate=rebalance_rf,
             min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
             target_return=target_return, covariance_estimator=covariance_estimator,
         )
@@ -130,6 +193,8 @@ def walk_forward_backtest(
             "Turnover": turnover,
             "Transaction Cost": transaction_cost,
             "Optimizer Error": opt_error,
+            "Risk-Free Rate": rebalance_rf,
+            "Risk-Free Rate Source": "FRED DGS3MO historical" if rf_is_historical else "fallback assumption",
             "Weights": dict(zip(columns, target_weights.tolist())),
         })
 
@@ -143,10 +208,12 @@ def walk_forward_backtest(
                         "summary": {"error": "Portfolio value became non-positive or non-finite."}}
             current_weights = current_weights * (1.0 + asset_returns) / (1.0 + gross_return)
             current_weights = current_weights / current_weights.sum()
+            day_rf, _ = risk_free_rate_asof(historical_rf, dt, rebalance_rf)
             history_rows.append({
                 "Date": dt,
                 "Portfolio Value": value,
                 "Daily Return": value / prev_value - 1.0,
+                "Risk-Free Rate": day_rf,
             })
 
     history = pd.DataFrame(history_rows)
@@ -166,6 +233,16 @@ def walk_forward_backtest(
         "optimizer_failures": int(failures),
         "total_turnover": float(total_turnover),
         "transaction_cost_amount": float(total_cost),
+        "historical_rf_rebalances": int(historical_rf_rebalances),
+        "fallback_rf_rebalances": int(fallback_rf_rebalances),
+        "risk_free_rate_source": (
+            "FRED DGS3MO historical"
+            if historical_rf_rebalances > 0 and fallback_rf_rebalances == 0
+            else "mixed historical/fallback"
+            if historical_rf_rebalances > 0
+            else "fallback assumption"
+        ),
+        "oos_sharpe": float(historical_excess_sharpe(history)),
         "start_date": history.index.min(),
         "end_date": history.index.max(),
     }

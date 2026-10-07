@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.backtesting import walk_forward_backtest
+from src.backtesting import historical_excess_sharpe, walk_forward_backtest
 from src.machine_learning import prepare_ml_dataset, time_series_split
 from src.portfolio_optimizer import monte_carlo_simulation, run_optimization
 from src.portfolio_statistics import aligned_returns, estimate_covariance
@@ -131,3 +131,39 @@ def test_arithmetic_annual_return_uses_arithmetic_monthly_mean():
     )
     expected = 100.0 * (1.01 ** 12)
     assert result["summary"]["median_final"] == pytest.approx(expected)
+
+
+def test_walk_forward_uses_historical_risk_free_rate_at_rebalance():
+    prices = _prices(n_days=1500)
+    rf_index = pd.bdate_range(prices.index.min(), prices.index.max())
+    rf = pd.Series(0.01, index=rf_index)
+    rf.loc[rf.index >= pd.Timestamp("2022-01-03")] = 0.04
+
+    result = walk_forward_backtest(
+        prices, "Maximum Sharpe Ratio", train_years=2, rebalance_months=6,
+        transaction_cost_bps=0, min_train_observations=200,
+        risk_free_rate=0.09, risk_free_rate_series=rf,
+    )
+    log = result["rebalance_log"]
+    assert not log.empty
+    assert (log["Risk-Free Rate Source"] == "FRED DGS3MO historical").all()
+    assert not np.allclose(log["Risk-Free Rate"].to_numpy(), 0.09)
+    assert result["summary"]["fallback_rf_rebalances"] == 0
+
+
+def test_historical_excess_sharpe_changes_with_historical_rates():
+    idx = pd.bdate_range("2024-01-01", periods=252)
+    daily = pd.Series(0.0005, index=idx)
+    low_rf = pd.DataFrame({"Daily Return": daily, "Risk-Free Rate": 0.01}, index=idx)
+    high_rf = pd.DataFrame({"Daily Return": daily, "Risk-Free Rate": 0.05}, index=idx)
+    # Add tiny dispersion so the denominator is finite.
+    low_rf.loc[idx[::2], "Daily Return"] += 0.0001
+    high_rf.loc[idx[::2], "Daily Return"] += 0.0001
+    assert historical_excess_sharpe(low_rf) > historical_excess_sharpe(high_rf)
+
+
+def test_optimizer_date_default_can_request_ten_years():
+    from src.utils import get_date_range_defaults
+    start, end = get_date_range_defaults(years=10)
+    assert end.year - start.year in (9, 10)
+    assert (end - start).days > 365 * 9

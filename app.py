@@ -70,9 +70,9 @@ with st.sidebar:
     )
     st.session_state["_home_selected_etfs_shadow"] = demo_etfs
 
-    # SAME default date window as Portfolio Optimizer (Issue #45 item 2) --
-    # no second, independently-chosen lookback window.
-    start_date, end_date = get_date_range_defaults()
+    # Keep the Home demo on the same 10-year default window as Portfolio
+    # Optimizer so identical inputs produce directly comparable metrics.
+    start_date, end_date = get_date_range_defaults(years=10)
 
     render_sidebar_footer()
 

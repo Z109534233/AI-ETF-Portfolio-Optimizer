@@ -92,7 +92,8 @@ PORTFOLIO_OPTIMIZATION_METHODOLOGY = {
             "weights are estimated from a trailing three-year window using only "
             "information available before each holding period, re-optimized every "
             "three months, allowed to drift between rebalances, and charged 10 bps "
-            "times one-way turnover at subsequent rebalances"
+            "times one-way turnover at subsequent rebalances. Maximum Sharpe uses "
+            "the historical FRED DGS3MO observation available at each rebalance."
         ),
     },
 }
