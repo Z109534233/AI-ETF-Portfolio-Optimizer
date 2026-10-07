@@ -137,10 +137,10 @@ def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> f
     return float(result)
 
 
-def get_date_range_defaults() -> tuple:
-    """Return default start and end dates (5 years back to today)."""
+def get_date_range_defaults(years: int = 5) -> tuple:
+    """Return default start/end dates for a configurable lookback window."""
     end = date.today()
-    start = date(end.year - 5, end.month, end.day)
+    start = date(end.year - int(years), end.month, end.day)
     return start, end
 
 
