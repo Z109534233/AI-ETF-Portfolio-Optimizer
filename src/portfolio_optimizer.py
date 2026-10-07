@@ -13,7 +13,7 @@ from src.financial_metrics import (
     covariance_diagnostics, covariance_diagnostics_level,
 )
 from src.methodology import validate_optimization_result
-from src.portfolio_statistics import estimate_moments, aligned_returns
+from src.portfolio_statistics import estimate_moments, aligned_returns, common_observation_prices
 
 
 def equal_weight(tickers: list) -> np.ndarray:
@@ -340,7 +340,8 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
                      risk_free_rate: float = 0.05,
                      min_weight: float = 0.0, max_weight: float = 1.0,
                      allow_short: bool = False,
-                     target_return: float = None) -> dict:
+                     target_return: float = None,
+                     covariance_estimator: str = "Ledoit-Wolf") -> dict:
     """
     Main optimization function. Returns weights and portfolio metrics.
     """
@@ -379,50 +380,26 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
                    "-- raise the maximum weight or select fewer ETFs.")
         return _fallback_result(msg, error_code=infeasible_code)
 
-    # dropna(how="all") -- not the pandas default how="any" -- so that one
-    # ticker missing a single date cannot wipe out that date for every
-    # other ticker too (see covariance_matrix() for the full rationale).
-    returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
+    # Estimate every asset from the same observed dates. This prevents
+    # mixed-market holidays from becoming artificial zero returns and keeps
+    # expected returns and covariance on one internally consistent sample.
+    returns_df, mean_returns, cov = estimate_moments(
+        prices_df, estimator=covariance_estimator
+    )
 
     if returns_df.empty or len(returns_df) < 10:
-        return _fallback_result("Insufficient data for optimization.")
-
-    mean_returns = returns_df.mean().values
-    cov = covariance_matrix(prices_df)
-    cov_array = cov.values.copy()
-
-    # covariance_matrix() guarantees cov_array.shape == (n, n), so this
-    # regularization step can never hit a shape mismatch. It can still
-    # contain NaN, though, if a ticker has no valid overlapping return
-    # data at all (e.g. it failed to download and slipped through) --
-    # check for that explicitly rather than silently doing NaN arithmetic.
-    if cov_array.shape != (n, n):
         return _fallback_result(
-            f"Covariance matrix shape {cov_array.shape} does not match "
-            f"{n} tickers; aborting optimization."
+            "Insufficient common-date data for optimization. Widen the date range "
+            "or choose ETFs with more overlapping trading history.",
+            error_code="insufficient_common_observations",
         )
 
-    if not np.isfinite(cov_array).all():
-        # A NaN on the DIAGONAL means that specific ticker has no valid
-        # data at all (its own variance couldn't be computed) -- that
-        # ticker is unambiguously the problem. A NaN only OFF the diagonal
-        # means two otherwise-valid tickers simply have no overlapping
-        # trading dates between them, which isn't any single ticker's
-        # "fault". We distinguish these so the error message names the
-        # actual culprit instead of blaming every ticker whenever one is bad.
-        diag_nan = ~np.isfinite(np.diag(cov_array))
-        if diag_nan.any():
-            bad_tickers = [tickers[i] for i, bad in enumerate(diag_nan) if bad]
-            return _fallback_result(
-                f"No valid price data for: {', '.join(bad_tickers)}. "
-                "Remove these tickers or widen the date range."
-            )
+    cov_array = cov.to_numpy(dtype=float, copy=True)
+    if cov_array.shape != (n, n) or not np.isfinite(cov_array).all():
         return _fallback_result(
-            "Some selected ETFs have no overlapping trading dates with each "
-            "other. Widen the date range or choose ETFs with more shared "
-            "trading history."
+            "Covariance estimation failed on the common-date return sample.",
+            error_code="covariance_estimation_failed",
         )
-
     # Numerical robustness diagnostics (Issue #45 item 1) -- computed from
     # the RAW covariance matrix BEFORE the regularization ridge term just
     # below, so this reflects the actual selected assets' data, not a
@@ -431,7 +408,8 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
     # assets can be explained as an economically-unstable but statistically
     # valid outcome, not silently presented as if the assets were genuinely
     # diversifying, nor overstated as the covariance matrix being "singular".
-    _cov_diagnostics = covariance_diagnostics(prices_df)
+    _common_prices = common_observation_prices(prices_df)
+    _cov_diagnostics = covariance_diagnostics(_common_prices)
     _cov_diagnostics_level = covariance_diagnostics_level(_cov_diagnostics)
 
     # Regularize covariance matrix to avoid singularity
@@ -461,7 +439,8 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             # optimization validation (M1) requires this be surfaced too.
             optimizer_failed = not converged
         elif method == "Risk Parity":
-            weights = optimize_risk_parity(cov_array)
+            weights, converged = optimize_risk_parity(cov_array)
+            optimizer_failed = not converged
         else:
             weights = equal_weight(tickers)
 
@@ -510,6 +489,10 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             "validation": validation,
             "covariance_diagnostics": _cov_diagnostics,
             "covariance_diagnostics_level": _cov_diagnostics_level,
+            "covariance_estimator": covariance_estimator,
+            "estimation_observations": int(len(returns_df)),
+            "estimation_start": str(returns_df.index.min().date()),
+            "estimation_end": str(returns_df.index.max().date()),
             "error": (
                 f"{method} optimization did not converge for this data/settings; "
                 "showing Equal Weight as a fallback."
