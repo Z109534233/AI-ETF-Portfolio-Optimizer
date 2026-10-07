@@ -721,8 +721,9 @@ if _cov_diag and _cov_diag_level in ("severe", "moderate"):
 # guessed, so this can never drift from what the KPIs above actually show.
 with st.expander(t("opt_methodology_title"), expanded=False):
     st.caption(t("opt_methodology_subtitle"))
-    _hist_start = prices_df.index.min().strftime("%Y-%m-%d")
-    _hist_end = prices_df.index.max().strftime("%Y-%m-%d")
+    _hist_start = result.get("estimation_start") or prices_df.index.min().strftime("%Y-%m-%d")
+    _hist_end = result.get("estimation_end") or prices_df.index.max().strftime("%Y-%m-%d")
+    _hist_days = result.get("estimation_observations") or len(prices_df.dropna(how="any"))
     _short_note = t("opt_methodology_short_note_on") if allow_short else t("opt_methodology_short_note_off")
     # The SLSQP + sidebar-bounds + risk-free-rate description is only
     # accurate for Maximum Sharpe / Minimum Volatility / Target Return
@@ -764,7 +765,7 @@ with st.expander(t("opt_methodology_title"), expanded=False):
         f"- **{t('opt_methodology_covariance_label')}** — {t('opt_methodology_covariance_desc')}\n"
         f"- **{t('opt_methodology_covariance_diag_label')}** — {_cov_diag_line}\n"
         f"- **{t('opt_methodology_history_label')}** — "
-        f"{t('opt_methodology_history_value', start=_hist_start, end=_hist_end, days=len(prices_df))}\n"
+        f"{t('opt_methodology_history_value', start=_hist_start, end=_hist_end, days=_hist_days)}\n"
         f"- **{t('opt_methodology_optimizer_label')}** — {_optimizer_desc}\n"
         f"- **{t('opt_methodology_backtest_label')}** — {t('opt_methodology_backtest_value')}"
         f"{t('opt_methodology_backtest_sep')}{t('opt_methodology_backtest_desc')}\n"
