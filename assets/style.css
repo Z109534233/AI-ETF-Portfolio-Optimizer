@@ -250,13 +250,23 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stV
     max-width: 440px; margin: 0 0 14px 0;
 }
 .hero-cta-row .stButton > button {
-    border-radius: 999px !important; padding: 8px 22px !important; font-weight: 700 !important;
+    border-radius: 999px !important;
+    padding: 8px 14px !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+.hero-cta-row .stButton > button p {
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
 }
 .hero-cta-secondary-link {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     color: var(--text); font-weight: 700; font-size: 13.5px;
     height: 38px; padding: 0 22px; border-radius: 999px; border: 1px solid var(--border-strong);
-    transition: border-color 0.18s ease, background 0.18s ease; cursor: default;
+    transition: border-color 0.18s ease, background 0.18s ease; cursor: pointer;
 }
 .hero-cta-secondary-link:hover { border-color: var(--primary); background: var(--primary-soft); }
 

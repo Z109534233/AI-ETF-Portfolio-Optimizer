@@ -15,7 +15,7 @@ Usage:
 import streamlit as st
 
 LANGUAGE_KEY = "language"
-DEFAULT_LANGUAGE = "zh-TW"
+DEFAULT_LANGUAGE = "en"
 SUPPORTED_LANGUAGES = ("zh-TW", "en")
 
 LANGUAGE_LABELS = {
@@ -3642,12 +3642,12 @@ def _browser_language():
 
 
 def get_language() -> str:
-    """Resolve language with URL > session > browser > project default priority.
+    """Resolve language with URL > session > project default priority.
 
-    A lang query parameter makes application links deterministic for reviewers.
-    Without a URL override, a fresh session follows the browser's
-    Accept-Language header when available; non-Chinese browsers default to
-    English. Existing sessions keep the user's explicit selector choice.
+    Fresh public-portfolio sessions always open in English so admissions
+    reviewers see a deterministic English landing page regardless of browser
+    locale. An explicit URL language or the sidebar selector can still switch
+    the session to Traditional Chinese.
     """
     url_lang = _url_language()
     if url_lang:
@@ -3655,7 +3655,7 @@ def get_language() -> str:
         return url_lang
 
     if LANGUAGE_KEY not in st.session_state:
-        st.session_state[LANGUAGE_KEY] = _browser_language() or DEFAULT_LANGUAGE
+        st.session_state[LANGUAGE_KEY] = DEFAULT_LANGUAGE
 
     lang = st.session_state[LANGUAGE_KEY]
     return lang if lang in TRANSLATIONS else DEFAULT_LANGUAGE

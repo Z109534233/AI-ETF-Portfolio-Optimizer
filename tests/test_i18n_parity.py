@@ -156,6 +156,17 @@ def test_get_language_uses_browser_locale_on_fresh_session(monkeypatch):
     assert fake.session_state["language"] == "en"
 
 
+
+def test_fresh_session_defaults_to_english_even_for_chinese_browser(monkeypatch):
+    fake = _FakeStreamlitLanguageState(
+        query_params={},
+        headers={"Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8"},
+        session_state={},
+    )
+    monkeypatch.setattr(i18n_mod, "st", fake)
+    assert i18n_mod.get_language() == "en"
+    assert fake.session_state["language"] == "en"
+
 def test_language_selector_callback_persists_shareable_query_parameter(monkeypatch):
     fake = _FakeStreamlitLanguageState(
         query_params={},

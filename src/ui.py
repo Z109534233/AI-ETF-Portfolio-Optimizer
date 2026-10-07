@@ -760,7 +760,7 @@ def hero_section(composition: list = None, metrics: list = None, is_sample: bool
                 f'<p class="hero-subtitle-new">{subtitle}</p>',
                 unsafe_allow_html=True,
             )
-            btn_col1, btn_col2, _ = st.columns([1.2, 1.2, 1])
+            btn_col1, btn_col2, _ = st.columns([1.45, 1.25, 0.3])
             with btn_col1:
                 st.markdown('<div class="hero-cta-row">', unsafe_allow_html=True)
                 if st.button(btn_primary, type="primary", use_container_width=True, key="hero_start_analysis"):
@@ -771,7 +771,7 @@ def hero_section(composition: list = None, metrics: list = None, is_sample: bool
                 # section_header()'s anchor_id) -- not static text styled
                 # like a button (Issue #31 item 1: CTA hierarchy).
                 st.markdown(
-                    f'<a href="#why-choose-anchor" class="hero-cta-secondary-link">{btn_secondary}</a>',
+                    f'<a href="#analytics-modules-anchor" class="hero-cta-secondary-link">{btn_secondary}</a>',
                     unsafe_allow_html=True,
                 )
 

@@ -17,13 +17,13 @@ from src.database import init_database
 from src.utils import load_css, disclaimer_box, ensure_directories, get_date_range_defaults
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, ticker_strip, hero_section,
-    section_header, capability_hierarchy_grid, render_footer, persona_row, faq_accordion,
-    stat_strip, tech_stack_strip, section_surface, process_flow, NAV_ITEMS
+    section_header, capability_hierarchy_grid, render_footer,
+    stat_strip, tech_stack_strip, process_flow, NAV_ITEMS
 )
 from src.i18n import t, get_language
 from src.demo_portfolio import DIVERSIFIED_DEMO_TICKERS, resolve_demo_tickers
 from src.risk_free_rate import get_cached_risk_free_rate, format_rate_provenance
-from src.etf_coverage import load_coverage_snapshot, coverage_display_stat, coverage_unavailable_caption
+from src.etf_coverage import load_coverage_snapshot, coverage_display_stat
 
 # ── Page Configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -187,134 +187,137 @@ else:
         "optimization engine, shown here for demonstration only, not a forecast."
     )
 
-# ── Platform Statistics: low-emphasis numeric strip, not a 4-card grid
-# (Issue #31 item 8). Counts read from the actual registered data instead
-# of being hardcoded. ─────────────────────────────────────────────────────
+# ── Platform Scope ───────────────────────────────────────────────────────────
+# Keep the top-level counts factual and low-emphasis. The ETF number is the
+# registered/searchable universe, not a claim that every ticker has verified
+# live market-data coverage.
 _platform_lang = get_language()
-# "Registered ETF Universe" (Issue #45 item 8), NOT "Supported ETFs" --
-# len(get_all_tickers()) is the platform's registered/searchable universe
-# size, never a proven, verified count of tickers with actual live price
-# coverage (that separate, low-emphasis stat is added below ONLY when a
-# real audit snapshot exists -- see src.etf_coverage).
-# Feature-module count excludes Home itself (Issue #48 item 4): Home is
-# navigation, not one of the platform's analysis/feature modules, so this
-# must be len(NAV_ITEMS) - 1 to stay consistent with the "Why Choose This
-# Platform" section below (1 featured + 7 supporting items = 8), never the
-# raw len(NAV_ITEMS) (which includes Home and would show 9).
 _feature_module_count = len(NAV_ITEMS) - 1
 if _platform_lang == "zh-TW":
-    _platform_stats_title = "平台統計"
+    _platform_stats_title = "平台範圍"
     _platform_stats = [
-        (str(len(get_all_tickers())), "ETF 清單規模"),
+        (str(len(get_all_tickers())), "已登錄 ETF"),
         (str(len(get_countries())), "涵蓋市場"),
-        (str(_feature_module_count), "功能模組"),
-        ("2", "支援語言"),
+        (str(_feature_module_count), "分析模組"),
+        ("2", "介面語言"),
     ]
 else:
-    _platform_stats_title = "Platform Statistics"
+    _platform_stats_title = "Platform Scope"
     _platform_stats = [
-        (str(len(get_all_tickers())), "Registered ETF Universe"),
+        (str(len(get_all_tickers())), "Registered ETFs"),
         (str(len(get_countries())), "Markets"),
-        (str(_feature_module_count), "Feature Modules"),
-        ("2", "Languages"),
+        (str(_feature_module_count), "Analysis Modules"),
+        ("2", "Interface Languages"),
     ]
 
 section_header(_platform_stats_title)
 stat_strip(_platform_stats)
 
-# Registered-universe-size provenance (Issue #20 section 1B, reworded for
-# Issue #45 item 8): the count above is real (len(get_all_tickers())), but
-# is explicitly the SEARCHABLE/REGISTERED universe size, not a guarantee of
-# actual live price-data coverage for every listed ticker.
 if _platform_lang == "zh-TW":
     st.caption(
-        "ℹ️ 此為平台可搜尋／已登錄的 ETF 清單規模，彙整自美國（NASDAQ／NYSE 上市清單）、"
-        "台灣（證交所 TWSE／櫃買中心 TPEX）與英國市場 ETF 名單；"
-        "並非保證每檔 ETF 都有可取得的即時價格資料，實際可取得的價格資料仍取決於市場資料來源的覆蓋範圍。"
+        "ETF 數量代表平台可搜尋／已登錄的投資標的；實際市場資料可用性仍取決於資料來源。"
     )
 else:
     st.caption(
-        "ℹ️ This is the platform's searchable/registered ETF universe size, "
-        "compiled from the built-in US (NASDAQ/NYSE listing files), Taiwan "
-        "(TWSE/TPEX), and UK ETF universes -- it is NOT a guarantee that "
-        "every listed ticker has verified, available live price data; "
-        "actual price data availability still depends on market-data source coverage."
-        )
+        "ETF count refers to the platform's searchable/registered universe; "
+        "actual market-data availability depends on the upstream data source."
+    )
 
-# ── Verified price-coverage stat (Issue #45 item 8) -- shown ONLY when a
-# real audit snapshot exists (scripts/audit_etf_price_coverage.py); never a
-# fabricated or estimated coverage count. ────────────────────────────────
+# Show a verified coverage statistic only when an audit snapshot exists. A
+# missing audit is documented in methodology rather than surfaced as a
+# prominent unfinished-product warning on the admissions landing page.
 _coverage_snapshot = load_coverage_snapshot()
 _coverage_stat = coverage_display_stat(_coverage_snapshot, _platform_lang)
 if _coverage_stat:
     _coverage_value, _coverage_label = _coverage_stat
     st.caption(f"🔎 {_coverage_label}: {_coverage_value}")
-else:
-    st.caption(f"🔎 {coverage_unavailable_caption(_platform_lang)}")
 
-# ── Why Choose This Platform (the ONE primary capability section on Home,
-# Issue #31 item 3 / Issue #33 hierarchy pass) -- one featured capability
-# (Portfolio Optimization) plus a borderless grid of seven smaller
-# supporting items, instead of eight identically-weighted outlined cards.
-# Carries the in-page jump target for the hero's "Explore Features"
-# secondary CTA. ──────────────────────────────────────────────────────────
-_why_lang = get_language()
-if _why_lang == "zh-TW":
-    _why_title, _why_subtitle = "為什麼選擇這個平台", "八大核心模組，涵蓋分析到決策的完整流程"
-    why_featured = {"icon": "target", "title": "投資組合最佳化", "desc": "五種方法找出最佳風險調整後配置，是本平台的核心分析引擎"}
-    why_items = [
-        {"icon": "newspaper", "title": "市場情報", "desc": "市場新聞與規則式摘要（經濟行事曆尚未接入已驗證的即時來源）"},
-        {"icon": "bar-chart", "title": "ETF 分析", "desc": "跨市場 ETF 價格、報酬與風險指標分析"},
-        {"icon": "trending-up", "title": "投資模擬", "desc": "蒙地卡羅模擬長期投資成長情境"},
-        {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、貝塔值與壓力測試分析"},
-        {"icon": "cpu", "title": "機器學習預測", "desc": "數據驅動的 ETF 漲跌方向預測模型"},
-        {"icon": "layers", "title": "投資組合分析助手（規則式，可選 AI 輔助）", "desc": "以自然語言說明既有量化分析結果；預設為規則式分析，AI 為選用的輔助說明，不產生任何數字"},
-        {"icon": "pie-chart", "title": "投資組合紀錄", "desc": "儲存、比較與管理你的投資組合紀錄"},
+# ── Quantitative Analytics Modules ───────────────────────────────────────────
+_modules_lang = get_language()
+if _modules_lang == "zh-TW":
+    _modules_title = "量化分析模組"
+    _modules_subtitle = "以投資組合建構、風險衡量、模擬與模型驗證為核心的分析流程"
+    modules_featured = {
+        "icon": "target",
+        "title": "投資組合最佳化",
+        "desc": "以等權重、最大夏普、最低波動、目標報酬與風險平價等方法比較風險調整後配置。",
+    }
+    module_items = [
+        {"icon": "shield", "title": "風險分析", "desc": "VaR、CVaR、Beta、最大回撤與壓力測試。"},
+        {"icon": "trending-up", "title": "蒙地卡羅模擬", "desc": "量化長期財富路徑與情境不確定性。"},
+        {"icon": "bar-chart", "title": "ETF 分析", "desc": "比較報酬、波動、相關性與跨市場 ETF 特徵。"},
+        {"icon": "cpu", "title": "機器學習", "desc": "以時間序列切分評估 ETF 漲跌方向模型。"},
+        {"icon": "newspaper", "title": "市場情報", "desc": "整合市場新聞、來源時間與規則式影響摘要。"},
+        {"icon": "layers", "title": "投資組合解讀", "desc": "以規則式方法解讀既有量化結果，並可選擇 AI 輔助敘述。"},
+        {"icon": "pie-chart", "title": "投資組合紀錄", "desc": "儲存與比較分析結果，支援後續檢視與匯出。"},
     ]
 else:
-    _why_title, _why_subtitle = "Why Choose This Platform", "Eight core modules spanning the full journey from analysis to decision."
-    why_featured = {"icon": "target", "title": "Portfolio Optimization", "desc": "Five methods to find the optimal risk-adjusted mix -- the platform's core analysis engine."}
-    why_items = [
-        {"icon": "newspaper", "title": "Market Intelligence", "desc": "Market news and rule-based summaries; the economic calendar does not yet use a verified live provider."},
-        {"icon": "bar-chart", "title": "ETF Analysis", "desc": "Cross-market ETF price, return, and risk analysis."},
-        {"icon": "trending-up", "title": "Investment Simulator", "desc": "Monte Carlo projections for long-term growth."},
-        {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, CVaR, Beta, and stress-test scenarios."},
-        {"icon": "cpu", "title": "Machine Learning Forecast", "desc": "Data-driven ETF direction prediction models."},
-        {"icon": "layers", "title": "Portfolio Analyst (rule-based, optional AI assistance)", "desc": "Explains existing quantitative results in plain language; rule-based by default, with optional AI-assisted explanation -- it never generates the numbers."},
-        {"icon": "pie-chart", "title": "Portfolio History", "desc": "Save, compare, and manage your portfolio records."},
+    _modules_title = "Quantitative Analytics Modules"
+    _modules_subtitle = "Portfolio construction, risk measurement, simulation, and model validation in one analytical workflow."
+    modules_featured = {
+        "icon": "target",
+        "title": "Portfolio Optimization",
+        "desc": "Compare Equal Weight, Maximum Sharpe, Minimum Volatility, Target Return, and Risk Parity allocations.",
+    }
+    module_items = [
+        {"icon": "shield", "title": "Risk Analytics", "desc": "VaR, CVaR, Beta, maximum drawdown, and stress testing."},
+        {"icon": "trending-up", "title": "Monte Carlo Simulation", "desc": "Quantify long-horizon wealth paths and scenario uncertainty."},
+        {"icon": "bar-chart", "title": "ETF Analysis", "desc": "Compare return, volatility, correlation, and cross-market ETF characteristics."},
+        {"icon": "cpu", "title": "Machine Learning", "desc": "Evaluate ETF direction models with time-aware validation."},
+        {"icon": "newspaper", "title": "Market Intelligence", "desc": "Aggregate market news with source timestamps and rule-based impact summaries."},
+        {"icon": "layers", "title": "Portfolio Interpretation", "desc": "Explain computed quantitative results with rule-based logic and optional AI-assisted narrative."},
+        {"icon": "pie-chart", "title": "Portfolio History", "desc": "Save and compare analytical outputs for later review and export."},
     ]
-section_header(_why_title, _why_subtitle, anchor_id="why-choose-anchor")
-capability_hierarchy_grid(why_featured, why_items)
 
-# ── How It Works -- a compact process strip, not a boxed-card band (Issue
-# #37): no section_surface() wrapper (that bordered/lifted-background band
-# plus five 90px boxed steps read as one oversized slab), just the title/
-# subtitle followed by process_flow()'s single-line numbered pill row so the
-# whole section stays visually subordinate to "Why Choose" above it. ────────
-section_header(t("home_how_it_works_title"), t("home_how_it_works_subtitle"))
-_how_it_works_steps = (
-    ["選 ETF", "分析績效", "最佳化", "市場分析", "做出決策"]
-    if get_language() == "zh-TW" else
-    ["Select ETFs", "Analyze", "Optimize", "Market Analysis", "Decide"]
-)
-process_flow(_how_it_works_steps)
+section_header(_modules_title, _modules_subtitle, anchor_id="analytics-modules-anchor")
+capability_hierarchy_grid(modules_featured, module_items)
 
-# ── Who Is This Platform For -- lightweight persona row, not full feature
-# cards (Issue #31 item 3). ──────────────────────────────────────────────────
-section_header(t("home_target_users_title"), t("home_target_users_subtitle"))
-persona_row([
-    {"icon": "search", "title": t("persona_beginner_title"), "desc": t("persona_beginner_desc")},
-    {"icon": "shield", "title": t("persona_long_term_title"), "desc": t("persona_long_term_desc")},
-    {"icon": "book", "title": t("persona_student_title"), "desc": t("persona_student_desc")},
-])
+# ── Analytical Workflow ──────────────────────────────────────────────────────
+if get_language() == "zh-TW":
+    _workflow_title = "分析流程"
+    _workflow_subtitle = "從資料與假設，到估計、最佳化、風險衡量與驗證"
+    _workflow_steps = ["資料與假設", "報酬／風險估計", "投資組合建構", "風險評估", "模型驗證"]
+else:
+    _workflow_title = "Analytical Workflow"
+    _workflow_subtitle = "From data and assumptions to estimation, portfolio construction, risk evaluation, and validation."
+    _workflow_steps = ["Data & Assumptions", "Estimate", "Construct", "Evaluate Risk", "Validate"]
 
-# ── Common Investment Questions -- compact accordion/expander FAQ, not six
-# identical blue boxes (Issue #31 item 3). Wrapped in a section surface for
-# rhythm, alternating with the plain-background Who It's For above it. ──────
-with section_surface():
-    section_header(t("home_problem_title"))
-    faq_accordion([(t(f"problem_q{i}"), t(f"problem_a{i}")) for i in range(1, 7)])
-    st.caption(t("home_problem_conclusion"))
+section_header(_workflow_title, _workflow_subtitle)
+process_flow(_workflow_steps)
+
+# ── Validation & Methodology ─────────────────────────────────────────────────
+_validation_lang = get_language()
+if _validation_lang == "zh-TW":
+    _validation_title = "驗證與方法"
+    _validation_subtitle = "將分析結果與模型假設、抽樣不確定性及樣本外表現分開檢視"
+    validation_featured = {
+        "icon": "target",
+        "title": "模型驗證",
+        "desc": "使用 walk-forward／時間序列切分與樣本外指標評估預測模型，避免只呈現訓練期結果。",
+    }
+    validation_items = [
+        {"icon": "activity", "title": "Bootstrap 不確定性", "desc": "以重抽樣呈現估計值的穩定性與不確定性。"},
+        {"icon": "shield", "title": "壓力測試", "desc": "在不利市場情境下檢查投資組合的下檔風險。"},
+        {"icon": "layers", "title": "資料來源揭露", "desc": "區分即時資料、示範資料與資料來源的 as-of 資訊。"},
+        {"icon": "book", "title": "方法限制", "desc": "明確揭露預期報酬、共變異數與模型假設的限制。"},
+    ]
+else:
+    _validation_title = "Validation & Methodology"
+    _validation_subtitle = "Separate analytical outputs from model assumptions, sampling uncertainty, and out-of-sample performance."
+    validation_featured = {
+        "icon": "target",
+        "title": "Model Validation",
+        "desc": "Use walk-forward/time-series splits and out-of-sample metrics so predictive results are not judged only in-sample.",
+    }
+    validation_items = [
+        {"icon": "activity", "title": "Bootstrap Uncertainty", "desc": "Use resampling to assess the stability and uncertainty of estimates."},
+        {"icon": "shield", "title": "Stress Testing", "desc": "Evaluate downside exposure under adverse market scenarios."},
+        {"icon": "layers", "title": "Data Provenance", "desc": "Distinguish live data, demonstration fallbacks, and source as-of information."},
+        {"icon": "book", "title": "Method Limitations", "desc": "Document assumptions in expected returns, covariance estimation, and predictive models."},
+    ]
+
+section_header(_validation_title, _validation_subtitle)
+capability_hierarchy_grid(validation_featured, validation_items)
 
 # ── Technology Stack (low-key pills near the footer, Issue #31 item 7) +
 # Footer. "Start Analysis" appears exactly once on Home, in the hero --
@@ -328,8 +331,8 @@ tech_stack_strip(
 disclaimer_box()
 render_footer()
 _footer_credit = (
-    "由 Hidey 打造 · NTUB · Version 1.0 · 2026" if _cta_lang == "zh-TW"
-    else "Built by Hidey · NTUB · Version 1.0 · 2026"
+    "由 TZU-HSIN TSENG 開發 · NTUB · 2026" if _cta_lang == "zh-TW"
+    else "Developed by TZU-HSIN TSENG · NTUB · 2026"
 )
 st.markdown(
     f'<div style="text-align:center;color:var(--text-muted);font-size:11px;margin-top:6px;">{_footer_credit}</div>',
