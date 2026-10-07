@@ -396,3 +396,54 @@ def test_cross_page_cached_helper_returns_one_consistent_rate_object(monkeypatch
     b = rf_mod.get_cached_risk_free_rate()
     assert a == b
     assert a["source"] == "FRED" and a["series_id"] == "DGS3MO"
+
+
+FAKE_HISTORICAL_CSV = (
+    "DATE,DGS3MO\n"
+    "2020-01-02,1.55\n"
+    "2020-01-03,.\n"
+    "2020-01-06,1.54\n"
+    "2020-01-07,1.52\n"
+)
+
+
+def test_parse_fred_history_returns_decimal_rate_series():
+    series = rf_mod._parse_fred_history(FAKE_HISTORICAL_CSV)
+    assert list(series.index.strftime("%Y-%m-%d")) == [
+        "2020-01-02", "2020-01-06", "2020-01-07"
+    ]
+    assert series.iloc[0] == pytest.approx(0.0155)
+    assert series.iloc[-1] == pytest.approx(0.0152)
+
+
+def test_get_historical_risk_free_rates_uses_mocked_fred_history(monkeypatch):
+    monkeypatch.setattr(
+        rf_mod, "_http_get_fred_history_csv",
+        lambda start_date, end_date, timeout=15.0: FAKE_HISTORICAL_CSV,
+    )
+    result = rf_mod.get_historical_risk_free_rates("2020-01-01", "2020-01-31")
+    assert result["status"] == "live_history"
+    assert result["source"] == "FRED"
+    assert result["series_id"] == "DGS3MO"
+    assert result["start_date"] == "2020-01-02"
+    assert result["end_date"] == "2020-01-07"
+    assert len(result["series"]) == 3
+
+
+def test_historical_fred_url_is_bounded_by_requested_dates(monkeypatch):
+    captured = {}
+
+    class _FakeResponse:
+        status_code = 200
+        text = FAKE_HISTORICAL_CSV
+        def raise_for_status(self):
+            return None
+
+    def _capture_get(url, timeout=None, headers=None):
+        captured["url"] = url
+        return _FakeResponse()
+
+    monkeypatch.setattr(rf_mod.requests, "get", _capture_get)
+    rf_mod._http_get_fred_history_csv("2020-01-01", "2020-02-01")
+    assert "cosd=2020-01-01" in captured["url"]
+    assert "coed=2020-02-01" in captured["url"]
