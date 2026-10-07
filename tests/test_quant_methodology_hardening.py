@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from src.backtesting import walk_forward_backtest
-from src.machine_learning import time_series_split
+from src.machine_learning import prepare_ml_dataset, time_series_split
 from src.portfolio_optimizer import monte_carlo_simulation, run_optimization
 from src.portfolio_statistics import aligned_returns, estimate_covariance
 from src.simulator import simulate_investment
@@ -99,6 +99,15 @@ def test_walk_forward_transaction_cost_reduces_terminal_value():
     )["history"]
     assert costly["Portfolio Value"].iloc[-1] < free["Portfolio Value"].iloc[-1]
 
+
+
+def test_ml_dataset_drops_rows_without_future_label():
+    idx = pd.bdate_range("2023-01-02", periods=220)
+    prices = pd.Series(np.linspace(100.0, 130.0, len(idx)), index=idx)
+    X, y, used_index = prepare_ml_dataset(prices, lookahead=5)
+    assert X is not None
+    assert used_index.max() <= idx[-6]
+    assert y.notna().all()
 
 def test_ml_holdout_embargo_removes_lookahead_rows():
     idx = pd.bdate_range("2024-01-01", periods=100)
