@@ -764,13 +764,13 @@ TRANSLATIONS = {
         "opt_methodology_short_note_on": "，允許放空（對稱區間）",
         "opt_methodology_short_note_off": "",
         "opt_methodology_backtest_label": "回測類型",
-        "opt_methodology_backtest_value": "固定配置歷史回測",
+        "opt_methodology_backtest_value": "Walk-Forward 樣本外回測",
         # Localized sentence-ending punctuation appended directly after
         # opt_methodology_backtest_value -- kept as its own key (not
         # hardcoded inline) so a Chinese label is never followed by a
         # half-width English period (Issue #50).
         "opt_methodology_backtest_sep": "。",
-        "opt_methodology_backtest_desc": "系統將「目前這次最佳化」產生的單一權重組合，套用於整段歷史價格區間以計算假設性價值路徑。這並非逐步向前（walk-forward）回測——權重從未依各歷史時點當時可得的資料重新最佳化，因此並不代表這個策略在實際時間中會如何被選擇與再平衡。",
+        "opt_methodology_backtest_desc": "使用過去 3 年資料估計權重，每季重新最佳化並持有至下一季；各持有期只使用起始日前可取得的資料。權重在再平衡間自然漂移，後續再平衡以 10 bps × 單邊 turnover 計入交易成本。",
         "opt_methodology_rfr_label": "無風險利率假設",
         "opt_methodology_rfr_value": "目前無風險利率假設為 {provenance}。滑桿預設值取自即時 FRED DGS3MO 三個月期公債殖利率；若無法取得即時資料，則改用 Yahoo Finance ^IRX 次要代理指標，再無法取得時才改用備用預設值並明確標示為備用值。此利率用於上方 KPI 卡片顯示的夏普比率計算，以及「最大夏普比率」方法的最佳化目標函數；對於等權重配置、最低波動率、風險平價與目標報酬率等其餘方法，其最佳化目標函數本身並不使用這項假設。使用者仍可自行調整此數值。",
         "opt_demo_portfolio_caption": "跨資產示範組合：美股（VOO）、國際股票（VXUS）、美國綜合債券（BND）、黃金（GLD）與長天期美國公債（TLT），刻意涵蓋五種不同資產類別以示範跨資產分散效果，並非投資建議。",
@@ -2546,9 +2546,9 @@ TRANSLATIONS = {
         "opt_methodology_short_note_on": ", short selling allowed (symmetric bounds)",
         "opt_methodology_short_note_off": "",
         "opt_methodology_backtest_label": "Backtest Type",
-        "opt_methodology_backtest_value": "Fixed-Allocation Historical Backtest",
+        "opt_methodology_backtest_value": "Walk-Forward Out-of-Sample Backtest",
         "opt_methodology_backtest_sep": ". ",
-        "opt_methodology_backtest_desc": "The CURRENT optimized weights are applied unchanged across the entire historical window shown. This is NOT a walk-forward backtest -- weights are never re-optimized using only data available as of each historical date, so it does not reflect how the strategy would actually have been selected and rebalanced in real time.",
+        "opt_methodology_backtest_desc": "Weights are estimated from the trailing 3 years, re-optimized quarterly, and held into the next period using only information available before that holding period. Weights drift between rebalances; subsequent rebalances charge 10 bps times one-way turnover.",
         "opt_methodology_rfr_label": "Risk-Free Rate Assumption",
         "opt_methodology_rfr_value": "The current risk-free rate assumption is {provenance}. The slider defaults to the latest live FRED DGS3MO (3-Month Treasury) yield when available; if a live observation cannot be fetched, it falls back to a secondary Yahoo Finance ^IRX proxy, and only then to a disclosed default value. It is used in the Sharpe ratio shown in the KPI cards above and in the Maximum Sharpe Ratio method's optimization objective; the optimization objective for Equal Weight, Minimum Volatility, Risk Parity, and Target Return does not use this assumption. You can still override this value manually.",
         "opt_demo_portfolio_caption": "Cross-asset demonstration portfolio: US equities (VOO), international equities (VXUS), US aggregate bonds (BND), gold (GLD), and long-term US Treasuries (TLT) -- five distinct asset classes chosen to demonstrate diversification mechanics across asset classes; this is not investment advice.",
