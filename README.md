@@ -1,5 +1,7 @@
 # AI ETF Portfolio Optimizer
 
+[![Tests](https://github.com/Z109534233/AI-ETF-Portfolio-Optimizer/actions/workflows/tests.yml/badge.svg)](https://github.com/Z109534233/AI-ETF-Portfolio-Optimizer/actions/workflows/tests.yml)
+
 **Quantitative ETF portfolio analytics, optimization, risk validation, simulation, and model evaluation in one Streamlit dashboard.**
 
 [Live Demo](https://ai-etf-portfolio-optimizer.onrender.com) · [Source Code](https://github.com/Z109534233/AI-ETF-Portfolio-Optimizer) · MIT License
@@ -23,10 +25,11 @@ The application supports Taiwan, U.S., and U.K. ETF workflows and provides a bil
 If you are reviewing this project for a technical or academic portfolio, the fastest path is:
 
 1. Open **Portfolio Optimizer** and run a Maximum Sharpe portfolio.
-2. Inspect **Bootstrap Weight Stability** to see how allocation weights change under joint historical resampling.
-3. Open **Risk Analytics** for historical VaR/CVaR, drawdown, stress testing, and rolling VaR backtesting.
-4. Open **Machine Learning** to inspect chronological holdout results and expanding-window walk-forward validation.
-5. Open **Investment Simulator / Goal Planner** to compare deterministic assumptions with Monte Carlo outcome distributions.
+2. Open **Backtest & Risk** to compare the strategy with Equal Weight and Minimum Volatility using a **3-year trailing / quarterly walk-forward out-of-sample backtest with turnover-based transaction costs**.
+3. Inspect **Bootstrap Weight Stability** to see how allocation weights change under joint historical resampling.
+4. Open **Risk Analytics** for historical VaR/CVaR, drawdown, stress testing, and rolling VaR backtesting.
+5. Open **Machine Learning** to inspect chronological holdout results, embargo gaps, and expanding-window validation.
+6. Open **Investment Simulator / Goal Planner** to compare deterministic assumptions with Monte Carlo outcome distributions.
 
 **Live dashboard:** https://ai-etf-portfolio-optimizer.onrender.com
 
@@ -44,9 +47,23 @@ The optimizer currently supports:
 - Target Return
 - Risk Parity
 
-For the mean-variance methods, historical daily arithmetic returns are annualized and used with an annualized sample covariance matrix. The dashboard discloses the active assumptions, constraints, historical window, risk-free-rate source, and numerical diagnostics instead of hiding them behind the final weights.
+For the mean-variance methods, expected returns and covariance are estimated from the **same common-date observation panel**. This avoids treating one market's holiday as another asset's artificial 0% return and prevents expected-return / covariance sample drift in mixed-market portfolios. The default covariance estimator is **Ledoit-Wolf shrinkage**, which is more stable than an unregularized sample covariance matrix when assets are correlated or the sample is limited.
 
-Mixed-market portfolios are converted to a selected base currency before returns and covariance are calculated.
+Mixed-market portfolios are converted to a selected base currency before the common-date return panel is constructed. The dashboard discloses the active assumptions, constraints, historical window, risk-free-rate source, covariance estimator, and numerical diagnostics instead of hiding them behind the final weights.
+
+### Walk-forward out-of-sample backtest
+
+The strategy-evaluation chart no longer applies full-sample optimized weights back onto the same history. It now uses a rolling out-of-sample procedure:
+
+- use the trailing **3 years** of data to estimate portfolio weights;
+- rebalance every **3 months**;
+- hold the resulting weights over the next period without daily reset;
+- allow weights to drift between rebalances;
+- charge **10 bps × one-way turnover** at each subsequent rebalance;
+- compare the current strategy against Equal Weight, Maximum Sharpe, and Minimum Volatility where applicable;
+- surface optimizer failures instead of silently relabeling a fallback portfolio.
+
+The first allocation is not charged because the transaction-cost comparison focuses on rebalancing turnover.
 
 ### Bootstrap weight stability
 
@@ -99,7 +116,7 @@ The ML page provides an educational ETF return-direction classification workflow
 
 - Logistic Regression;
 - Random Forest;
-- chronological train/test splitting;
+- chronological train/test splitting with an **embargo gap equal to the forward-label horizon**;
 - Accuracy, Precision, Recall, F1, ROC AUC, and confusion matrix;
 - a training-set majority-class baseline;
 - **expanding-window walk-forward validation** inside the pre-holdout training period.
@@ -113,6 +130,8 @@ The final holdout set is kept separate from the walk-forward folds to reduce lea
 Several design choices were added specifically to reduce misleading outputs:
 
 - **Risk-free rate provenance:** FRED DGS3MO is the primary source, Yahoo Finance `^IRX` is a clearly labeled secondary live proxy, and a fixed fallback is used only if both live sources fail.
+- **Aligned estimation sample:** every selected asset uses the same observed dates for return and covariance estimation.
+- **Shrinkage covariance:** Ledoit-Wolf is the default covariance estimator for portfolio construction and the efficient frontier.
 - **Covariance diagnostics:** rank, condition number, and average pairwise correlation are surfaced before interpreting concentrated optimizer results.
 - **No fabricated live holdings prices:** cross-page analysis from guest holdings is disabled if a required live price cannot be obtained.
 - **Guest-session isolation:** public holdings and watchlist entries are stored only in the current Streamlit session and are not shared between visitors.
@@ -126,7 +145,7 @@ Several design choices were added specifically to reduce misleading outputs:
 | Module | Purpose |
 |---|---|
 | **ETF Analysis** | Historical performance, distributions, rolling metrics, correlations, technical indicators |
-| **Portfolio Optimizer** | Mean-variance optimization, Risk Parity, efficient frontier, backtesting, bootstrap weight stability |
+| **Portfolio Optimizer** | Mean-variance optimization, Risk Parity, Ledoit-Wolf covariance, efficient frontier, walk-forward OOS backtesting, bootstrap weight stability |
 | **Investment Simulator** | Monte Carlo investment projection and long-horizon scenario analysis |
 | **Risk Analytics** | VaR/CVaR, drawdown, benchmark metrics, stress tests, VaR exception backtesting |
 | **Machine Learning** | Direction classification, holdout testing, baseline comparison, walk-forward validation |
@@ -253,6 +272,7 @@ This project intentionally surfaces limitations rather than treating model outpu
 Key limitations include:
 
 - historical mean returns are noisy estimates and can produce unstable optimizer weights;
+- walk-forward results remain sample- and specification-dependent and transaction costs are modeled as a simplified turnover charge rather than a full execution model;
 - bootstrap dispersion measures sensitivity to the historical sample, not future return probabilities;
 - Monte Carlo results depend on the stated return, volatility, fee, inflation, and distribution assumptions;
 - historical VaR can fail during regime shifts and tail events;
