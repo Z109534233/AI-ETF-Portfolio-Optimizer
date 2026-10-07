@@ -1767,41 +1767,88 @@ def test_ph_g_language_switch_preserves_portfolio():
 
 # ── PH-H: global market/ETF state unchanged through the handoff ─────────
 def test_ph_h_market_state_unchanged_through_handoff():
-    at = _setup_ef_page(method="Minimum Volatility", lang="en")
-    region_w = next((w for w in at.multiselect if w.key == "selected_regions"), None)
-    region_w.set_value(["Taiwan"])
-    at.run()
-    run_btn = _find_run_button(at)
-    if run_btn:
-        run_btn.click()
-        at.run()
-    exc = at.exception[0] if at.exception else None
-    check("PH-H.optimizer_no_exception", exc is None, str(exc))
-    if exc:
-        return
+    """Taiwan handoff is deterministic and never depends on live market/FX APIs."""
+    import src.data_loader as data_loader_mod
+    import src.fx as fx_mod
+
+    original_download = data_loader_mod.download_etf_data
+    original_fx = fx_mod.convert_prices_to_base_currency
+
+    def _fake_tw_download(tickers, start_date, end_date, price_field="Close"):
+        dates = pd.bdate_range("2023-01-02", periods=300)
+        data = {}
+        for i, ticker in enumerate(tickers):
+            rng = np.random.default_rng(700 + i)
+            data[ticker] = 100 * np.cumprod(1 + rng.normal(0.0003, 0.01, len(dates)))
+        return pd.DataFrame(data, index=dates)
+
+    def _fake_fx(prices_df, ticker_currency_map, base_currency, start_date, end_date):
+        return {
+            "converted_prices": prices_df.copy(),
+            "unavailable_tickers": [],
+            "fx_source": "TEST-FX",
+            "conversion_method": "TEST-METHOD",
+            "base_currency": base_currency,
+            "currency_adjusted": True,
+        }
+
+    data_loader_mod.download_etf_data = _fake_tw_download
+    fx_mod.convert_prices_to_base_currency = _fake_fx
     try:
-        cp = at.session_state["current_portfolio"]
-    except Exception:
-        cp = None
-    check("PH-H.current_portfolio_built", cp is not None)
-    if cp is None:
-        return
-    check("PH-H.market_field_is_taiwan", cp["market"] == "Taiwan", cp["market"])
+        at = _apptest_from_file("pages/2_Portfolio_Optimizer.py", default_timeout=180)
+        at.session_state["language"] = "en"
+        at.run()
 
-    # Seed Risk Analytics exactly as st.switch_page would leave the
-    # session -- current_portfolio AND the shared selected_region key.
-    risk_at = _run_receiving_page(
-        "pages/4_Risk_Analytics.py", cp, extra_session={"selected_region": "Taiwan"},
-    )
-    exc2 = risk_at.exception[0] if risk_at.exception else None
-    check("PH-H.risk_analytics_no_exception", exc2 is None, str(exc2))
-    if exc2:
-        return
-    region_w2 = next((w for w in risk_at.selectbox if w.key == "selected_region"), None)
-    check("PH-H.risk_analytics_region_still_taiwan",
-          region_w2 is not None and region_w2.value == "Taiwan",
-          str(region_w2.value if region_w2 else None))
+        region_w = next(w for w in at.multiselect if w.key == "selected_regions")
+        region_w.set_value(["Taiwan"])
+        at.run()
 
+        ms = next(w for w in at.multiselect if w.key and w.key.startswith("selected_etfs_"))
+        by_ticker = {opt.split(" — ")[0]: opt for opt in ms.options}
+        chosen = [by_ticker[tk] for tk in ("0050", "006208") if tk in by_ticker]
+        check("PH-H.tw_etfs_available", len(chosen) == 2, str(list(by_ticker)[:10]))
+        if len(chosen) != 2:
+            return
+        ms.set_value(chosen)
+        at.run()
+
+        method_w = next(w for w in at.selectbox if w.key == "optimization_method")
+        method_w.set_value("Minimum Volatility")
+        at.run()
+
+        run_btn = _find_run_button(at)
+        if run_btn:
+            run_btn.click()
+            at.run()
+        exc = at.exception[0] if at.exception else None
+        check("PH-H.optimizer_no_exception", exc is None, str(exc))
+        if exc:
+            return
+        try:
+            cp = at.session_state["current_portfolio"]
+        except Exception:
+            cp = None
+        check("PH-H.current_portfolio_built", cp is not None)
+        if cp is None:
+            return
+        check("PH-H.market_field_is_taiwan", cp["market"] == "Taiwan", cp["market"])
+
+        risk_at = _run_receiving_page(
+            "pages/4_Risk_Analytics.py", cp, extra_session={"selected_region": "Taiwan"},
+        )
+        exc2 = risk_at.exception[0] if risk_at.exception else None
+        check("PH-H.risk_analytics_no_exception", exc2 is None, str(exc2))
+        if exc2:
+            return
+        region_w2 = next((w for w in risk_at.selectbox if w.key == "selected_region"), None)
+        check(
+            "PH-H.risk_analytics_region_still_taiwan",
+            region_w2 is not None and region_w2.value == "Taiwan",
+            str(region_w2.value if region_w2 else None),
+        )
+    finally:
+        data_loader_mod.download_etf_data = original_download
+        fx_mod.convert_prices_to_base_currency = original_fx
 
 # ── PH-I: no raw i18n keys in the handoff preview or empty state, both languages ──
 def test_ph_i_handoff_no_raw_keys():
