@@ -57,12 +57,14 @@ def test_methodology_metadata_matches_actual_implementation():
     assert "252" in m["expected_return"]["annualization"]
     assert "pct_change" in m["expected_return"]["return_type"] or "simple" in m["expected_return"]["return_type"]
     assert "252" in m["covariance"]["annualization"]
-    assert "cov()" in m["covariance"]["estimator"]
-    assert "Ledoit-Wolf" in m["covariance"]["shrinkage"] and "none" in m["covariance"]["shrinkage"].lower()
+    assert "Ledoit-Wolf" in m["covariance"]["estimator"]
+    assert "Ledoit-Wolf" in m["covariance"]["shrinkage"]
+    assert "same" in m["covariance"]["alignment"].lower()
     assert "SLSQP" in m["max_sharpe"]["solver"]
     assert "sum(weights) == 1" in m["max_sharpe"]["constraints"]
-    assert m["backtest_label"]["type"] == "Fixed-Allocation Historical Backtest"
-    assert "walk-forward" in m["backtest_label"]["explanation"]
+    assert m["backtest_label"]["type"] == "Walk-Forward Out-of-Sample Backtest"
+    assert "trailing three-year" in m["backtest_label"]["explanation"]
+    assert "10 bps" in m["backtest_label"]["explanation"]
 
 
 # ── validate_optimization_result() ───────────────────────────────────────
