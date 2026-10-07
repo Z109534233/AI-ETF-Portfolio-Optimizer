@@ -13,7 +13,7 @@ from src.financial_metrics import (
     covariance_diagnostics, covariance_diagnostics_level,
 )
 from src.methodology import validate_optimization_result
-from src.portfolio_statistics import estimate_moments, aligned_returns, common_observation_prices
+from src.portfolio_statistics import estimate_moments, estimate_covariance, aligned_returns, common_observation_prices
 
 
 def equal_weight(tickers: list) -> np.ndarray:
@@ -649,6 +649,7 @@ def bootstrap_max_sharpe_weight_stability(
     allow_short: bool = False,
     n_bootstrap: int = DEFAULT_N_BOOTSTRAP,
     seed: int = DEFAULT_BOOTSTRAP_SEED,
+    covariance_estimator: str = "Ledoit-Wolf",
 ) -> dict:
     """Bootstrap sensitivity analysis of Maximum Sharpe Ratio weights
     (Issue #50), motivated by Michaud (1989), "The Markowitz Optimization
@@ -668,7 +669,7 @@ def bootstrap_max_sharpe_weight_stability(
     -- so same-day cross-asset dependence (the correlation structure) is
     preserved in every resample. For each resample, mean daily returns and
     annualized covariance are computed with the SAME conventions as
-    run_optimization() (arithmetic mean; sample covariance x252; a 1e-8
+    run_optimization() (arithmetic mean; aligned estimator choice; a 1e-8
     diagonal ridge for numerical solvability), and the SAME
     optimize_max_sharpe() objective is re-solved with the current
     `risk_free_rate`/`min_weight`/`max_weight`/`allow_short`.
@@ -704,8 +705,11 @@ def bootstrap_max_sharpe_weight_stability(
         row_idx = rng.integers(0, n_days, size=n_days)
         sample = returns_values[row_idx, :]
 
-        mean_returns = sample.mean(axis=0)
-        cov = np.atleast_2d(np.cov(sample, rowvar=False)) * 252
+        sample_df = pd.DataFrame(sample, columns=tickers)
+        mean_returns = sample_df.mean().to_numpy(dtype=float)
+        cov = estimate_covariance(
+            sample_df, estimator=covariance_estimator
+        ).to_numpy(dtype=float, copy=True)
         if cov.shape != (n_assets, n_assets):
             continue
         cov = cov + np.eye(n_assets) * 1e-8
@@ -739,6 +743,7 @@ def bootstrap_max_sharpe_weight_stability(
         "successful": successful,
         "seed": seed,
         "n_bootstrap": n_bootstrap,
+        "covariance_estimator": covariance_estimator,
         "weights_by_ticker": weights_by_ticker,
         "summary": summary,
     }
