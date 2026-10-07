@@ -64,14 +64,19 @@ def risk_free_rate_asof(series: pd.Series, date, fallback: float) -> tuple[float
     """Return the latest annual risk-free rate observed on/before date.
 
     The boolean indicates whether a historical observation was available.
+    A pre-normalized DatetimeIndex Series is handled without copying/sorting
+    on every holding-day lookup.
     """
-    series = _normalise_risk_free_series(series)
+    if series is None or not isinstance(series, pd.Series) or series.empty:
+        return float(fallback), False
+    if not isinstance(series.index, pd.DatetimeIndex) or not series.index.is_monotonic_increasing:
+        series = _normalise_risk_free_series(series)
     if series.empty:
         return float(fallback), False
-    eligible = series.loc[:pd.Timestamp(date)]
-    if eligible.empty:
+    pos = int(series.index.searchsorted(pd.Timestamp(date), side="right")) - 1
+    if pos < 0:
         return float(fallback), False
-    return float(eligible.iloc[-1]), True
+    return float(series.iloc[pos]), True
 
 
 def historical_excess_sharpe(history: pd.DataFrame,
