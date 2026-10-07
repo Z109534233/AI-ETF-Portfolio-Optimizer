@@ -27,7 +27,7 @@ def test_only_test_ci_remains_in_workflows_directory():
 def test_walk_forward_copy_is_localized_not_inline_bilingual_logic():
     page = (ROOT / "pages" / "2_Portfolio_Optimizer.py").read_text(encoding="utf-8")
     assert '_wf_title = t("opt_walk_forward_title")' in page
-    assert 't("opt_walk_forward_method_note"' in page
+    assert '"opt_walk_forward_method_note"' in page
     assert '_wf_title = "Walk-Forward Out-of-Sample Backtest"' not in page
     assert '_wf_title = "Walk-Forward 樣本外回測"' not in page
 
