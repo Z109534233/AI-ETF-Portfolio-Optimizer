@@ -80,7 +80,9 @@ def test_joint_row_resampling_preserves_cross_asset_relationship(monkeypatch):
         return np.array([1.0 / n] * n), True
 
     monkeypatch.setattr(portfolio_optimizer_mod, "optimize_max_sharpe", _spy_optimize_max_sharpe)
-    bootstrap_max_sharpe_weight_stability(returns_df, n_bootstrap=30, seed=9)
+    bootstrap_max_sharpe_weight_stability(
+        returns_df, n_bootstrap=30, seed=9, covariance_estimator="Sample Covariance"
+    )
 
     assert len(seen_calls) == 30
     # Columns are ordered A, B, C (see _make_correlated_returns) -- B == 2*A
