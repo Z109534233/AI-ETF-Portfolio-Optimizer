@@ -42,6 +42,10 @@ from src.portfolio_optimizer import (
     bootstrap_max_sharpe_weight_stability, bootstrap_boundary_metrics,
     DEFAULT_BOOTSTRAP_SEED, DEFAULT_N_BOOTSTRAP,
 )
+from src.backtesting import (
+    walk_forward_backtest, DEFAULT_TRAIN_YEARS,
+    DEFAULT_REBALANCE_MONTHS, DEFAULT_TRANSACTION_COST_BPS,
+)
 from src.financial_metrics import (
     covariance_matrix, annualized_return, annualized_volatility,
     sharpe_ratio, maximum_drawdown, drawdown_series, portfolio_diagnosis,
@@ -421,7 +425,7 @@ if run_btn:
             st.info(t("opt_common_start_notice", date=common_start.strftime("%Y-%m-%d")))
         raw_prices = raw_prices.loc[(raw_prices.index >= common_start) & (raw_prices.index <= common_end)]
 
-        prices_df = clean_price_data(raw_prices)
+        prices_df = clean_price_data(raw_prices, fill_missing=False)
         prices_df = prices_df[[tk for tk in selected_etfs if tk in prices_df.columns]]
 
         # ── Mixed-Market Currency Conversion (Issue #22 section F) ───────
@@ -476,7 +480,7 @@ if run_btn:
             st.stop()
 
         # ── Validate returns_df ─────────────────────────────────────────
-        returns_df_check = prices_df.pct_change(fill_method=None).dropna(how="all")
+        returns_df_check = prices_df.dropna(how="any").pct_change(fill_method=None).dropna(how="any")
         if returns_df_check.empty or len(returns_df_check) < 10:
             error_state(
                 t("msg_no_price_data_title"),
@@ -643,7 +647,10 @@ _experiment_metadata = {
     "max_weight": max_weight,
     "allow_short": allow_short,
     "expected_return_estimator": "Arithmetic Mean Daily Return (annualized x252)",
-    "covariance_estimator": "Sample covariance (historical, annualized)",
+    "covariance_estimator": result.get("covariance_estimator", "Ledoit-Wolf"),
+    "covariance_estimation_window": f"{result.get('estimation_start', '—')} to {result.get('estimation_end', '—')}",
+    "covariance_estimation_observations": result.get("estimation_observations"),
+    "legacy_covariance_note": "Historical annualized)",
     "strategy": optimization_method,
     "asset_universe": list(weights.keys()),
     "generated_at": st.session_state.get("opt_generated_at"),
