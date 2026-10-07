@@ -305,15 +305,15 @@ else:
     _validation_title = "Validation & Methodology"
     _validation_subtitle = "Separate analytical outputs from model assumptions, sampling uncertainty, and out-of-sample performance."
     validation_featured = {
-        "icon": "check-circle",
+        "icon": "target",
         "title": "Model Validation",
         "desc": "Use walk-forward/time-series splits and out-of-sample metrics so predictive results are not judged only in-sample.",
     }
     validation_items = [
         {"icon": "activity", "title": "Bootstrap Uncertainty", "desc": "Use resampling to assess the stability and uncertainty of estimates."},
         {"icon": "shield", "title": "Stress Testing", "desc": "Evaluate downside exposure under adverse market scenarios."},
-        {"icon": "database", "title": "Data Provenance", "desc": "Distinguish live data, demonstration fallbacks, and source as-of information."},
-        {"icon": "book-open", "title": "Method Limitations", "desc": "Document assumptions in expected returns, covariance estimation, and predictive models."},
+        {"icon": "layers", "title": "Data Provenance", "desc": "Distinguish live data, demonstration fallbacks, and source as-of information."},
+        {"icon": "book", "title": "Method Limitations", "desc": "Document assumptions in expected returns, covariance estimation, and predictive models."},
     ]
 
 section_header(_validation_title, _validation_subtitle)
