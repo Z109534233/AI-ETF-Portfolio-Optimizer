@@ -35,7 +35,7 @@ def prepare_ml_dataset(prices: pd.Series, volume: pd.Series = None,
 
     # Target: next-day direction
     future_return = prices.pct_change(lookahead).shift(-lookahead)
-    labels = (future_return > 0).astype(int)
+    labels = (future_return > 0).where(future_return.notna())
 
     # Align
     combined = features_df.join(labels.rename("Target")).dropna()
