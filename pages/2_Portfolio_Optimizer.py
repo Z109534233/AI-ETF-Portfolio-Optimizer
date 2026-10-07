@@ -1482,24 +1482,37 @@ elif opt_workspace == "Backtest & Risk":
     st.session_state[_btk] = bt_view
 
     if bt_view in ("Historical", "Drawdown"):
-        # Reference-strategy lines are only needed by these two chart
-        # sub-views (not by Diagnosis, not by current_portfolio above) --
-        # computed here rather than unconditionally, and shared with
-        # Allocation > Comparison/Frontier via _compute_reference_strategies()
-        # (Issue #41 item D: no more current-strategy-vs-itself self
-        # comparison when the current method IS Equal Weight -- see
-        # _build_backtest_reference_lines()'s docstring).
-        _bt_reference_results = _compute_reference_strategies()
-        _bt_lines = _build_backtest_reference_lines(_bt_reference_results)
+        _wf_results = _compute_walk_forward_results()
+        _wf_lines = _build_walk_forward_lines(_wf_results)
+        _wf_current = _wf_results.get(optimization_method, {})
+        _wf_current_df = _wf_current.get("history", pd.DataFrame())
+        _wf_summary = _wf_current.get("summary", {})
+
+        if get_language() == "zh-TW":
+            _wf_title = "Walk-Forward 樣本外回測"
+            _wf_method_note = (
+                f"使用過去 {DEFAULT_TRAIN_YEARS} 年資料估計權重，每 {DEFAULT_REBALANCE_MONTHS} 個月重新最佳化；"
+                f"再平衡交易成本為 {DEFAULT_TRANSACTION_COST_BPS:.0f} bps × turnover。"
+                "每一持有期間只使用當時以前可取得的資料，並以 Ledoit-Wolf shrinkage 估計共變異數。"
+            )
+        else:
+            _wf_title = "Walk-Forward Out-of-Sample Backtest"
+            _wf_method_note = (
+                f"Trailing {DEFAULT_TRAIN_YEARS}-year estimation window; re-optimized every "
+                f"{DEFAULT_REBALANCE_MONTHS} months; {DEFAULT_TRANSACTION_COST_BPS:.0f} bps transaction cost × turnover. "
+                "Each holding period uses only information available before it begins, with Ledoit-Wolf shrinkage covariance."
+            )
 
         if bt_view == "Historical":
-            section_header(t("opt_backtest_title"), t("opt_backtest_sub", method=t_opt_method(optimization_method)))
-            st.caption(f"**{t('opt_methodology_backtest_value')}** — {t('opt_methodology_backtest_desc')}")
-            if not backtest_df.empty:
+            section_header(_wf_title, t("opt_backtest_sub", method=t_opt_method(optimization_method)))
+            st.caption(_wf_method_note)
+            if _wf_current_df.empty:
+                st.info(_wf_summary.get("error") or "Walk-forward backtest is unavailable for the selected history.")
+            else:
                 import plotly.graph_objects as go
-                with chart_card(t("opt_backtest_card")):
+                with chart_card(_wf_title):
                     fig_bt = go.Figure()
-                    for _label, _df, _color, _dash, _width in _bt_lines:
+                    for _method, _label, _df, _color, _dash, _width in _wf_lines:
                         if _df.empty:
                             continue
                         _line_style = dict(color=_color, width=_width)
@@ -1508,36 +1521,55 @@ elif opt_workspace == "Backtest & Risk":
                         fig_bt.add_trace(go.Scatter(
                             x=_df.index, y=_df["Portfolio Value"], name=_label, line=dict(**_line_style),
                         ))
-                    fig_bt.update_layout(title=t("chart_portfolio_backtest_comparison"),
-                                          xaxis_title=t("chart_date"), yaxis_title=t("chart_portfolio_value_usd"),
-                                          height=420)
-                    st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True, key="opt_backtest_growth")
-                    chart_caption(t("opt_backtest_chart_caption"))
+                    fig_bt.update_layout(
+                        title=_wf_title, xaxis_title=t("chart_date"),
+                        yaxis_title=t("chart_portfolio_value_usd"), height=420,
+                    )
+                    st.plotly_chart(apply_dark_theme(fig_bt), use_container_width=True, key="opt_walk_forward_growth")
+                    chart_caption(_wf_method_note)
                     st.caption(f"★ {t('opt_current_strategy_label')}")
 
                 bt_metrics = {
-                    t("metric_total_return"): f"{backtest_df['Cumulative Return'].iloc[-1]:.2%}",
-                    t("metric_annualized_return"): f"{annualized_return(backtest_df['Portfolio Value']):.2%}",
-                    t("metric_annualized_volatility"): f"{annualized_volatility(backtest_df['Portfolio Value']):.2%}",
-                    t("metric_sharpe_ratio"): f"{sharpe_ratio(backtest_df['Portfolio Value'], risk_free_rate):.2f}",
-                    t("metric_maximum_drawdown"): f"{maximum_drawdown(backtest_df['Portfolio Value']):.2%}",
-                    t("metric_final_value"): f"${backtest_df['Portfolio Value'].iloc[-1]:,.2f}",
+                    t("metric_total_return"): f"{_wf_current_df['Cumulative Return'].iloc[-1]:.2%}",
+                    t("metric_annualized_return"): f"{annualized_return(_wf_current_df['Portfolio Value']):.2%}",
+                    t("metric_annualized_volatility"): f"{annualized_volatility(_wf_current_df['Portfolio Value']):.2%}",
+                    t("metric_sharpe_ratio"): f"{sharpe_ratio(_wf_current_df['Portfolio Value'], risk_free_rate):.2f}",
+                    t("metric_maximum_drawdown"): f"{maximum_drawdown(_wf_current_df['Portfolio Value']):.2%}",
+                    t("metric_final_value"): f"${_wf_current_df['Portfolio Value'].iloc[-1]:,.2f}",
                 }
                 st.markdown(f"**{t('opt_backtest_summary')}**")
                 cols = st.columns(len(bt_metrics))
                 for i, (k, v) in enumerate(bt_metrics.items()):
                     with cols[i]:
                         st.metric(k, v)
+
+                _turnover = _wf_summary.get("total_turnover", 0.0)
+                _cost_amount = _wf_summary.get("transaction_cost_amount", 0.0)
+                _n_rebalances = _wf_summary.get("n_rebalances", 0)
+                _failures = _wf_summary.get("optimizer_failures", 0)
+                if get_language() == "zh-TW":
+                    st.caption(
+                        f"再平衡 {_n_rebalances} 次｜累積單邊 turnover {_turnover:.2f}｜"
+                        f"估計交易成本 ${_cost_amount:,.2f}｜最佳化失敗 {_failures} 次"
+                    )
+                else:
+                    st.caption(
+                        f"{_n_rebalances} rebalances | cumulative one-way turnover {_turnover:.2f} | "
+                        f"estimated transaction costs ${_cost_amount:,.2f} | optimizer failures {_failures}"
+                    )
                 _backtest_context_text = "; ".join(f"{k}: {v}" for k, v in bt_metrics.items())
                 ai_interpret_button("opt_backtest_ai_interpret", st.session_state, _backtest_context_text)
 
         else:  # Drawdown
-            section_header(t("opt_drawdown_comparison_card"))
-            if not backtest_df.empty:
+            section_header(t("opt_drawdown_comparison_card"), _wf_title)
+            st.caption(_wf_method_note)
+            if _wf_current_df.empty:
+                st.info(_wf_summary.get("error") or "Walk-forward drawdown is unavailable for the selected history.")
+            else:
                 import plotly.graph_objects as go
                 with chart_card(t("opt_drawdown_comparison_card")):
                     fig_dd = go.Figure()
-                    for _label, _df, _color, _dash, _width in _bt_lines:
+                    for _method, _label, _df, _color, _dash, _width in _wf_lines:
                         if _df.empty:
                             continue
                         _dd_series = drawdown_series(_df["Portfolio Value"]) * 100
@@ -1549,23 +1581,25 @@ elif opt_workspace == "Backtest & Risk":
                             x=_dd_series.index, y=_dd_series, fill="tozeroy", name=_label,
                             line=dict(**_line_style), **_fill_kwargs,
                         ))
-                    fig_dd.update_layout(title=t("chart_drawdown_comparison_pct"), xaxis_title=t("chart_date"),
-                                          yaxis_title=t("chart_drawdown_pct"), height=420)
-                    st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True, key="opt_backtest_drawdown")
-                    chart_caption(t("opt_drawdown_chart_caption"))
+                    fig_dd.update_layout(
+                        title=t("chart_drawdown_comparison_pct"), xaxis_title=t("chart_date"),
+                        yaxis_title=t("chart_drawdown_pct"), height=420,
+                    )
+                    st.plotly_chart(apply_dark_theme(fig_dd), use_container_width=True, key="opt_walk_forward_drawdown")
+                    chart_caption(_wf_method_note)
                     st.caption(f"★ {t('opt_current_strategy_label')}")
 
-                _dd_cols = st.columns(len(_bt_lines))
-                _dd_context_parts = []
-                for _dd_col, (_label, _df, _color, _dash, _width) in zip(_dd_cols, _bt_lines):
-                    with _dd_col:
-                        if not _df.empty:
+                _valid_lines = [line for line in _wf_lines if not line[2].empty]
+                if _valid_lines:
+                    _dd_cols = st.columns(len(_valid_lines))
+                    _dd_context_parts = []
+                    for _dd_col, (_method, _label, _df, _color, _dash, _width) in zip(_dd_cols, _valid_lines):
+                        with _dd_col:
                             _mdd_val = maximum_drawdown(_df["Portfolio Value"])
                             st.metric(f"{_label} {t('metric_maximum_drawdown')}", f"{_mdd_val:.2%}")
                             _dd_context_parts.append(f"{_label} {t('metric_maximum_drawdown')}: {_mdd_val:.2%}")
-                _dd_context_text = "; ".join(_dd_context_parts)
-                ai_interpret_button("opt_drawdown_ai_interpret", st.session_state, _dd_context_text)
-
+                    _dd_context_text = "; ".join(_dd_context_parts)
+                    ai_interpret_button("opt_drawdown_ai_interpret", st.session_state, _dd_context_text)
     else:  # Diagnosis (detailed view)
         section_header(t("opt_diagnosis_title"), t("opt_diagnosis_subtitle"))
         st.caption(t("opt_diag_current_strategy", method=t_opt_method(optimization_method)))
