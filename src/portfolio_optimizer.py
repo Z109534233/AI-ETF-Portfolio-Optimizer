@@ -13,6 +13,7 @@ from src.financial_metrics import (
     covariance_diagnostics, covariance_diagnostics_level,
 )
 from src.methodology import validate_optimization_result
+from src.portfolio_statistics import estimate_moments, aligned_returns
 
 
 def equal_weight(tickers: list) -> np.ndarray:
@@ -194,9 +195,12 @@ def optimize_target_return(mean_returns: np.ndarray, cov_matrix: np.ndarray,
     return init_weights, False
 
 
-def optimize_risk_parity(cov_matrix: np.ndarray) -> np.ndarray:
-    """
-    Risk Parity: each asset contributes equally to portfolio risk.
+def optimize_risk_parity(cov_matrix: np.ndarray):
+    """Risk parity allocation with explicit convergence status.
+
+    Returns (weights, success). A failed solve returns equal weights only as
+    a safe numerical fallback; callers must surface success=False instead of
+    labeling the fallback as a genuine Risk Parity solution.
     """
     n = cov_matrix.shape[0]
     init_weights = np.array([1.0 / n] * n)
@@ -212,33 +216,32 @@ def optimize_risk_parity(cov_matrix: np.ndarray) -> np.ndarray:
 
     constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
     bounds = tuple((0.001, 1.0) for _ in range(n))
-
     result = minimize(
-        risk_parity_objective, init_weights,
-        method="SLSQP",
-        bounds=bounds,
-        constraints=constraints,
-        options={"maxiter": 2000, "ftol": 1e-10}
+        risk_parity_objective, init_weights, method="SLSQP",
+        bounds=bounds, constraints=constraints,
+        options={"maxiter": 2000, "ftol": 1e-10},
     )
 
     if result.success:
         weights = np.abs(result.x)
-        return weights / weights.sum()
-    return init_weights
-
+        weights = weights / weights.sum()
+        return _clean_weights(weights, allow_short=False), True
+    return init_weights, False
 
 def monte_carlo_simulation(mean_returns: np.ndarray, cov_matrix: np.ndarray,
                             n_simulations: int = 5000,
-                            risk_free_rate: float = 0.05) -> pd.DataFrame:
+                            risk_free_rate: float = 0.05,
+                            seed: int = 42) -> pd.DataFrame:
     """
     Generate Monte Carlo portfolio simulations.
     Returns DataFrame with columns: Return, Volatility, Sharpe, Weights.
     """
     n_assets = len(mean_returns)
     results = []
+    rng = np.random.default_rng(seed)
 
     for _ in range(n_simulations):
-        weights = np.random.dirichlet(np.ones(n_assets))
+        weights = rng.dirichlet(np.ones(n_assets))
         ret = portfolio_return(weights, mean_returns)
         vol = portfolio_volatility(weights, cov_matrix)
         sharpe = (ret - risk_free_rate) / vol if vol > 0 else 0.0
