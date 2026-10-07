@@ -14,12 +14,14 @@ def _job_block(text: str, name: str, next_name: str | None = None) -> str:
     return text[start:end]
 
 
-def test_entry_uses_trusted_pull_request_target():
+def test_entry_is_manual_dispatch_only_when_reviewer_is_disabled():
     text = ENTRY.read_text(encoding="utf-8")
-    assert "pull_request_target:" in text
-    assert "\n  pull_request:\n" not in text
+    on_block = text[text.index("\non:") : text.index("\nconcurrency:")]
+    assert "workflow_dispatch:" in on_block
+    assert "pull_request_target:" not in on_block
+    assert "\n  pull_request:\n" not in on_block
+    assert "Automatic OpenAI PR review is disabled." in text
     assert "cancel-in-progress: false" in text
-    assert "OWNER" in text and "MEMBER" in text and "COLLABORATOR" in text
 
 
 def test_claude_job_is_toolless_and_read_only():
