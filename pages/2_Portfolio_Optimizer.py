@@ -650,7 +650,6 @@ _experiment_metadata = {
     "covariance_estimator": result.get("covariance_estimator", "Ledoit-Wolf"),
     "covariance_estimation_window": f"{result.get('estimation_start', '—')} to {result.get('estimation_end', '—')}",
     "covariance_estimation_observations": result.get("estimation_observations"),
-    "legacy_covariance_note": "Historical annualized)",
     "strategy": optimization_method,
     "asset_universe": list(weights.keys()),
     "generated_at": st.session_state.get("opt_generated_at"),
