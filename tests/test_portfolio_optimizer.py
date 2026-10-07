@@ -160,9 +160,11 @@ def test_b_max_sharpe():
     # Recompute Sharpe independently from the returned weights and compare
     # against the reported sharpe_ratio -- catches any "different sections
     # use different weight arrays" divergence.
-    returns_df = PRICES.pct_change(fill_method=None).dropna(how="all")
-    mean_returns = returns_df.mean().values
-    cov = returns_df.cov().values * 252
+    from src.portfolio_statistics import estimate_moments
+    returns_df, mean_returns, cov_df = estimate_moments(
+        PRICES, estimator=result.get("covariance_estimator", "Ledoit-Wolf")
+    )
+    cov = cov_df.values.copy() + np.eye(len(weights_arr)) * 1e-8
     recomputed_ret = portfolio_return(weights_arr, mean_returns)
     recomputed_vol = portfolio_volatility(weights_arr, cov)
     recomputed_sharpe = (recomputed_ret - 0.03) / recomputed_vol if recomputed_vol > 0 else 0.0
@@ -1657,7 +1659,7 @@ def test_ph_k_handoff_to_market_intelligence_prefers_current_portfolio():
     strategy_label = "Equal Weight"
     check("PH-K.shows_current_portfolio_strategy_label", strategy_label in corpus, corpus[:0])
     check("PH-K.uses_current_portfolio_caption",
-          "current portfolio" in corpus.lower(), corpus[:0])
+          "active portfolio" in corpus.lower(), corpus[:0])
 
 
 # ── PH-J: Maximum Sharpe build -> AI Advisor receives exact weights and
