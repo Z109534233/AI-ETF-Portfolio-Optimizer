@@ -50,5 +50,6 @@ def _block_external_network_by_default(monkeypatch):
     try:
         import yfinance as yf
         monkeypatch.setattr(yf, "download", _blocked)
+        monkeypatch.setattr(yf, "Ticker", _blocked)
     except ImportError:
         pass

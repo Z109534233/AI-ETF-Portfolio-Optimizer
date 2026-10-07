@@ -31,4 +31,4 @@ jobs:
       - name: Run test suite
         env:
           PYTHONHASHSEED: '0'
-        run: pytest -q
+        run: pytest -q --durations=15
