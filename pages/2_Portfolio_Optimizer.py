@@ -65,7 +65,10 @@ from src.utils import (
     weights_to_dataframe, get_date_range_defaults, metric_card_html
 )
 from src.demo_portfolio import DIVERSIFIED_DEMO_TICKERS
-from src.risk_free_rate import get_cached_risk_free_rate, format_rate_provenance, is_manual_override
+from src.risk_free_rate import (
+    get_cached_risk_free_rate, get_cached_historical_risk_free_rates,
+    format_rate_provenance, is_manual_override,
+)
 from src.ui import (
     render_sidebar_nav, render_sidebar_footer, section_header,
     chart_card, render_footer, error_state,
@@ -303,7 +306,9 @@ with st.expander(t("opt_edit_settings_title"), expanded=(st.session_state.get("o
     # ── Historical & Model Settings (collapsed by default) ───────────────
     with st.expander(t("opt_historical_model_settings_title"), expanded=False):
         st.markdown(f"**{t('opt_historical_data_range_label')}**")
-        default_start, default_end = get_date_range_defaults()
+        # Ten years leaves a materially longer out-of-sample period after
+        # the three-year rolling estimation window used by walk-forward.
+        default_start, default_end = get_date_range_defaults(years=10)
         _sk, _sv = _shadow_default("opt_start_date", default_start)
         start_date = st.date_input(t("field_start_date"), value=_sv, key="opt_start_date")
         st.session_state[_sk] = start_date
@@ -1106,14 +1111,19 @@ def _build_backtest_reference_lines(reference_results: dict) -> list:
 
 # ── Walk-forward out-of-sample comparison ───────────────────────────────────
 def _compute_walk_forward_results() -> dict:
-    """Evaluate the current strategy and reference strategies out of sample."""
+    """Evaluate current/reference strategies with one shared historical RF series."""
     plan = build_backtest_reference_plan(optimization_method, _REFERENCE_METHODS)
     methods = []
     for method, _ in plan:
         if method not in methods:
             methods.append(method)
 
-    results = {}
+    historical_rf_info = get_cached_historical_risk_free_rates(
+        prices_df.index.min(), prices_df.index.max()
+    )
+    historical_rf_series = historical_rf_info.get("series", pd.Series(dtype=float))
+
+    results = {"_risk_free_history": historical_rf_info}
     for method in methods:
         results[method] = walk_forward_backtest(
             prices_df=prices_df,
@@ -1128,6 +1138,7 @@ def _compute_walk_forward_results() -> dict:
             train_years=DEFAULT_TRAIN_YEARS,
             rebalance_months=DEFAULT_REBALANCE_MONTHS,
             transaction_cost_bps=DEFAULT_TRANSACTION_COST_BPS,
+            risk_free_rate_series=historical_rf_series,
         )
     return results
 
@@ -1484,26 +1495,41 @@ elif opt_workspace == "Backtest & Risk":
         _wf_current_df = _wf_current.get("history", pd.DataFrame())
         _wf_summary = _wf_current.get("summary", {})
 
-        if get_language() == "zh-TW":
-            _wf_title = "Walk-Forward 樣本外回測"
-            _wf_method_note = (
-                f"使用過去 {DEFAULT_TRAIN_YEARS} 年資料估計權重，每 {DEFAULT_REBALANCE_MONTHS} 個月重新最佳化；"
-                f"再平衡交易成本為 {DEFAULT_TRANSACTION_COST_BPS:.0f} bps × turnover。"
-                "每一持有期間只使用當時以前可取得的資料，並以 Ledoit-Wolf shrinkage 估計共變異數。"
+        _wf_title = t("opt_walk_forward_title")
+        _wf_method_note = t(
+            "opt_walk_forward_method_note",
+            train_years=DEFAULT_TRAIN_YEARS,
+            rebalance_months=DEFAULT_REBALANCE_MONTHS,
+            cost_bps=DEFAULT_TRANSACTION_COST_BPS,
+        )
+        _wf_rf_info = _wf_results.get("_risk_free_history", {})
+        _history_years = max(
+            0.0, (prices_df.index.max() - prices_df.index.min()).days / 365.25
+        )
+        if not _wf_current_df.empty:
+            _oos_years = max(
+                0.0, (_wf_current_df.index.max() - _wf_current_df.index.min()).days / 365.25
             )
         else:
-            _wf_title = "Walk-Forward Out-of-Sample Backtest"
-            _wf_method_note = (
-                f"Trailing {DEFAULT_TRAIN_YEARS}-year estimation window; re-optimized every "
-                f"{DEFAULT_REBALANCE_MONTHS} months; {DEFAULT_TRANSACTION_COST_BPS:.0f} bps transaction cost × turnover. "
-                "Each holding period uses only information available before it begins, with Ledoit-Wolf shrinkage covariance."
-            )
+            _oos_years = max(0.0, _history_years - DEFAULT_TRAIN_YEARS)
+        _n_rebalances = int(_wf_summary.get("n_rebalances", 0))
+
+        if _history_years < 10.0:
+            st.warning(t(
+                "opt_walk_forward_short_history_warning",
+                history_years=_history_years,
+                train_years=DEFAULT_TRAIN_YEARS,
+                oos_years=_oos_years,
+                rebalances=_n_rebalances,
+            ))
+        if int(_wf_summary.get("fallback_rf_rebalances", 0)) > 0:
+            st.warning(t("opt_walk_forward_rf_fallback"))
 
         if bt_view == "Historical":
             section_header(_wf_title, t("opt_backtest_sub", method=t_opt_method(optimization_method)))
             st.caption(_wf_method_note)
             if _wf_current_df.empty:
-                st.info(_wf_summary.get("error") or "Walk-forward backtest is unavailable for the selected history.")
+                st.info(_wf_summary.get("error") or t("opt_walk_forward_unavailable"))
             else:
                 import plotly.graph_objects as go
                 with chart_card(_wf_title):
@@ -1529,7 +1555,11 @@ elif opt_workspace == "Backtest & Risk":
                     t("metric_total_return"): f"{_wf_current_df['Cumulative Return'].iloc[-1]:.2%}",
                     t("metric_annualized_return"): f"{annualized_return(_wf_current_df['Portfolio Value']):.2%}",
                     t("metric_annualized_volatility"): f"{annualized_volatility(_wf_current_df['Portfolio Value']):.2%}",
-                    t("metric_sharpe_ratio"): f"{sharpe_ratio(_wf_current_df['Portfolio Value'], risk_free_rate):.2f}",
+                    t("metric_sharpe_ratio"): (
+                        f"{_wf_summary.get('oos_sharpe'):.2f}"
+                        if np.isfinite(_wf_summary.get("oos_sharpe", np.nan))
+                        else "N/A"
+                    ),
                     t("metric_maximum_drawdown"): f"{maximum_drawdown(_wf_current_df['Portfolio Value']):.2%}",
                     t("metric_final_value"): f"${_wf_current_df['Portfolio Value'].iloc[-1]:,.2f}",
                 }
@@ -1543,16 +1573,16 @@ elif opt_workspace == "Backtest & Risk":
                 _cost_amount = _wf_summary.get("transaction_cost_amount", 0.0)
                 _n_rebalances = _wf_summary.get("n_rebalances", 0)
                 _failures = _wf_summary.get("optimizer_failures", 0)
-                if get_language() == "zh-TW":
-                    st.caption(
-                        f"再平衡 {_n_rebalances} 次｜累積單邊 turnover {_turnover:.2f}｜"
-                        f"估計交易成本 ${_cost_amount:,.2f}｜最佳化失敗 {_failures} 次"
-                    )
-                else:
-                    st.caption(
-                        f"{_n_rebalances} rebalances | cumulative one-way turnover {_turnover:.2f} | "
-                        f"estimated transaction costs ${_cost_amount:,.2f} | optimizer failures {_failures}"
-                    )
+                _historical_rf_count = _wf_summary.get("historical_rf_rebalances", 0)
+                st.caption(t(
+                    "opt_walk_forward_rebalance_summary",
+                    rebalances=_n_rebalances,
+                    turnover=_turnover,
+                    cost=_cost_amount,
+                    failures=_failures,
+                    historical_rf=_historical_rf_count,
+                ))
+                st.caption(t("opt_walk_forward_oos_period", years=_oos_years))
                 _backtest_context_text = "; ".join(f"{k}: {v}" for k, v in bt_metrics.items())
                 ai_interpret_button("opt_backtest_ai_interpret", st.session_state, _backtest_context_text)
 
@@ -1560,7 +1590,7 @@ elif opt_workspace == "Backtest & Risk":
             section_header(t("opt_drawdown_comparison_card"), _wf_title)
             st.caption(_wf_method_note)
             if _wf_current_df.empty:
-                st.info(_wf_summary.get("error") or "Walk-forward drawdown is unavailable for the selected history.")
+                st.info(_wf_summary.get("error") or t("opt_walk_forward_unavailable"))
             else:
                 import plotly.graph_objects as go
                 with chart_card(t("opt_drawdown_comparison_card")):
