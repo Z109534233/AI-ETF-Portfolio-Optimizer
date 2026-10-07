@@ -7,45 +7,31 @@ import pandas as pd
 import numpy as np
 
 
-def clean_price_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Clean and validate price data.
-    - Remove columns (tickers) with no valid data at all
-    - Remove rows where all values are NaN
-    - Forward-fill then back-fill missing values
-    - Remove duplicate indices
-    - Ensure positive prices
+def clean_price_data(df: pd.DataFrame, fill_missing: bool = True) -> pd.DataFrame:
+    """Clean and validate a wide price DataFrame.
+
+    fill_missing=True preserves the app's historical display behavior by
+    forward/back filling sparse prices. Quantitative estimation that mixes
+    markets with different holiday calendars should instead pass
+    fill_missing=False so genuine non-trading days remain missing and can
+    be removed by a common-observation alignment step before returns are
+    estimated.
     """
     if df.empty:
         return df
 
-    # Remove duplicate indices
-    df = df[~df.index.duplicated(keep="first")]
-
-    # Sort by date
-    df = df.sort_index()
-
-    # Drop columns (tickers) that have no valid data whatsoever. A column
-    # that is 100% NaN (e.g. a ticker that failed to download) would
-    # otherwise survive ffill()/bfill() completely unchanged -- there is
-    # nothing to fill from -- and silently poison every downstream
-    # computation that relies on this DataFrame's column count matching
-    # its actual data (e.g. covariance matrices).
+    df = df[~df.index.duplicated(keep="first")].sort_index()
     df = df.dropna(axis=1, how="all")
     if df.empty:
         return df
 
-    # Remove rows where all values are NaN
     df = df.dropna(how="all")
+    df = df.where(df > 0, other=np.nan)
 
-    # Forward fill then back fill
-    df = df.ffill().bfill()
-
-    # Remove negative or zero prices
-    df = df.where(df > 0, other=np.nan).ffill().bfill()
+    if fill_missing:
+        df = df.ffill().bfill()
 
     return df
-
 
 def compute_returns(prices: pd.DataFrame, method: str = "simple") -> pd.DataFrame:
     """

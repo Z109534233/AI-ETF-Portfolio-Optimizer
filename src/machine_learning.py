@@ -35,7 +35,7 @@ def prepare_ml_dataset(prices: pd.Series, volume: pd.Series = None,
 
     # Target: next-day direction
     future_return = prices.pct_change(lookahead).shift(-lookahead)
-    labels = (future_return > 0).astype(int)
+    labels = (future_return > 0).where(future_return.notna())
 
     # Align
     combined = features_df.join(labels.rename("Target")).dropna()
@@ -43,25 +43,28 @@ def prepare_ml_dataset(prices: pd.Series, volume: pd.Series = None,
         return None, None, None
 
     X = combined.drop(columns=["Target"])
-    y = combined["Target"]
+    y = combined["Target"].astype(int)
 
     return X, y, combined.index
 
 
 def time_series_split(X: pd.DataFrame, y: pd.Series,
-                       test_size: float = 0.2) -> tuple:
-    """
-    Time-series aware train/test split.
-    No shuffling to prevent data leakage.
+                       test_size: float = 0.2, gap: int = 0) -> tuple:
+    """Chronological train/test split with an optional embargo gap.
+
+    gap rows immediately before the test set are excluded from training.
+    For an h-period forward target, using gap=h prevents the last training
+    labels from depending on prices that fall inside the held-out test window.
     """
     n = len(X)
     split_idx = int(n * (1 - test_size))
-    X_train = X.iloc[:split_idx]
+    gap = max(0, int(gap))
+    train_end = max(0, split_idx - gap)
+    X_train = X.iloc[:train_end]
     X_test = X.iloc[split_idx:]
-    y_train = y.iloc[:split_idx]
+    y_train = y.iloc[:train_end]
     y_test = y.iloc[split_idx:]
     return X_train, X_test, y_train, y_test
-
 
 def train_logistic_regression(X_train: pd.DataFrame, y_train: pd.Series,
                                X_test: pd.DataFrame, y_test: pd.Series) -> dict:
@@ -260,7 +263,7 @@ def _fit_and_score_fold(model_type: str, X_train: pd.DataFrame, y_train: pd.Seri
     return {"accuracy": accuracy, "baseline_accuracy": baseline_accuracy, "roc_auc": roc_auc}
 
 
-def _feasible_fold_count(n: int, n_splits: int) -> bool:
+def _feasible_fold_count(n: int, n_splits: int, gap: int = 0) -> bool:
     """Whether TimeSeriesSplit(n_splits) on `n` pre-holdout rows produces
     folds that ALL meet the minimum train/validation size thresholds
     above -- checked directly against the actual split, not estimated, so
@@ -268,7 +271,7 @@ def _feasible_fold_count(n: int, n_splits: int) -> bool:
     does below."""
     if n < n_splits + 1:
         return False
-    tss = TimeSeriesSplit(n_splits=n_splits)
+    tss = TimeSeriesSplit(n_splits=n_splits, gap=max(0, int(gap)))
     for train_idx, val_idx in tss.split(np.zeros(n)):
         if len(train_idx) < MIN_FOLD_TRAIN_SIZE or len(val_idx) < MIN_FOLD_VAL_SIZE:
             return False
@@ -276,18 +279,19 @@ def _feasible_fold_count(n: int, n_splits: int) -> bool:
 
 
 def _choose_n_splits(n: int, target_splits: int = DEFAULT_CV_FOLDS,
-                      min_splits: int = MIN_CV_FOLDS):
+                      min_splits: int = MIN_CV_FOLDS, gap: int = 0):
     """The largest feasible fold count from `min_splits` up to
     `target_splits` (target 5, reduced safely when the pre-holdout region
     is too small) -- or None if even `min_splits` folds aren't feasible."""
     for k in range(min(target_splits, n - 1), min_splits - 1, -1):
-        if k >= min_splits and _feasible_fold_count(n, k):
+        if k >= min_splits and _feasible_fold_count(n, k, gap=gap):
             return k
     return None
 
 
 def walk_forward_validation(X_train: pd.DataFrame, y_train: pd.Series, model_type: str,
-                             target_splits: int = DEFAULT_CV_FOLDS) -> dict:
+                             target_splits: int = DEFAULT_CV_FOLDS,
+                             gap: int = 0) -> dict:
     """Expanding-window TimeSeriesSplit validation over the PRE-HOLDOUT
     training region only (`X_train`/`y_train` -- the final chronological
     test split is never passed to this function, so it can never leak into
@@ -310,7 +314,7 @@ def walk_forward_validation(X_train: pd.DataFrame, y_train: pd.Series, model_typ
     skipped, not scored as 0/NaN.
     """
     n = len(X_train)
-    n_splits = _choose_n_splits(n, target_splits, MIN_CV_FOLDS)
+    n_splits = _choose_n_splits(n, target_splits, MIN_CV_FOLDS, gap=gap)
     if n_splits is None:
         return {
             "available": False,
@@ -322,7 +326,7 @@ def walk_forward_validation(X_train: pd.DataFrame, y_train: pd.Series, model_typ
             ),
         }
 
-    tss = TimeSeriesSplit(n_splits=n_splits)
+    tss = TimeSeriesSplit(n_splits=n_splits, gap=max(0, int(gap)))
     folds = []
     for fold_num, (train_idx, val_idx) in enumerate(tss.split(X_train), start=1):
         X_tr, y_tr = X_train.iloc[train_idx], y_train.iloc[train_idx]
@@ -378,7 +382,7 @@ def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
     if X is None:
         return {"error": "Insufficient data for ML analysis. Need at least 50 observations."}
 
-    X_train, X_test, y_train, y_test = time_series_split(X, y, test_size)
+    X_train, X_test, y_train, y_test = time_series_split(X, y, test_size, gap=lookahead)
 
     if len(X_train) < 20 or len(X_test) < 10:
         return {"error": "Not enough data for train/test split. Try a longer date range."}
@@ -405,6 +409,7 @@ def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
         # this can never silently drift from what prepare_ml_dataset() (and
         # the label it built) actually computed.
         result["lookahead_periods"] = lookahead
+        result["embargo_periods"] = lookahead
         # Simple baseline (M5): a model that cannot beat "always predict the
         # training set's majority class" on the SAME held-out test set is
         # not demonstrating real directional skill for this ETF/period.
@@ -413,7 +418,9 @@ def run_ml_pipeline(prices: pd.Series, volume: pd.Series = None,
         # TimeSeriesSplit folds over X_train/y_train ONLY -- the final
         # holdout (X_test/y_test) above is never passed in, so it can never
         # leak into a CV fold or be used for tuning/CV summaries.
-        result["walk_forward_cv"] = walk_forward_validation(X_train, y_train, model_type)
+        result["walk_forward_cv"] = walk_forward_validation(
+            X_train, y_train, model_type, gap=lookahead
+        )
         result["disclaimer"] = DISCLAIMER
         result["error"] = None
         return result

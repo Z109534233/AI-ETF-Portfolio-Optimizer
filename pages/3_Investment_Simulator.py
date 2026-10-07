@@ -160,7 +160,9 @@ with st.sidebar:
         if not _portfolio_stats_available:
             st.caption(t("sim_portfolio_stats_unavailable"))
 
+        annual_return_is_arithmetic = False
         if projection_assumption_source == "Portfolio Historical Statistics":
+            annual_return_is_arithmetic = True
             # These are historical estimates from Portfolio Optimizer used
             # AS simulation assumptions -- never described as a prediction
             # of future returns (spec section 6).
@@ -535,7 +537,7 @@ _mc_fingerprint = (
     round(initial_investment, 2), round(monthly_contribution, 2), years,
     round(annual_return, 6), round(annual_volatility, 6),
     round(inflation_rate, 6), round(annual_fee, 6), n_simulations,
-    projection_assumption_source,
+    projection_assumption_source, annual_return_is_arithmetic,
 )
 
 if "sim_result" not in st.session_state:
@@ -553,7 +555,8 @@ if run_btn or st.session_state.sim_result is None:
             annual_volatility=annual_volatility,
             inflation_rate=inflation_rate,
             annual_fee=annual_fee,
-            n_simulations=n_simulations
+            n_simulations=n_simulations,
+            annual_return_is_arithmetic=annual_return_is_arithmetic,
         )
         st.session_state.sim_result = sim_result
         st.session_state.sim_params = {
@@ -566,6 +569,7 @@ if run_btn or st.session_state.sim_result is None:
             "annual_fee": annual_fee,
             "n_simulations": n_simulations,
             "assumption_source": projection_assumption_source,
+            "annual_return_is_arithmetic": annual_return_is_arithmetic,
             "portfolio_strategy": current_portfolio.get("strategy") if current_portfolio else None,
         }
         st.session_state.sim_fingerprint = _mc_fingerprint

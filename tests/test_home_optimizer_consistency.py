@@ -158,4 +158,5 @@ def test_home_market_intelligence_card_does_not_claim_full_live_calendar(mocked_
     at.run()
     assert at.exception == []
     corpus = "\n".join(m.value for m in at.markdown)
-    assert "economic calendar does not yet use a verified live provider" in corpus
+    assert "economic calendar does not yet use a verified live provider" not in corpus
+    assert "Aggregate market news with source timestamps and rule-based impact summaries." in corpus

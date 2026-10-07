@@ -218,17 +218,14 @@ def test_cumulative_pr_workflow_never_merges_to_main():
 # --- normal reviewer + trusted_automation policy ----------------------------
 
 
-def test_normal_reviewer_still_enabled_for_non_autopilot_prs():
+def test_standard_reviewer_is_manual_only_when_automation_is_disabled():
     text = REVIEWER.read_text(encoding="utf-8")
-    assert "pull_request_target:" in text
-    assert "types: [opened, synchronize, reopened, ready_for_review]" in text
-    # The autopilot skip must be scoped to autopilot/ head refs, not a blanket
-    # disable. This was later hardened from a plain
-    # pr.head.ref.startsWith('autopilot/') check to one tied to the exact
-    # run_id parsed out of the trusted controller-comment marker, so a PR
-    # merely named "autopilot/*" can no longer skip review on its own -- see
-    # test_autopilot_prefix_alone_cannot_skip_standard_reviewer, which pins
-    # this stricter branchMatchesRun contract as intended-current.
+    on_block = text[text.index("\non:") : text.index("\nconcurrency:")]
+    assert "workflow_dispatch:" in on_block
+    assert "pull_request_target:" not in on_block
+    assert "Automatic OpenAI PR review is disabled." in text
+    # The dormant implementation keeps its trusted-autopilot guards so a
+    # future manual re-enable does not weaken the existing safety contract.
     assert "pr.head.ref.startsWith(`autopilot/${markerRunId}/`)" in text
     assert "OWNER" in text and "MEMBER" in text and "COLLABORATOR" in text
 
