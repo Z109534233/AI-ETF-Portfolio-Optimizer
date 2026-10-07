@@ -807,11 +807,14 @@ if optimization_method == "Maximum Sharpe Ratio":
         if st.button(t("opt_bootstrap_button"), key="opt_bootstrap_run_btn"):
             if st.session_state.opt_bootstrap_inputs != _bootstrap_inputs:
                 with st.spinner(t("opt_bootstrap_running")):
-                    _bootstrap_returns_df = prices_df.pct_change(fill_method=None).dropna(how="all")
+                    _bootstrap_returns_df, _, _ = estimate_moments(
+                        prices_df, estimator=result.get("covariance_estimator", "Ledoit-Wolf")
+                    )
                     st.session_state.opt_bootstrap_result = bootstrap_max_sharpe_weight_stability(
                         _bootstrap_returns_df, risk_free_rate=risk_free_rate,
                         min_weight=min_weight, max_weight=max_weight, allow_short=allow_short,
                         n_bootstrap=DEFAULT_N_BOOTSTRAP, seed=DEFAULT_BOOTSTRAP_SEED,
+                        covariance_estimator=result.get("covariance_estimator", "Ledoit-Wolf"),
                     )
                     st.session_state.opt_bootstrap_inputs = _bootstrap_inputs
 
