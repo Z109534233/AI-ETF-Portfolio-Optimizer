@@ -471,7 +471,7 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
             min_weight=_val_min, max_weight=_val_max, allow_short=_val_short,
         )
 
-        # `optimizer_failed` (Max Sharpe / Min Volatility / Target Return):
+        # `optimizer_failed` (Max Sharpe / Min Volatility / Target Return / Risk Parity):
         # SLSQP did not converge, so `weights` is the safe equal-weight
         # fallback from optimize_max_sharpe()/optimize_min_volatility()/
         # optimize_target_return(). Per Round 2A requirements (extended to
@@ -515,9 +515,13 @@ def run_optimization(prices_df: pd.DataFrame, method: str,
 
 def backtest_portfolio(prices_df: pd.DataFrame, weights: dict,
                        initial_investment: float = 10000.0) -> pd.DataFrame:
-    """
-    Backtest a portfolio with given weights.
-    Returns a DataFrame with portfolio value over time.
+    """Reconstruct an in-sample fixed-target-weight historical path.
+
+    The same target weights are applied to every daily return, which is
+    economically equivalent to frictionless daily rebalancing. This helper is
+    retained for descriptive historical diagnostics only; the user-facing
+    strategy evaluation uses src.backtesting.walk_forward_backtest() with
+    quarterly re-optimization and explicit transaction costs.
     """
     tickers = list(weights.keys())
     available = [t for t in tickers if t in prices_df.columns]
