@@ -23,7 +23,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import load_all_portfolios, init_database
-from src.news import fetch_market_news
+from src.news import fetch_market_news_with_status, relative_age_label
 from src.market_intelligence import (
     fetch_market_indices, fetch_fear_greed_index, get_affected_etfs,
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
@@ -64,13 +64,14 @@ IMPACT_VARIANT = {"Positive": "green", "Negative": "red", "Neutral": "neutral"}
 # safe empty/placeholder value on failure, but this outer guard ensures the
 # page can never crash even on an unexpected error. ─────────────────────────
 try:
-    news_items = fetch_market_news(limit=10)
+    news_feed = fetch_market_news_with_status(limit=25, lookback_days=7)
+    news_items = news_feed["items"]
     indices = fetch_market_indices()
     fear_greed = fetch_fear_greed_index()
     affected_etfs = get_affected_etfs(news_items)
     sentiment = calculate_market_sentiment(news_items)
     ai_sentiment = calculate_ai_market_sentiment(news_items)
-    calendar_events = get_economic_calendar()
+    calendar_events = get_economic_calendar(horizon_days=14)
     affected_markets = calculate_affected_markets(news_items)
     today_ai_summary = generate_today_ai_summary(news_items, indices)
     market_impact = calculate_market_impact(news_items)
@@ -80,6 +81,11 @@ try:
     todays_market_action = generate_todays_market_action(news_items)
     data_load_failed = False
 except Exception:
+    news_feed = {
+        "items": [], "status": "app_error", "live_item_count": 0,
+        "archive_item_count": 0, "successful_sources": 0, "failed_sources": {},
+        "lookback_days": 7, "half_life_days": 2.0,
+    }
     news_items, indices, fear_greed = [], {}, {"available": False, "label": t("mi_fear_greed")}
     affected_etfs, sentiment, calendar_events = [], calculate_market_sentiment([]), []
     ai_sentiment = calculate_ai_market_sentiment([])
@@ -96,17 +102,34 @@ if data_load_failed:
     error_state(t("mi_no_news_available"), t("mi_summary_no_news"))
 
 _mi_lang = get_language()
-_major_events_title = "今日重大事件" if _mi_lang == "zh-TW" else "Today's Major Events"
+_major_events_title = t("mi_recent_drivers_title")
 _sentiment_caption = "市場情緒" if _mi_lang == "zh-TW" else "Market Sentiment"
 _markets_caption = "受影響市場" if _mi_lang == "zh-TW" else "Affected Markets"
 _etfs_caption = "受影響 ETF" if _mi_lang == "zh-TW" else "Affected ETFs"
 _confidence_caption = "情緒傾向強度" if _mi_lang == "zh-TW" else "Sentiment Skew"
 _impact_caption = t("mi_impact_caption")
-_watchlist_title = "今日觀察清單" if _mi_lang == "zh-TW" else "Today's Watchlist"
+_watchlist_title = t("mi_recent_watchlist_title")
 _reasons_caption = "原因" if _mi_lang == "zh-TW" else "Reasons"
 _etf_market_caption = "市場" if _mi_lang == "zh-TW" else "Market"
 _etf_reasons_caption = "為什麼？" if _mi_lang == "zh-TW" else "Why?"
 _top_drivers_caption = "Top Drivers"
+
+_news_status = news_feed.get("status")
+if _news_status == "archive_fallback":
+    st.warning(t(
+        "mi_news_archive_fallback",
+        days=news_feed.get("lookback_days", 7),
+        count=len(news_items),
+    ))
+elif _news_status == "source_error":
+    st.warning(t("mi_news_source_error"))
+elif _news_status == "partial_live":
+    st.caption(t(
+        "mi_news_partial_live",
+        failed=len(news_feed.get("failed_sources") or {}),
+    ))
+elif _news_status == "no_recent_news":
+    st.info(t("mi_news_no_recent_verified", days=news_feed.get("lookback_days", 7)))
 
 tab_overview, tab_news, tab_impact, tab_sentiment, tab_methodology = st.tabs([
     t("mi_tab_overview"), t("mi_tab_news"), t("mi_tab_portfolio_impact"),
@@ -137,7 +160,8 @@ with tab_overview:
                     '<div class="status-card market-impact-card">'
                     f'<div class="status-card-ticker">{event["headline"]}</div>'
                     f'<div class="status-card-sector">{event.get("publisher", "")}'
-                    f'{(" · " + event.get("published_text", "")) if event.get("published_text") else ""}</div>'
+                    f'{(" · " + relative_age_label(event.get("published"), _mi_lang)) if event.get("published") else ""}'
+                    f'{(" · " + event.get("published_text", "") + " UTC") if event.get("published_text") else ""}</div>'
                     f'<div class="affected-by-caption">{_impact_caption}</div>'
                     f'<div class="status-card-stars">{star_rating_html(event["stars"])}</div>'
                     f'<div class="market-impact-label">{event["category"]}</div>'
@@ -308,15 +332,18 @@ with tab_overview:
             calendar_df = pd.DataFrame([
                 {
                     t("mi_cal_col_event"): e["event"],
-                    t("mi_cal_col_when"): e["when"],
-                    t("mi_cal_col_importance"): e["importance"],
+                    t("mi_cal_col_when"): t("mi_calendar_days_until", days=e["days_until"]),
+                    t("mi_cal_col_date"): e["date_text"],
+                    t("mi_cal_col_affected_etfs"): ", ".join(e["affected_etfs"]),
+                    t("mi_cal_col_source"): e["source"],
                 }
                 for e in calendar_events
             ])
             st.dataframe(calendar_df, use_container_width=True, hide_index=True)
             chart_caption(t("mi_caption_calendar"))
+            st.caption(t("mi_calendar_expectations_note"))
         else:
-            st.info(t("mi_calendar_no_verified_data"))
+            st.info(t("mi_calendar_no_events_14d"))
 
 # ══════════════════════════════════════════════════════════════════════════
 # NEWS
@@ -328,7 +355,11 @@ with tab_news:
         empty_state(t("mi_no_news_available"), t("mi_section_news_subtitle"), icon="newspaper")
     else:
         for item, meta in zip(news_items, news_card_meta):
-            time_str = item["published"].strftime("%Y-%m-%d %H:%M") if item["published"] else "—"
+            time_str = (
+                f"{relative_age_label(item.get('published'), _mi_lang)} · "
+                f"{item['published'].strftime('%Y-%m-%d %H:%M')} UTC"
+                if item.get("published") else t("mi_news_time_unavailable")
+            )
             title_html = f'<a href="{item["link"]}" target="_blank" rel="noopener noreferrer">{item["title"]}</a>' if item["link"] else item["title"]
             st.markdown(
                 '<div class="news-card">'
