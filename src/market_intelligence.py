@@ -925,6 +925,7 @@ _VERIFIED_SCHEDULED_EVENTS = [
     ("2027-09-15", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
     ("2027-10-27", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
     ("2027-12-08", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-10-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
     ("2026-11-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
     ("2026-12-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
     ("2027-01-13", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
