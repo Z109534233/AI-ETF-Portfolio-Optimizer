@@ -591,13 +591,16 @@ def calculate_etf_impact(news_items: list, tickers: list = None) -> list:
     rating for today, or None if there was no news to classify).
     """
     tickers = tickers or DEFAULT_ETF_IMPACT_WATCHLIST
-    category = calculate_market_impact(news_items)["category"]
+    market_impact = calculate_market_impact(news_items)
+    category = market_impact["category"]
+    recency_factor = float(market_impact.get("recency_factor", 1.0))
     type_impact = EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {})
 
     results = []
     for ticker in tickers:
         etf_types = ETF_TYPE_MAP.get(ticker, [])
-        stars = max((type_impact.get(t, 1) for t in etf_types), default=1)
+        base_stars = max((type_impact.get(t, 1) for t in etf_types), default=1)
+        stars = max(1, min(5, int(round(base_stars * recency_factor))))
         results.append({
             "ticker": ticker,
             "etf_types": etf_types,
@@ -647,6 +650,7 @@ def calculate_ai_market_sentiment(news_items: list) -> dict:
         event_types = classify_event_types(item["title"])
         weight = max((EVENT_IMPORTANCE.get(et, DEFAULT_EVENT_WEIGHT) for et in event_types),
                      default=DEFAULT_EVENT_WEIGHT)
+        weight *= _news_weight(item)
         signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
         weighted_sum += signed * weight
         total_weight += weight
@@ -716,6 +720,7 @@ def calculate_regional_market_sentiment(news_items: list) -> list:
         total_weight = 0.0
         for item in news_items:
             weight = max((weight_lookup(et) for et in classify_event_types(item["title"])), default=0)
+            weight *= _news_weight(item)
             if weight <= 0:
                 continue
             signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
@@ -794,7 +799,8 @@ def calculate_affected_markets(news_items: list) -> list:
             for market, weight in EVENT_MARKET_IMPACT.get(event_type, {}).items():
                 if market not in market_stars:
                     continue
-                market_stars[market] = max(market_stars[market], weight)
+                effective_weight = max(1, int(round(weight * _news_weight(item))))
+                market_stars[market] = max(market_stars[market], effective_weight)
                 if item["title"] not in market_events[market]:
                     market_events[market].append(item["title"])
 
@@ -1474,6 +1480,8 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
             "publisher": item.get("publisher") or "",
             "published": _published,
             "published_text": _published_text,
+            "age_days": item.get("age_days"),
+            "recency_weight": item.get("recency_weight", 1.0),
             "score": impact["score"],
             "stars": impact["stars"],
             "star_label": "★" * impact["stars"] + "☆" * (5 - impact["stars"]),
@@ -1591,7 +1599,8 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
             if category == "Other":
                 continue
             weight = max((EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {}).get(et, 0) for et in etf_types), default=0)
-            if weight >= 4:
+            weight *= _news_weight(item)
+            if weight >= 2.5:
                 if category not in reasons:
                     reasons.append(category)
                 for kw in _matched_keywords(item["title"], category):
