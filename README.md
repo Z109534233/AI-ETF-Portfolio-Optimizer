@@ -140,6 +140,8 @@ Several design choices were added specifically to reduce misleading outputs:
 - **No fabricated live holdings prices:** cross-page analysis from guest holdings is disabled if a required live price cannot be obtained.
 - **Guest-session isolation:** public holdings and watchlist entries are stored only in the current Streamlit session and are not shared between visitors.
 - **AI separation:** AI-generated text interprets already-computed metrics; the financial calculations themselves are deterministic Python code. A rule-based fallback is available when no OpenAI API key is configured.
+- **Recent-news continuity:** Yahoo headlines are cached for 15 minutes and successfully observed items are archived in SQLite. Market Intelligence uses a **7-day lookback with a 2-day half-life**, so recent news matters more while older stories can remain visible when their effects are still being digested.
+- **Scheduled-event context:** verified FOMC dates come from the Federal Reserve's official meeting calendar and U.S. CPI dates from the Bureau of Labor Statistics release schedule. The dashboard treats scheduled events as context, not directional signals: markets can react in advance, and the surprise relative to expectations often matters more than the event date itself.
 - **Bilingual parity:** English and Traditional Chinese UI strings are covered by regression checks.
 
 ---
@@ -155,7 +157,7 @@ Several design choices were added specifically to reduce misleading outputs:
 | **Machine Learning** | Direction classification, holdout testing, baseline comparison, walk-forward validation |
 | **AI Advisor** | Structured interpretation of computed portfolio metrics with rule-based fallback |
 | **My Portfolio** | Goal Planner, session-only holdings/watchlist, saved portfolio comparison |
-| **Market Intelligence** | Major-index snapshot, curated market news, and rule-based/AI-assisted summaries |
+| **Market Intelligence** | Major-index snapshot, seven-day archived news with recency decay, verified FOMC/CPI calendar, and rule-based/AI-assisted summaries |
 
 ---
 
@@ -282,6 +284,8 @@ Key limitations include:
 - historical VaR can fail during regime shifts and tail events;
 - ML classification performance is period-dependent and does not establish persistent predictive skill;
 - market data quality and availability depend on external providers;
+- Yahoo's news feed is opportunistic rather than a guaranteed historical-news API; the seven-day archive only contains headlines the application has actually observed, and archive continuity depends on persistent deployment storage (an ephemeral filesystem can reset SQLite after redeploy/restart);
+- scheduled FOMC/CPI dates are verified calendar dates, but a scheduled event does not imply direction or magnitude; pre-positioning and the actual-vs-consensus surprise can dominate the market reaction;
 - cross-market daily returns can be asynchronous because Taiwan, U.K., and U.S. markets close at different times; same-calendar-date alignment does not fully eliminate non-synchronous trading effects and may understate or distort measured correlations;
 - Goal Planner currency labels do not imply that all foreign-exchange risk is modeled.
 

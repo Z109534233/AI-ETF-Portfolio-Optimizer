@@ -8,6 +8,7 @@ raising, so the page can never crash.
 """
 
 from collections import Counter
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
@@ -61,6 +62,14 @@ def _default_global_watchlist() -> list:
 # Default watch-list shown in the "Global ETFs" section: one ETF per
 # supported country (built dynamically from etf_database.py, see above).
 DEFAULT_WATCHLIST = _default_global_watchlist()
+
+
+def _news_weight(item: dict) -> float:
+    """Return a headline's precomputed recency weight (default 1.0)."""
+    try:
+        return max(0.0, min(1.0, float((item or {}).get("recency_weight", 1.0))))
+    except (TypeError, ValueError):
+        return 1.0
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -435,54 +444,45 @@ def _is_commentary_news_item(item: dict) -> bool:
 
 
 def calculate_market_impact(news_items: list) -> dict:
-    """
-    Market Impact Score: a 0-100 score for today's news, built from *event
-    importance* rather than "did a headline mention this ETF/market by
-    name". Every headline is classified via classify_event() into one
-    category, the single most important category present today is treated
-    as the day's dominant event (ties broken by how often that category
-    repeats), and the score is a weighted blend of:
-      - Event Importance   (40%) -- EVENT_IMPORTANCE_SCORE for the
-        dominant category
-      - Affected Markets    (25%) -- EVENT_AFFECTED_MARKETS, how strongly
-        that category is known to hit our supported markets
-      - Affected Industry   (20%) -- EVENT_INDUSTRY_BREADTH, how broadly
-        that category tends to reach across industries/sectors
-      - News Frequency      (15%) -- absolute corroborating headline count
-        for the dominant category (a repeated theme signals a bigger,
-        more pervasive story than a single one-off mention)
-    A transparent rule-based heuristic, not a prediction of market
-    direction.
+    """Recency-weighted 0-100 impact score for the recent-news window.
 
-    Returns a dict: score (0-100), stars (0-5; 0 only when there is no
-    news to score), star_label (e.g. "★★★★☆"), category (the dominant
-    event category driving the score, or None), breakdown (dict of the
-    four component scores, each already on a 0-100 scale, for
-    transparency).
+    A two-day half-life is attached upstream in src.news. Older headlines
+    therefore remain visible while contributing less than fresh information.
+    Multiple corroborating headlines can partly offset that time decay.
     """
-    empty_breakdown = {"event_importance": 0, "affected_markets": 0, "affected_industry": 0, "news_frequency": 0}
+    empty_breakdown = {
+        "event_importance": 0, "affected_markets": 0,
+        "affected_industry": 0, "news_frequency": 0,
+    }
     if not news_items:
-        return {"score": 0, "stars": 0, "star_label": "☆☆☆☆☆", "category": None, "breakdown": empty_breakdown}
+        return {
+            "score": 0, "stars": 0, "star_label": "☆☆☆☆☆",
+            "category": None, "breakdown": empty_breakdown,
+        }
 
-    categories = [classify_event(item["title"]) for item in news_items]
-    category_counts = Counter(categories)
+    weighted_counts = Counter()
+    for item in news_items:
+        category = classify_event(item["title"])
+        weighted_counts[category] += _news_weight(item)
 
-    present = [c for c in category_counts if c != "Other"] or list(category_counts)
-    dominant = max(present, key=lambda c: (EVENT_IMPORTANCE_SCORE.get(c, 20), category_counts[c]))
+    present = [key for key in weighted_counts if key != "Other"] or list(weighted_counts)
+    dominant = max(
+        present,
+        key=lambda key: (
+            EVENT_IMPORTANCE_SCORE.get(key, 20) * min(1.0, weighted_counts[key]),
+            weighted_counts[key],
+        ),
+    )
 
-    event_importance = EVENT_IMPORTANCE_SCORE.get(dominant, 20)
-
+    recency_factor = min(1.0, float(weighted_counts[dominant]))
+    event_importance = EVENT_IMPORTANCE_SCORE.get(dominant, 20) * recency_factor
     market_weights = EVENT_AFFECTED_MARKETS.get(dominant, {})
-    affected_markets = max(market_weights.values()) * 20 if market_weights else 20
-
-    affected_industry = EVENT_INDUSTRY_BREADTH.get(dominant, 15)
-
-    # Absolute corroboration matters more than share-of-feed. With the old
-    # formula, one single article in a one-article feed received 100/100 for
-    # "frequency", which could overstate a commentary piece mentioning the
-    # Federal Reserve. One mention now contributes only 25/100; four or more
-    # independent matching headlines are needed to max this component.
-    news_frequency = min(100, category_counts[dominant] * 25)
+    affected_markets = (
+        max(market_weights.values()) * 20 * recency_factor
+        if market_weights else 20 * recency_factor
+    )
+    affected_industry = EVENT_INDUSTRY_BREADTH.get(dominant, 15) * recency_factor
+    news_frequency = min(100.0, float(weighted_counts[dominant]) * 25.0)
 
     score = round(
         event_importance * 0.40
@@ -490,31 +490,28 @@ def calculate_market_impact(news_items: list) -> dict:
         + affected_industry * 0.20
         + news_frequency * 0.15
     )
-    # Explicit commentary/opinion pieces should not become 4-5 star
-    # "market impact" events just because they mention a high-weight term
-    # such as "Federal Reserve". Do NOT cap ordinary hard news merely
-    # because only one headline is available.
+
     dominant_items = [
         item for item in news_items if classify_event(item["title"]) == dominant
     ]
     if len(dominant_items) == 1 and _is_commentary_news_item(dominant_items[0]):
         score = min(score, 69)
+
     score = max(0, min(100, score))
     stars = _market_impact_score_to_stars(score)
-
     return {
         "score": score,
         "stars": stars,
         "star_label": "★" * stars + "☆" * (5 - stars),
         "category": dominant,
+        "recency_factor": round(recency_factor, 4),
         "breakdown": {
-            "event_importance": event_importance,
-            "affected_markets": affected_markets,
-            "affected_industry": affected_industry,
-            "news_frequency": news_frequency,
+            "event_importance": round(event_importance, 1),
+            "affected_markets": round(affected_markets, 1),
+            "affected_industry": round(affected_industry, 1),
+            "news_frequency": round(news_frequency, 1),
         },
     }
-
 
 # ── ETF Impact (Event -> Event Type -> ETF Type -> Impact) ──────────────────
 # ticker -> its ETF Type tag(s). An ETF can carry more than one tag (e.g.
@@ -594,13 +591,16 @@ def calculate_etf_impact(news_items: list, tickers: list = None) -> list:
     rating for today, or None if there was no news to classify).
     """
     tickers = tickers or DEFAULT_ETF_IMPACT_WATCHLIST
-    category = calculate_market_impact(news_items)["category"]
+    market_impact = calculate_market_impact(news_items)
+    category = market_impact["category"]
+    recency_factor = float(market_impact.get("recency_factor", 1.0))
     type_impact = EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {})
 
     results = []
     for ticker in tickers:
         etf_types = ETF_TYPE_MAP.get(ticker, [])
-        stars = max((type_impact.get(t, 1) for t in etf_types), default=1)
+        base_stars = max((type_impact.get(t, 1) for t in etf_types), default=1)
+        stars = max(1, min(5, int(round(base_stars * recency_factor))))
         results.append({
             "ticker": ticker,
             "etf_types": etf_types,
@@ -643,20 +643,24 @@ def calculate_ai_market_sentiment(news_items: list) -> dict:
                 "confidence": 0, "drivers": []}
 
     weighted_sum = 0.0
-    total_weight = 0.0
+    evidence_weight = 0.0
+    baseline_weight = 0.0
     drivers = []
 
     for item in news_items:
         event_types = classify_event_types(item["title"])
-        weight = max((EVENT_IMPORTANCE.get(et, DEFAULT_EVENT_WEIGHT) for et in event_types),
-                     default=DEFAULT_EVENT_WEIGHT)
+        base_weight = max((EVENT_IMPORTANCE.get(et, DEFAULT_EVENT_WEIGHT) for et in event_types),
+                          default=DEFAULT_EVENT_WEIGHT)
+        decay = _news_weight(item)
+        weight = base_weight * decay
         signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
         weighted_sum += signed * weight
-        total_weight += weight
+        evidence_weight += weight
+        baseline_weight += base_weight
         if event_types:
             drivers.append((item["title"], weight))
 
-    avg = weighted_sum / total_weight if total_weight else 0.0
+    avg = weighted_sum / baseline_weight if baseline_weight else 0.0
 
     if avg > 0.15:
         mood = "Bullish"
@@ -667,7 +671,10 @@ def calculate_ai_market_sentiment(news_items: list) -> dict:
 
     # Confidence blends how one-sided the weighted signal is (abs(avg),
     # 0-1) into a 30-95% display range -- never a fake 0% or 100%.
-    confidence = int(max(30, min(95, round(50 + abs(avg) * 50))))
+    confidence = (
+        int(max(30, min(95, round(50 + abs(avg) * 50))))
+        if evidence_weight >= 0.20 else 0
+    )
 
     drivers.sort(key=lambda d: d[1], reverse=True)
     top_drivers = [d[0] for d in drivers[:3]]
@@ -716,31 +723,41 @@ def calculate_regional_market_sentiment(news_items: list) -> list:
 
     def _weighted_score(weight_lookup):
         weighted_sum = 0.0
-        total_weight = 0.0
+        evidence_weight = 0.0
+        baseline_weight = 0.0
         for item in news_items:
-            weight = max((weight_lookup(et) for et in classify_event_types(item["title"])), default=0)
-            if weight <= 0:
+            base_weight = max((weight_lookup(et) for et in classify_event_types(item["title"])), default=0)
+            if base_weight <= 0:
                 continue
+            weight = base_weight * _news_weight(item)
             signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
             weighted_sum += signed * weight
-            total_weight += weight
-        return weighted_sum, total_weight
+            evidence_weight += weight
+            baseline_weight += base_weight
+        return weighted_sum, evidence_weight, baseline_weight
 
-    def _mood_and_confidence(weighted_sum, total_weight):
-        avg = weighted_sum / total_weight if total_weight else 0.0
+    def _mood_and_confidence(weighted_sum, evidence_weight, baseline_weight):
+        avg = weighted_sum / baseline_weight if baseline_weight else 0.0
         if avg > 0.15:
             mood = "Bullish"
         elif avg < -0.15:
             mood = "Bearish"
         else:
             mood = "Neutral"
-        confidence = int(max(30, min(95, round(50 + abs(avg) * 50)))) if total_weight else 0
+        confidence = (
+            int(max(30, min(95, round(50 + abs(avg) * 50))))
+            if evidence_weight >= 0.20 else 0
+        )
         return mood, confidence
 
     results = []
     for market in markets:
-        weighted_sum, total_weight = _weighted_score(lambda et, m=market: EVENT_MARKET_IMPACT.get(et, {}).get(m, 0))
-        mood, confidence = _mood_and_confidence(weighted_sum, total_weight)
+        weighted_sum, evidence_weight, baseline_weight = _weighted_score(
+            lambda et, m=market: EVENT_MARKET_IMPACT.get(et, {}).get(m, 0)
+        )
+        mood, confidence = _mood_and_confidence(
+            weighted_sum, evidence_weight, baseline_weight
+        )
         results.append({
             "market": market,
             "market_label": t_country(market),
@@ -750,10 +767,12 @@ def calculate_regional_market_sentiment(news_items: list) -> list:
             "confidence": confidence,
         })
 
-    weighted_sum, total_weight = _weighted_score(
+    weighted_sum, evidence_weight, baseline_weight = _weighted_score(
         lambda et: max(EVENT_MARKET_IMPACT.get(et, {}).values(), default=0)
     )
-    mood, confidence = _mood_and_confidence(weighted_sum, total_weight)
+    mood, confidence = _mood_and_confidence(
+        weighted_sum, evidence_weight, baseline_weight
+    )
     results.append({
         "market": "Global",
         "market_label": "Global",
@@ -797,7 +816,8 @@ def calculate_affected_markets(news_items: list) -> list:
             for market, weight in EVENT_MARKET_IMPACT.get(event_type, {}).items():
                 if market not in market_stars:
                     continue
-                market_stars[market] = max(market_stars[market], weight)
+                effective_weight = max(1, int(round(weight * _news_weight(item))))
+                market_stars[market] = max(market_stars[market], effective_weight)
                 if item["title"] not in market_events[market]:
                     market_events[market].append(item["title"])
 
@@ -823,20 +843,7 @@ def calculate_affected_markets(news_items: list) -> list:
 
 
 def get_affected_etfs(news_items: list, tickers: list = None) -> list:
-    """
-    Heuristically determine which watch-list ETFs today's headlines might
-    affect, by matching each ETF's sector keywords (SECTOR_KEYWORDS, keyed by
-    the ETF's sector from src/etf_database.py) against headline titles. A
-    matched ETF's impact is the majority vote of classify_headline_sentiment()
-    across its matching headlines; ETFs with no matching headline default to
-    "Neutral". This is a transparent keyword heuristic, not a prediction, and
-    works for any country registered in etf_database.py -- nothing here is
-    hardcoded to a specific market.
-
-    Returns a list of dicts: ticker, sector (translated), country (translated),
-    impact (raw Positive/Negative/Neutral, for logic), impact_label
-    (translated), stars (0-5, for display only).
-    """
+    """Map recent headlines to ETFs using recency-weighted sentiment votes."""
     tickers = tickers or DEFAULT_WATCHLIST
     results = []
     for ticker in tickers:
@@ -845,10 +852,19 @@ def get_affected_etfs(news_items: list, tickers: list = None) -> list:
         country_raw = record.country if record else None
         keywords = SECTOR_KEYWORDS.get(sector_raw, [])
 
-        matches = [n for n in news_items if any(kw in n["title"].lower() for kw in keywords)]
+        matches = [
+            item for item in news_items
+            if any(keyword in item["title"].lower() for keyword in keywords)
+        ]
         if matches:
-            counts = Counter(n["impact"] for n in matches)
-            impact = counts.most_common(1)[0][0]
+            scores = {"Positive": 0.0, "Negative": 0.0, "Neutral": 0.0}
+            for item in matches:
+                scores[item.get("impact", "Neutral")] += _news_weight(item)
+            impact = (
+                max(scores, key=scores.get)
+                if sum(scores.values()) >= 0.20
+                else "Neutral"
+            )
         else:
             impact = "Neutral"
 
@@ -862,42 +878,103 @@ def get_affected_etfs(news_items: list, tickers: list = None) -> list:
         })
     return results
 
-
 def calculate_market_sentiment(news_items: list) -> dict:
-    """
-    Aggregate Bullish/Neutral/Bearish percentages across today's headlines
-    using the same keyword classifier as get_affected_etfs(). Returns
-    "available": False (with all percentages at 0) when there is no news to
-    analyze, so the page can show a clean empty state instead of a fake split.
-    """
+    """Recency-weighted Bullish/Neutral/Bearish split for recent headlines."""
     if not news_items:
         return {
             "available": False,
             "bullish_pct": 0.0, "neutral_pct": 0.0, "bearish_pct": 0.0,
             "bullish_count": 0, "neutral_count": 0, "bearish_count": 0,
+            "weighted_total": 0.0,
         }
 
-    counts = Counter(n["impact"] for n in news_items)
-    total = len(news_items)
-    bullish, bearish, neutral = counts.get("Positive", 0), counts.get("Negative", 0), counts.get("Neutral", 0)
+    weighted = {"Positive": 0.0, "Negative": 0.0, "Neutral": 0.0}
+    raw = Counter()
+    for item in news_items:
+        impact = item.get("impact", "Neutral")
+        weighted[impact] += _news_weight(item)
+        raw[impact] += 1
 
+    weighted_total = sum(weighted.values())
+    denominator = weighted_total if weighted_total > 0 else 1.0
     return {
         "available": True,
-        "bullish_pct": round(bullish / total * 100, 1),
-        "neutral_pct": round(neutral / total * 100, 1),
-        "bearish_pct": round(bearish / total * 100, 1),
-        "bullish_count": bullish, "neutral_count": neutral, "bearish_count": bearish,
+        "bullish_pct": round(weighted["Positive"] / denominator * 100, 1),
+        "neutral_pct": round(weighted["Neutral"] / denominator * 100, 1),
+        "bearish_pct": round(weighted["Negative"] / denominator * 100, 1),
+        "bullish_count": raw.get("Positive", 0),
+        "neutral_count": raw.get("Neutral", 0),
+        "bearish_count": raw.get("Negative", 0),
+        "weighted_total": round(weighted_total, 4),
     }
 
+FOMC_SOURCE_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+CPI_SOURCE_URL = "https://www.bls.gov/schedule/news_release/cpi.htm"
 
-def get_economic_calendar() -> list:
-    """Return only verified economic-calendar events.
+# Officially scheduled decision/release dates verified against the Federal
+# Reserve and BLS calendars. This is intentionally explicit and auditable
+# rather than presented as a live API feed.
+_VERIFIED_SCHEDULED_EVENTS = [
+    ("2026-10-28", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-12-09", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-01-27", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-03-17", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-04-28", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-06-09", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-07-28", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-09-15", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-10-27", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-12-08", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-10-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-11-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-12-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-01-13", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-02-11", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-03-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-04-13", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-05-12", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-06-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-07-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-08-11", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-09-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-10-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-11-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-12-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+]
 
-    No live calendar provider is currently connected, so returning an empty
-    list is more accurate than presenting sample Fed/CPI dates as if they
-    were current. The UI explicitly explains this unavailable state.
+
+def get_economic_calendar(horizon_days: int = 14, today=None) -> list:
+    """Return verified FOMC/CPI events scheduled in the next N days.
+
+    A scheduled event is context, not a directional signal. Markets may
+    react before the date, while realized volatility often reflects the
+    surprise relative to expectations rather than the event itself.
     """
-    return []
+    today = today or date.today()
+    if isinstance(today, datetime):
+        today = today.date()
+
+    results = []
+    for date_text, name, category, source_url, affected_etfs in _VERIFIED_SCHEDULED_EVENTS:
+        event_date = date.fromisoformat(date_text)
+        days_until = (event_date - today).days
+        if 0 <= days_until <= int(horizon_days):
+            results.append({
+                "event": name,
+                "date": event_date,
+                "date_text": event_date.isoformat(),
+                "days_until": days_until,
+                "category": category,
+                "source": "Federal Reserve" if "FOMC" in name else "U.S. Bureau of Labor Statistics",
+                "source_url": source_url,
+                "affected_etfs": list(affected_etfs),
+                "anticipation_note": (
+                    "Scheduled events may be partly priced in before release; "
+                    "the market surprise is the difference between the actual "
+                    "outcome and prior expectations."
+                ),
+            })
+    return sorted(results, key=lambda item: item["date"])
 
 
 _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS = (
@@ -960,9 +1037,9 @@ def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: lis
         "quoted source title distinct from your own Chinese prose."
         if get_language() == "zh-TW" else "Respond entirely in English."
     )
-    return f"""Based on the deterministic market snapshot and today's headlines below, write a "Today's Market Summary" of about 100-200 words. MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT; headline sentiment is supplementary context and must never override or contradict the index direction. VIX wording must follow its displayed level and daily change. Do not invent upcoming Fed decisions, releases, or calendar events. Do not predict future prices or give personalised investment advice. {language_instruction}
+    return f"""Based on the deterministic market snapshot and today's headlines below, write a "Recent Market Summary" of about 100-200 words. MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT; headline sentiment is supplementary context and must never override or contradict the index direction. VIX wording must follow its displayed level and daily change. Do not invent upcoming Fed decisions, releases, or calendar events. Do not predict future prices or give personalised investment advice. {language_instruction}
 
-Actual index snapshot (authoritative for market direction):
+Current index snapshot (authoritative for current market direction):
 Direction: {snapshot['direction']}
 Equity indices: {snapshot['equity_details'] or 'N/A'}
 Volatility: {snapshot['vix_text'] or 'N/A'}
@@ -1179,12 +1256,12 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
     # badge and collide with generate_market_summary()'s genuinely
     # OpenAI-backed "Today's Market Summary" card elsewhere on this page
     # (Issue #20 section 10: never label deterministic content as AI).
-    title = "今日市場總覽" if lang == "zh-TW" else "Today's Market Overview"
+    title = "近期市場總覽" if lang == "zh-TW" else "Recent Market Overview"
 
     if not news_items:
-        no_data = ("目前沒有足夠的新聞資料可產生今日摘要。" if lang == "zh-TW"
-                   else "Not enough news data is available to generate today's summary.")
-        heading = "今日摘要" if lang == "zh-TW" else "Summary"
+        no_data = ("目前沒有足夠的近期新聞資料可產生摘要。" if lang == "zh-TW"
+                   else "Not enough recent news data is available to generate a summary.")
+        heading = "近期摘要" if lang == "zh-TW" else "Summary"
         return {"title": title, "sections": [{"heading": heading, "text": no_data}], "disclaimer": ""}
 
     impact = calculate_market_impact(news_items)
@@ -1204,7 +1281,7 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
     if lang == "zh-TW":
         _dir = {"Rising": "整體走揚", "Falling": "整體下跌", "Mixed": "漲跌互見", "Unavailable": "方向資料不足"}[snapshot["direction"]]
         overview_text = (
-            f"依實際主要股價指數，今天市場{_dir}。新聞分類則偏向"
+            f"依目前實際主要股價指數，市場{_dir}。近 7 天新聞分類經時間衰減加權後偏向"
             f"{'正面' if mood == 'Bullish' else '負面' if mood == 'Bearish' else '中性'}，"
             f"主要涉及{category_zh}相關發展；新聞情緒僅作補充，不覆蓋實際指數方向。"
         )
@@ -1217,15 +1294,15 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
                 f"{_ETF_TYPE_REGION_ZH.get('Broad Market')} ETF 出現更明顯的波動。"
             )
         else:
-            why_text = "今天的新聞沒有指向特別集中的產業反應，影響較為全面、分散。"
+            why_text = "近期新聞沒有指向特別集中的產業反應，影響較為全面、分散。"
         insight_text = _INSIGHT_PHRASE_ZH.get(mood, _INSIGHT_PHRASE_ZH["Neutral"])
         headings = ("今日市場概況", "今天市場為何波動", "投資洞察")
         disclaimer = "此摘要為規則式生成，僅供教育用途，不構成投資建議或價格預測。"
     else:
         _dir = {"Rising": "broadly higher", "Falling": "broadly lower", "Mixed": "mixed", "Unavailable": "not classifiable from available index data"}[snapshot["direction"]]
         overview_text = (
-            f"Based on the actual major equity indices, markets are {_dir} today. "
-            f"Headline classification is {mood.lower()} and is treated only as supplementary context, "
+            f"Based on the current major equity indices, markets are {_dir}. "
+            f"The 7-day time-decayed headline classification is {mood.lower()} and is treated only as supplementary context, "
             f"with {category_en} developments the main classified theme."
         )
         if snapshot["vix_text"]:
@@ -1236,9 +1313,9 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
                 f"volatility than {_ETF_TYPE_REGION_EN.get('Broad Market')} ETFs."
             )
         else:
-            why_text = "Today's news doesn't point to one clearly dominant sector -- the reaction looks broad and spread out."
+            why_text = "Recent news does not point to one clearly dominant sector -- the reaction looks broad and spread out."
         insight_text = _INSIGHT_PHRASE_EN.get(mood, _INSIGHT_PHRASE_EN["Neutral"])
-        headings = ("Today's Market Overview", "Why Markets Moved Today", "Investment Insight")
+        headings = ("Recent Market Context", "Why Markets May Be Reacting", "Investment Insight")
         disclaimer = "This is a rule-based summary for educational purposes only -- not investment advice or a price prediction."
 
     sections = [
@@ -1425,6 +1502,8 @@ def get_todays_major_events(news_items: list, limit: int = 5) -> list:
             "publisher": item.get("publisher") or "",
             "published": _published,
             "published_text": _published_text,
+            "age_days": item.get("age_days"),
+            "recency_weight": item.get("recency_weight", 1.0),
             "score": impact["score"],
             "stars": impact["stars"],
             "star_label": "★" * impact["stars"] + "☆" * (5 - impact["stars"]),
@@ -1542,7 +1621,8 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
             if category == "Other":
                 continue
             weight = max((EVENT_TYPE_TO_ETF_TYPE_IMPACT.get(category, {}).get(et, 0) for et in etf_types), default=0)
-            if weight >= 4:
+            weight *= _news_weight(item)
+            if weight >= 2.5:
                 if category not in reasons:
                     reasons.append(category)
                 for kw in _matched_keywords(item["title"], category):
@@ -1743,11 +1823,11 @@ def generate_todays_market_action(news_items: list) -> dict:
     items is a single neutral "not enough data" bullet.
     """
     lang = get_language()
-    title = "今日觀察重點" if lang == "zh-TW" else "Today's Watchlist"
+    title = "近期觀察重點" if lang == "zh-TW" else "Recent Watchlist"
 
     if not news_items:
-        no_data = ("目前沒有足夠的新聞資料可產生今日行動建議。" if lang == "zh-TW"
-                   else "Not enough news data is available to generate today's market action.")
+        no_data = ("目前沒有足夠的近期新聞資料可產生觀察重點。" if lang == "zh-TW"
+                   else "Not enough recent news data is available to generate a watchlist.")
         return {"title": title, "items": [no_data]}
 
     top_events = get_todays_major_events(news_items, limit=1)

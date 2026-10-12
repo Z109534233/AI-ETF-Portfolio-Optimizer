@@ -42,6 +42,11 @@ def test_methodology_metadata_matches_actual_implementation():
     assert "Taiwan" in m["affected_markets"]["limitation"] or "UK" in m["affected_markets"]["limitation"]
     assert "NOT externally validated" in m["validation"]["status"]
     assert "precision" in m["validation"]["no_fabricated_metrics"].lower()
+    assert "SQLite" in m["source_and_as_of"]["policy"]
+    assert "two-day half-life" in m["source_and_as_of"]["policy"]
+    assert "Federal Reserve" in m["scheduled_events"]["sources"]
+    assert "Bureau of Labor Statistics" in m["scheduled_events"]["sources"]
+    assert "expectations" in m["scheduled_events"]["expectations_limitation"].lower()
 
 
 # ── Bullish/Bearish/Neutral: never forced when unwarranted ──────────────
@@ -137,6 +142,8 @@ def test_market_intelligence_methodology_i18n_keys_exist_in_both_languages():
         "mi_methodology_markets_label", "mi_methodology_markets_desc",
         "mi_methodology_validation_label", "mi_methodology_validation_desc",
         "mi_methodology_source_label", "mi_methodology_source_desc",
+        "mi_calendar_fomc_source_label", "mi_calendar_cpi_source_label",
+        "mi_recent_drivers_title", "mi_recent_watchlist_title",
         "mi_impact_caption",
     ]
     for key in new_keys:
