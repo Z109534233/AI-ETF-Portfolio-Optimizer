@@ -77,6 +77,29 @@ class SimulationHistory(Base):
     final_value = Column(Float, default=0.0)
 
 
+
+class MarketNewsArchive(Base):
+    """Persist recently observed market headlines for continuity.
+
+    Yahoo/yfinance can be intermittently unavailable on cloud hosts. Storing
+    source-provided headlines lets Market Intelligence keep a short recent
+    history without fabricating replacement news when the live feed fails.
+    Publication timestamps are stored as naive UTC datetimes by convention.
+    """
+    __tablename__ = "market_news_archive"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    dedupe_key = Column(String(64), unique=True, nullable=False, index=True)
+    title = Column(Text, nullable=False)
+    publisher = Column(String(200), nullable=True)
+    link = Column(Text, nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    impact = Column(String(20), nullable=False, default="Neutral")
+    source_symbol = Column(String(30), nullable=True)
+    first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 # Default owner for every row created before user-scoping existed (Issue #22
 # section C -- auth architecture). Anonymous/public-demo activity is also
 # recorded under this same value, so a fresh deployment with no auth
