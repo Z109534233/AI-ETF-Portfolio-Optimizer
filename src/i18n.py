@@ -1675,7 +1675,7 @@ TRANSLATIONS = {
         # ── Market Intelligence Page ─────────────────────────────────────
         "nav_market_intelligence": "市場情報中心",
         "mi_title": "市場情報中心",
-        "mi_subtitle": "掌握今日市場動態、相關新聞，以及你的投資組合可能受到的影響。",
+        "mi_subtitle": "整合近 7 天市場新聞、時間衰減影響力，以及未來已排定的重要事件。",
         "mi_tab_overview": "總覽",
         "mi_tab_news": "新聞",
         "mi_tab_portfolio_impact": "投資組合影響",
@@ -1684,7 +1684,7 @@ TRANSLATIONS = {
 
         "mi_section_overview_title": "今日市場總覽",
         "mi_section_news_title": "市場焦點新聞",
-        "mi_section_news_subtitle": "近期市場動態新聞，最多顯示 10 則",
+        "mi_section_news_subtitle": "回看近 7 天市場動態；較新的新聞權重較高，最多顯示 25 則",
         "mi_section_summary_title": "今日市場摘要",
         "mi_section_affected_title": "可能受影響的 ETF",
         "mi_section_affected_subtitle": "根據今日新聞比對的預設觀察清單",
@@ -1694,9 +1694,9 @@ TRANSLATIONS = {
         "mi_country_taiwan": "台灣",
         "mi_country_united_kingdom": "英國",
         "mi_section_sentiment_title": "新聞情緒分析",
-        "mi_section_sentiment_subtitle": "根據新聞標題分類，統計今日新聞情緒分布。",
+        "mi_section_sentiment_subtitle": "根據近 7 天新聞標題分類，並以 2 天半衰期進行時間衰減加權。",
         "mi_section_calendar_title": "經濟行事曆",
-        "mi_section_calendar_subtitle": "本表為範例資料，尚未串接即時 API",
+        "mi_section_calendar_subtitle": "未來 14 天已由官方行事曆驗證的 FOMC 與美國 CPI 事件",
         "mi_section_portfolio_impact_title": "投資組合影響分析",
 
         "mi_sp500": "S&P 500",
@@ -1753,6 +1753,19 @@ TRANSLATIONS = {
         "mi_cal_col_event": "事件",
         "mi_cal_col_when": "時間",
         "mi_cal_col_importance": "重要性",
+        "mi_cal_col_date": "日期",
+        "mi_cal_col_affected_etfs": "可能受影響 ETF",
+        "mi_cal_col_source": "官方來源",
+        "mi_calendar_days_until": "{days} 天後",
+        "mi_calendar_no_events_14d": "未來 14 天內沒有目前官方行事曆已驗證的 FOMC 或美國 CPI 事件。",
+        "mi_calendar_expectations_note": "已排定事件可能在公布前就被市場部分反映；真正造成波動的往往是實際結果與市場預期之間的落差，而不只是事件本身。",
+        "mi_recent_drivers_title": "近期市場驅動因素",
+        "mi_recent_watchlist_title": "近期觀察清單",
+        "mi_news_archive_fallback": "Yahoo 即時新聞來源目前不可用，暫時顯示 SQLite 中近 {days} 天已保存的 {count} 則新聞。",
+        "mi_news_source_error": "Yahoo 新聞來源目前無法連線，而且本地新聞封存中沒有可用的近期資料。",
+        "mi_news_partial_live": "部分 Yahoo 新聞來源暫時無法連線（{failed} 個來源失敗）；以下結果使用目前可取得的來源與已保存新聞。",
+        "mi_news_no_recent_verified": "新聞來源可連線，但目前沒有近 {days} 天可用的市場新聞。",
+        "mi_news_time_unavailable": "發布時間未提供",
 
         "mi_portfolio_no_data": "目前工作階段尚未建立使用中的投資組合，且沒有可用的展示範資料。請先至「投資組合最佳化」建立一組投資組合，再查看市場新聞與配置的關聯。",
         "mi_portfolio_using": "以下分析基於已儲存的投資組合：{name}",
@@ -1793,11 +1806,11 @@ TRANSLATIONS = {
         "mi_affected_by_caption": "受影響原因：",
 
         # ── Chart/Table Explanations (Issue #24 item 4) ──────────────────────
-        "mi_caption_calendar": "此表僅顯示已由即時資料來源驗證的經濟事件。",
+        "mi_caption_calendar": "本表日期來自聯準會 FOMC 官方會議行事曆與美國勞工統計局 CPI 官方發布行事曆；屬已排定事件，不代表市場方向。",
         "mi_calendar_no_verified_data": "目前未串接可驗證的即時經濟行事曆來源，因此不顯示 Fed、CPI 或其他『即將公布』的範例日期，以避免把假資料呈現為即時資訊。",
         "mi_caption_allocation_donut": "顯示你目前投資組合中，各持股占總配置的比例。",
         "mi_caption_demo_allocation_donut": "顯示共用展示範投資組合中，各持股占總配置的比例。",
-        "mi_caption_sentiment_donut": "顯示今日已分析的新聞標題中，被分類為偏多、中性與偏空的比例分布。",
+        "mi_caption_sentiment_donut": "顯示近 7 天新聞標題經時間衰減加權後，被分類為偏多、中性與偏空的比例分布。",
 
         # ── Methodology & Validation (M4) ────────────────────────────────
         "mi_methodology_title": "方法論與驗證狀態",
@@ -3458,7 +3471,7 @@ TRANSLATIONS = {
         # ── Market Intelligence Page ─────────────────────────────────────
         "nav_market_intelligence": "Market Intelligence",
         "mi_title": "Market Intelligence Center",
-        "mi_subtitle": "Stay on top of today's market moves, the news driving them, and how your portfolio may be affected.",
+        "mi_subtitle": "Combine a 7-day news lookback, time-decayed market impact, and verified upcoming scheduled events.",
         "mi_tab_overview": "Overview",
         "mi_tab_news": "News",
         "mi_tab_portfolio_impact": "Portfolio Impact",
@@ -3467,7 +3480,7 @@ TRANSLATIONS = {
 
         "mi_section_overview_title": "Today's Market Overview",
         "mi_section_news_title": "Breaking Market News",
-        "mi_section_news_subtitle": "Recent market-moving headlines, up to 10 shown",
+        "mi_section_news_subtitle": "Seven-day market-news lookback with higher weight on newer headlines, up to 25 shown",
         "mi_section_summary_title": "Today's Market Summary",
         "mi_section_affected_title": "Affected ETFs",
         "mi_section_affected_subtitle": "Default watch-list matched against today's headlines",
@@ -3477,9 +3490,9 @@ TRANSLATIONS = {
         "mi_country_taiwan": "Taiwan",
         "mi_country_united_kingdom": "United Kingdom",
         "mi_section_sentiment_title": "News Sentiment Analysis",
-        "mi_section_sentiment_subtitle": "Distribution of today's news sentiment based on headline classification.",
+        "mi_section_sentiment_subtitle": "Seven-day headline sentiment weighted with a two-day recency half-life.",
         "mi_section_calendar_title": "Economic Calendar",
-        "mi_section_calendar_subtitle": "Example data shown -- not yet connected to a live API",
+        "mi_section_calendar_subtitle": "Verified FOMC and U.S. CPI events scheduled within the next 14 days",
         "mi_section_portfolio_impact_title": "Portfolio Impact",
 
         "mi_sp500": "S&P 500",
@@ -3536,6 +3549,19 @@ TRANSLATIONS = {
         "mi_cal_col_event": "Event",
         "mi_cal_col_when": "When",
         "mi_cal_col_importance": "Importance",
+        "mi_cal_col_date": "Date",
+        "mi_cal_col_affected_etfs": "Potentially Affected ETFs",
+        "mi_cal_col_source": "Official Source",
+        "mi_calendar_days_until": "in {days} days",
+        "mi_calendar_no_events_14d": "No currently verified FOMC or U.S. CPI event is scheduled within the next 14 days.",
+        "mi_calendar_expectations_note": "Scheduled events can be partly priced in before release; realized volatility often reflects the surprise relative to prior expectations rather than the calendar event itself.",
+        "mi_recent_drivers_title": "Recent Market Drivers",
+        "mi_recent_watchlist_title": "Recent Watchlist",
+        "mi_news_archive_fallback": "The live Yahoo news source is currently unavailable, so the page is showing {count} archived headline(s) from the last {days} days.",
+        "mi_news_source_error": "The Yahoo news source is currently unavailable and no recent archived headlines are available locally.",
+        "mi_news_partial_live": "Some Yahoo news sources are temporarily unavailable ({failed} source(s) failed); results combine available live sources with archived headlines.",
+        "mi_news_no_recent_verified": "The news source is reachable, but no usable market headlines are available from the last {days} days.",
+        "mi_news_time_unavailable": "publish time unavailable",
 
         "mi_portfolio_no_data": "There is no active portfolio in this session and no shared demo is available. Build a portfolio in Portfolio Optimizer to relate market news to its allocation.",
         "mi_portfolio_using": "The analysis below is based on a saved portfolio: {name}",
@@ -3576,11 +3602,11 @@ TRANSLATIONS = {
         "mi_affected_by_caption": "Affected by:",
 
         # ── Chart/Table Explanations (Issue #24 item 4) ──────────────────────
-        "mi_caption_calendar": "Only economic events verified by a live calendar source are shown here.",
+        "mi_caption_calendar": "Dates come from the official Federal Reserve FOMC calendar and the U.S. Bureau of Labor Statistics CPI release schedule. Scheduled events are context, not a directional signal.",
         "mi_calendar_no_verified_data": "No verified live economic-calendar source is currently connected, so sample 'upcoming' Fed, CPI, or other event dates are intentionally not shown as if they were current data.",
         "mi_caption_allocation_donut": "Your current portfolio's holdings, each shown as a share of total allocation.",
         "mi_caption_demo_allocation_donut": "The shared demo portfolio's holdings, each shown as a share of total allocation.",
-        "mi_caption_sentiment_donut": "The share of today's analyzed news headlines classified as bullish, neutral, or bearish.",
+        "mi_caption_sentiment_donut": "The time-decay-weighted share of analyzed headlines from the last seven days classified as bullish, neutral, or bearish.",
 
         # ── Methodology & Validation (M4) ────────────────────────────────
         "mi_methodology_title": "Methodology & Validation",
