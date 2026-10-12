@@ -820,20 +820,7 @@ def calculate_affected_markets(news_items: list) -> list:
 
 
 def get_affected_etfs(news_items: list, tickers: list = None) -> list:
-    """
-    Heuristically determine which watch-list ETFs today's headlines might
-    affect, by matching each ETF's sector keywords (SECTOR_KEYWORDS, keyed by
-    the ETF's sector from src/etf_database.py) against headline titles. A
-    matched ETF's impact is the majority vote of classify_headline_sentiment()
-    across its matching headlines; ETFs with no matching headline default to
-    "Neutral". This is a transparent keyword heuristic, not a prediction, and
-    works for any country registered in etf_database.py -- nothing here is
-    hardcoded to a specific market.
-
-    Returns a list of dicts: ticker, sector (translated), country (translated),
-    impact (raw Positive/Negative/Neutral, for logic), impact_label
-    (translated), stars (0-5, for display only).
-    """
+    """Map recent headlines to ETFs using recency-weighted sentiment votes."""
     tickers = tickers or DEFAULT_WATCHLIST
     results = []
     for ticker in tickers:
@@ -842,10 +829,15 @@ def get_affected_etfs(news_items: list, tickers: list = None) -> list:
         country_raw = record.country if record else None
         keywords = SECTOR_KEYWORDS.get(sector_raw, [])
 
-        matches = [n for n in news_items if any(kw in n["title"].lower() for kw in keywords)]
+        matches = [
+            item for item in news_items
+            if any(keyword in item["title"].lower() for keyword in keywords)
+        ]
         if matches:
-            counts = Counter(n["impact"] for n in matches)
-            impact = counts.most_common(1)[0][0]
+            scores = {"Positive": 0.0, "Negative": 0.0, "Neutral": 0.0}
+            for item in matches:
+                scores[item.get("impact", "Neutral")] += _news_weight(item)
+            impact = max(scores, key=scores.get)
         else:
             impact = "Neutral"
 
@@ -859,33 +851,35 @@ def get_affected_etfs(news_items: list, tickers: list = None) -> list:
         })
     return results
 
-
 def calculate_market_sentiment(news_items: list) -> dict:
-    """
-    Aggregate Bullish/Neutral/Bearish percentages across today's headlines
-    using the same keyword classifier as get_affected_etfs(). Returns
-    "available": False (with all percentages at 0) when there is no news to
-    analyze, so the page can show a clean empty state instead of a fake split.
-    """
+    """Recency-weighted Bullish/Neutral/Bearish split for recent headlines."""
     if not news_items:
         return {
             "available": False,
             "bullish_pct": 0.0, "neutral_pct": 0.0, "bearish_pct": 0.0,
             "bullish_count": 0, "neutral_count": 0, "bearish_count": 0,
+            "weighted_total": 0.0,
         }
 
-    counts = Counter(n["impact"] for n in news_items)
-    total = len(news_items)
-    bullish, bearish, neutral = counts.get("Positive", 0), counts.get("Negative", 0), counts.get("Neutral", 0)
+    weighted = {"Positive": 0.0, "Negative": 0.0, "Neutral": 0.0}
+    raw = Counter()
+    for item in news_items:
+        impact = item.get("impact", "Neutral")
+        weighted[impact] += _news_weight(item)
+        raw[impact] += 1
 
+    weighted_total = sum(weighted.values())
+    denominator = weighted_total if weighted_total > 0 else 1.0
     return {
         "available": True,
-        "bullish_pct": round(bullish / total * 100, 1),
-        "neutral_pct": round(neutral / total * 100, 1),
-        "bearish_pct": round(bearish / total * 100, 1),
-        "bullish_count": bullish, "neutral_count": neutral, "bearish_count": bearish,
+        "bullish_pct": round(weighted["Positive"] / denominator * 100, 1),
+        "neutral_pct": round(weighted["Neutral"] / denominator * 100, 1),
+        "bearish_pct": round(weighted["Negative"] / denominator * 100, 1),
+        "bullish_count": raw.get("Positive", 0),
+        "neutral_count": raw.get("Neutral", 0),
+        "bearish_count": raw.get("Negative", 0),
+        "weighted_total": round(weighted_total, 4),
     }
-
 
 def get_economic_calendar() -> list:
     """Return only verified economic-calendar events.
