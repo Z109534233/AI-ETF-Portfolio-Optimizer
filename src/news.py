@@ -332,6 +332,8 @@ def fetch_market_news_with_status(limit: int = 25,
         status = "archive_fallback"
     elif failures and not items:
         status = "source_error"
+    elif successful_sources > 0 and items:
+        status = "archive_recent"
     else:
         status = "no_recent_news"
 
