@@ -444,54 +444,45 @@ def _is_commentary_news_item(item: dict) -> bool:
 
 
 def calculate_market_impact(news_items: list) -> dict:
-    """
-    Market Impact Score: a 0-100 score for today's news, built from *event
-    importance* rather than "did a headline mention this ETF/market by
-    name". Every headline is classified via classify_event() into one
-    category, the single most important category present today is treated
-    as the day's dominant event (ties broken by how often that category
-    repeats), and the score is a weighted blend of:
-      - Event Importance   (40%) -- EVENT_IMPORTANCE_SCORE for the
-        dominant category
-      - Affected Markets    (25%) -- EVENT_AFFECTED_MARKETS, how strongly
-        that category is known to hit our supported markets
-      - Affected Industry   (20%) -- EVENT_INDUSTRY_BREADTH, how broadly
-        that category tends to reach across industries/sectors
-      - News Frequency      (15%) -- absolute corroborating headline count
-        for the dominant category (a repeated theme signals a bigger,
-        more pervasive story than a single one-off mention)
-    A transparent rule-based heuristic, not a prediction of market
-    direction.
+    """Recency-weighted 0-100 impact score for the recent-news window.
 
-    Returns a dict: score (0-100), stars (0-5; 0 only when there is no
-    news to score), star_label (e.g. "★★★★☆"), category (the dominant
-    event category driving the score, or None), breakdown (dict of the
-    four component scores, each already on a 0-100 scale, for
-    transparency).
+    A two-day half-life is attached upstream in src.news. Older headlines
+    therefore remain visible while contributing less than fresh information.
+    Multiple corroborating headlines can partly offset that time decay.
     """
-    empty_breakdown = {"event_importance": 0, "affected_markets": 0, "affected_industry": 0, "news_frequency": 0}
+    empty_breakdown = {
+        "event_importance": 0, "affected_markets": 0,
+        "affected_industry": 0, "news_frequency": 0,
+    }
     if not news_items:
-        return {"score": 0, "stars": 0, "star_label": "☆☆☆☆☆", "category": None, "breakdown": empty_breakdown}
+        return {
+            "score": 0, "stars": 0, "star_label": "☆☆☆☆☆",
+            "category": None, "breakdown": empty_breakdown,
+        }
 
-    categories = [classify_event(item["title"]) for item in news_items]
-    category_counts = Counter(categories)
+    weighted_counts = Counter()
+    for item in news_items:
+        category = classify_event(item["title"])
+        weighted_counts[category] += _news_weight(item)
 
-    present = [c for c in category_counts if c != "Other"] or list(category_counts)
-    dominant = max(present, key=lambda c: (EVENT_IMPORTANCE_SCORE.get(c, 20), category_counts[c]))
+    present = [key for key in weighted_counts if key != "Other"] or list(weighted_counts)
+    dominant = max(
+        present,
+        key=lambda key: (
+            EVENT_IMPORTANCE_SCORE.get(key, 20) * min(1.0, weighted_counts[key]),
+            weighted_counts[key],
+        ),
+    )
 
-    event_importance = EVENT_IMPORTANCE_SCORE.get(dominant, 20)
-
+    recency_factor = min(1.0, float(weighted_counts[dominant]))
+    event_importance = EVENT_IMPORTANCE_SCORE.get(dominant, 20) * recency_factor
     market_weights = EVENT_AFFECTED_MARKETS.get(dominant, {})
-    affected_markets = max(market_weights.values()) * 20 if market_weights else 20
-
-    affected_industry = EVENT_INDUSTRY_BREADTH.get(dominant, 15)
-
-    # Absolute corroboration matters more than share-of-feed. With the old
-    # formula, one single article in a one-article feed received 100/100 for
-    # "frequency", which could overstate a commentary piece mentioning the
-    # Federal Reserve. One mention now contributes only 25/100; four or more
-    # independent matching headlines are needed to max this component.
-    news_frequency = min(100, category_counts[dominant] * 25)
+    affected_markets = (
+        max(market_weights.values()) * 20 * recency_factor
+        if market_weights else 20 * recency_factor
+    )
+    affected_industry = EVENT_INDUSTRY_BREADTH.get(dominant, 15) * recency_factor
+    news_frequency = min(100.0, float(weighted_counts[dominant]) * 25.0)
 
     score = round(
         event_importance * 0.40
@@ -499,31 +490,28 @@ def calculate_market_impact(news_items: list) -> dict:
         + affected_industry * 0.20
         + news_frequency * 0.15
     )
-    # Explicit commentary/opinion pieces should not become 4-5 star
-    # "market impact" events just because they mention a high-weight term
-    # such as "Federal Reserve". Do NOT cap ordinary hard news merely
-    # because only one headline is available.
+
     dominant_items = [
         item for item in news_items if classify_event(item["title"]) == dominant
     ]
     if len(dominant_items) == 1 and _is_commentary_news_item(dominant_items[0]):
         score = min(score, 69)
+
     score = max(0, min(100, score))
     stars = _market_impact_score_to_stars(score)
-
     return {
         "score": score,
         "stars": stars,
         "star_label": "★" * stars + "☆" * (5 - stars),
         "category": dominant,
+        "recency_factor": round(recency_factor, 4),
         "breakdown": {
-            "event_importance": event_importance,
-            "affected_markets": affected_markets,
-            "affected_industry": affected_industry,
-            "news_frequency": news_frequency,
+            "event_importance": round(event_importance, 1),
+            "affected_markets": round(affected_markets, 1),
+            "affected_industry": round(affected_industry, 1),
+            "news_frequency": round(news_frequency, 1),
         },
     }
-
 
 # ── ETF Impact (Event -> Event Type -> ETF Type -> Impact) ──────────────────
 # ticker -> its ETF Type tag(s). An ETF can carry more than one tag (e.g.
