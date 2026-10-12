@@ -72,3 +72,17 @@ def test_relative_age_label_is_localized():
     published = now - timedelta(days=3)
     assert news_mod.relative_age_label(published, "en", now=now) == "3d ago"
     assert news_mod.relative_age_label(published, "zh-TW", now=now) == "3 天前"
+
+
+def test_archive_recent_when_source_is_reachable_but_returns_no_new_items(monkeypatch):
+    archived = [_item("Recently archived market headline", "Neutral", age_days=1)]
+    monkeypatch.setattr(news_mod, "_fetch_live_market_news", lambda: {
+        "items": [], "successful_sources": 4, "failed_sources": {},
+    })
+    monkeypatch.setattr(
+        news_mod, "_load_archived_news",
+        lambda lookback_days=7, limit=50: archived,
+    )
+    result = news_mod.fetch_market_news_with_status(limit=10, lookback_days=7)
+    assert result["status"] == "archive_recent"
+    assert len(result["items"]) == 1
