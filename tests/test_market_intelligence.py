@@ -22,7 +22,7 @@ left unconfigured (no OPENAI_API_KEY) or monkeypatched directly.
 
 import os
 import sys
-from datetime import datetime
+from datetime import date, datetime
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -75,7 +75,19 @@ def _run_market_intelligence(lang="en"):
 def mocked_market_data(monkeypatch):
     """No real yfinance network calls anywhere in this file."""
     import src.news as news_mod
-    monkeypatch.setattr(news_mod, "fetch_market_news", lambda limit=10: _sample_news())
+    monkeypatch.setattr(
+        news_mod, "fetch_market_news_with_status",
+        lambda limit=25, lookback_days=7: {
+            "items": _sample_news(),
+            "status": "live",
+            "live_item_count": len(_sample_news()),
+            "archive_item_count": len(_sample_news()),
+            "successful_sources": 4,
+            "failed_sources": {},
+            "lookback_days": 7,
+            "half_life_days": 2.0,
+        },
+    )
     monkeypatch.setattr(mi_mod, "fetch_market_indices", lambda: {
         "sp500": {"label": "S&P 500", "available": True, "price": 5000.0, "change": 10.0, "change_pct": 0.2},
         "nasdaq": {"label": "NASDAQ", "available": True, "price": 17000.0, "change": -5.0, "change_pct": -0.1},
@@ -300,8 +312,23 @@ def test_single_uncorroborated_fed_headline_cannot_receive_high_impact_rating():
     assert result["stars"] <= 3
 
 
-def test_unverified_static_economic_calendar_is_not_presented_as_live():
-    assert get_economic_calendar() == []
+def test_verified_fomc_calendar_uses_official_schedule():
+    events = get_economic_calendar(horizon_days=14, today=date(2026, 10, 20))
+    fomc = next(e for e in events if e["event"] == "FOMC Rate Decision")
+    assert fomc["date_text"] == "2026-10-28"
+    assert fomc["days_until"] == 8
+    assert fomc["source"] == "Federal Reserve"
+    assert "federalreserve.gov" in fomc["source_url"]
+    assert "expectations" in fomc["anticipation_note"].lower()
+
+
+def test_verified_cpi_calendar_uses_bls_schedule():
+    events = get_economic_calendar(horizon_days=14, today=date(2026, 11, 1))
+    cpi = next(e for e in events if e["event"] == "U.S. CPI Release")
+    assert cpi["date_text"] == "2026-11-10"
+    assert cpi["days_until"] == 9
+    assert cpi["source"] == "U.S. Bureau of Labor Statistics"
+    assert "bls.gov" in cpi["source_url"]
 
 
 def test_market_summary_prompt_makes_index_snapshot_authoritative(monkeypatch):
