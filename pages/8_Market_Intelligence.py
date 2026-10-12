@@ -122,6 +122,12 @@ if _news_status == "archive_fallback":
         days=news_feed.get("lookback_days", 7),
         count=len(news_items),
     ))
+elif _news_status == "archive_recent":
+    st.caption(t(
+        "mi_news_archive_recent",
+        days=news_feed.get("lookback_days", 7),
+        count=len(news_items),
+    ))
 elif _news_status == "source_error":
     st.warning(t("mi_news_source_error"))
 elif _news_status == "partial_live":
