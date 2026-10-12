@@ -643,21 +643,24 @@ def calculate_ai_market_sentiment(news_items: list) -> dict:
                 "confidence": 0, "drivers": []}
 
     weighted_sum = 0.0
-    total_weight = 0.0
+    evidence_weight = 0.0
+    baseline_weight = 0.0
     drivers = []
 
     for item in news_items:
         event_types = classify_event_types(item["title"])
-        weight = max((EVENT_IMPORTANCE.get(et, DEFAULT_EVENT_WEIGHT) for et in event_types),
-                     default=DEFAULT_EVENT_WEIGHT)
-        weight *= _news_weight(item)
+        base_weight = max((EVENT_IMPORTANCE.get(et, DEFAULT_EVENT_WEIGHT) for et in event_types),
+                          default=DEFAULT_EVENT_WEIGHT)
+        decay = _news_weight(item)
+        weight = base_weight * decay
         signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
         weighted_sum += signed * weight
-        total_weight += weight
+        evidence_weight += weight
+        baseline_weight += base_weight
         if event_types:
             drivers.append((item["title"], weight))
 
-    avg = weighted_sum / total_weight if total_weight else 0.0
+    avg = weighted_sum / baseline_weight if baseline_weight else 0.0
 
     if avg > 0.15:
         mood = "Bullish"
@@ -668,7 +671,10 @@ def calculate_ai_market_sentiment(news_items: list) -> dict:
 
     # Confidence blends how one-sided the weighted signal is (abs(avg),
     # 0-1) into a 30-95% display range -- never a fake 0% or 100%.
-    confidence = int(max(30, min(95, round(50 + abs(avg) * 50))))
+    confidence = (
+        int(max(30, min(95, round(50 + abs(avg) * 50))))
+        if evidence_weight >= 0.20 else 0
+    )
 
     drivers.sort(key=lambda d: d[1], reverse=True)
     top_drivers = [d[0] for d in drivers[:3]]
@@ -717,32 +723,41 @@ def calculate_regional_market_sentiment(news_items: list) -> list:
 
     def _weighted_score(weight_lookup):
         weighted_sum = 0.0
-        total_weight = 0.0
+        evidence_weight = 0.0
+        baseline_weight = 0.0
         for item in news_items:
-            weight = max((weight_lookup(et) for et in classify_event_types(item["title"])), default=0)
-            weight *= _news_weight(item)
-            if weight <= 0:
+            base_weight = max((weight_lookup(et) for et in classify_event_types(item["title"])), default=0)
+            if base_weight <= 0:
                 continue
+            weight = base_weight * _news_weight(item)
             signed = {"Positive": 1, "Negative": -1, "Neutral": 0}.get(item.get("impact"), 0)
             weighted_sum += signed * weight
-            total_weight += weight
-        return weighted_sum, total_weight
+            evidence_weight += weight
+            baseline_weight += base_weight
+        return weighted_sum, evidence_weight, baseline_weight
 
-    def _mood_and_confidence(weighted_sum, total_weight):
-        avg = weighted_sum / total_weight if total_weight else 0.0
+    def _mood_and_confidence(weighted_sum, evidence_weight, baseline_weight):
+        avg = weighted_sum / baseline_weight if baseline_weight else 0.0
         if avg > 0.15:
             mood = "Bullish"
         elif avg < -0.15:
             mood = "Bearish"
         else:
             mood = "Neutral"
-        confidence = int(max(30, min(95, round(50 + abs(avg) * 50)))) if total_weight else 0
+        confidence = (
+            int(max(30, min(95, round(50 + abs(avg) * 50))))
+            if evidence_weight >= 0.20 else 0
+        )
         return mood, confidence
 
     results = []
     for market in markets:
-        weighted_sum, total_weight = _weighted_score(lambda et, m=market: EVENT_MARKET_IMPACT.get(et, {}).get(m, 0))
-        mood, confidence = _mood_and_confidence(weighted_sum, total_weight)
+        weighted_sum, evidence_weight, baseline_weight = _weighted_score(
+            lambda et, m=market: EVENT_MARKET_IMPACT.get(et, {}).get(m, 0)
+        )
+        mood, confidence = _mood_and_confidence(
+            weighted_sum, evidence_weight, baseline_weight
+        )
         results.append({
             "market": market,
             "market_label": t_country(market),
@@ -752,10 +767,12 @@ def calculate_regional_market_sentiment(news_items: list) -> list:
             "confidence": confidence,
         })
 
-    weighted_sum, total_weight = _weighted_score(
+    weighted_sum, evidence_weight, baseline_weight = _weighted_score(
         lambda et: max(EVENT_MARKET_IMPACT.get(et, {}).values(), default=0)
     )
-    mood, confidence = _mood_and_confidence(weighted_sum, total_weight)
+    mood, confidence = _mood_and_confidence(
+        weighted_sum, evidence_weight, baseline_weight
+    )
     results.append({
         "market": "Global",
         "market_label": "Global",
@@ -843,7 +860,11 @@ def get_affected_etfs(news_items: list, tickers: list = None) -> list:
             scores = {"Positive": 0.0, "Negative": 0.0, "Neutral": 0.0}
             for item in matches:
                 scores[item.get("impact", "Neutral")] += _news_weight(item)
-            impact = max(scores, key=scores.get)
+            impact = (
+                max(scores, key=scores.get)
+                if sum(scores.values()) >= 0.20
+                else "Neutral"
+            )
         else:
             impact = "Neutral"
 
