@@ -881,14 +881,72 @@ def calculate_market_sentiment(news_items: list) -> dict:
         "weighted_total": round(weighted_total, 4),
     }
 
-def get_economic_calendar() -> list:
-    """Return only verified economic-calendar events.
+FOMC_SOURCE_URL = "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+CPI_SOURCE_URL = "https://www.bls.gov/schedule/news_release/cpi.htm"
 
-    No live calendar provider is currently connected, so returning an empty
-    list is more accurate than presenting sample Fed/CPI dates as if they
-    were current. The UI explicitly explains this unavailable state.
+# Officially scheduled decision/release dates verified against the Federal
+# Reserve and BLS calendars. This is intentionally explicit and auditable
+# rather than presented as a live API feed.
+_VERIFIED_SCHEDULED_EVENTS = [
+    ("2026-10-28", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-12-09", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-01-27", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-03-17", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-04-28", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-06-09", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-07-28", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-09-15", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-10-27", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-12-08", "FOMC Rate Decision", "Interest Rate", FOMC_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-11-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2026-12-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-01-13", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-02-11", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-03-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-04-13", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-05-12", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-06-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-07-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-08-11", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-09-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-10-14", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-11-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+    ("2027-12-10", "U.S. CPI Release", "Inflation", CPI_SOURCE_URL, ["TLT", "BND", "QQQ", "VOO"]),
+]
+
+
+def get_economic_calendar(horizon_days: int = 14, today=None) -> list:
+    """Return verified FOMC/CPI events scheduled in the next N days.
+
+    A scheduled event is context, not a directional signal. Markets may
+    react before the date, while realized volatility often reflects the
+    surprise relative to expectations rather than the event itself.
     """
-    return []
+    today = today or date.today()
+    if isinstance(today, datetime):
+        today = today.date()
+
+    results = []
+    for date_text, name, category, source_url, affected_etfs in _VERIFIED_SCHEDULED_EVENTS:
+        event_date = date.fromisoformat(date_text)
+        days_until = (event_date - today).days
+        if 0 <= days_until <= int(horizon_days):
+            results.append({
+                "event": name,
+                "date": event_date,
+                "date_text": event_date.isoformat(),
+                "days_until": days_until,
+                "category": category,
+                "source": "Federal Reserve" if "FOMC" in name else "U.S. Bureau of Labor Statistics",
+                "source_url": source_url,
+                "affected_etfs": list(affected_etfs),
+                "anticipation_note": (
+                    "Scheduled events may be partly priced in before release; "
+                    "the market surprise is the difference between the actual "
+                    "outcome and prior expectations."
+                ),
+            })
+    return sorted(results, key=lambda item: item["date"])
 
 
 _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS = (
