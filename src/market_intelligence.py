@@ -1015,9 +1015,9 @@ def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: lis
         "quoted source title distinct from your own Chinese prose."
         if get_language() == "zh-TW" else "Respond entirely in English."
     )
-    return f"""Based on the deterministic market snapshot and today's headlines below, write a "Today's Market Summary" of about 100-200 words. MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT; headline sentiment is supplementary context and must never override or contradict the index direction. VIX wording must follow its displayed level and daily change. Do not invent upcoming Fed decisions, releases, or calendar events. Do not predict future prices or give personalised investment advice. {language_instruction}
+    return f"""Based on the deterministic market snapshot and today's headlines below, write a "Recent Market Summary" of about 100-200 words. MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT; headline sentiment is supplementary context and must never override or contradict the index direction. VIX wording must follow its displayed level and daily change. Do not invent upcoming Fed decisions, releases, or calendar events. Do not predict future prices or give personalised investment advice. {language_instruction}
 
-Actual index snapshot (authoritative for market direction):
+Current index snapshot (authoritative for current market direction):
 Direction: {snapshot['direction']}
 Equity indices: {snapshot['equity_details'] or 'N/A'}
 Volatility: {snapshot['vix_text'] or 'N/A'}
@@ -1234,12 +1234,12 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
     # badge and collide with generate_market_summary()'s genuinely
     # OpenAI-backed "Today's Market Summary" card elsewhere on this page
     # (Issue #20 section 10: never label deterministic content as AI).
-    title = "今日市場總覽" if lang == "zh-TW" else "Today's Market Overview"
+    title = "近期市場總覽" if lang == "zh-TW" else "Recent Market Overview"
 
     if not news_items:
-        no_data = ("目前沒有足夠的新聞資料可產生今日摘要。" if lang == "zh-TW"
-                   else "Not enough news data is available to generate today's summary.")
-        heading = "今日摘要" if lang == "zh-TW" else "Summary"
+        no_data = ("目前沒有足夠的近期新聞資料可產生摘要。" if lang == "zh-TW"
+                   else "Not enough recent news data is available to generate a summary.")
+        heading = "近期摘要" if lang == "zh-TW" else "Summary"
         return {"title": title, "sections": [{"heading": heading, "text": no_data}], "disclaimer": ""}
 
     impact = calculate_market_impact(news_items)
@@ -1259,7 +1259,7 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
     if lang == "zh-TW":
         _dir = {"Rising": "整體走揚", "Falling": "整體下跌", "Mixed": "漲跌互見", "Unavailable": "方向資料不足"}[snapshot["direction"]]
         overview_text = (
-            f"依實際主要股價指數，今天市場{_dir}。新聞分類則偏向"
+            f"依目前實際主要股價指數，市場{_dir}。近 7 天新聞分類經時間衰減加權後偏向"
             f"{'正面' if mood == 'Bullish' else '負面' if mood == 'Bearish' else '中性'}，"
             f"主要涉及{category_zh}相關發展；新聞情緒僅作補充，不覆蓋實際指數方向。"
         )
@@ -1272,15 +1272,15 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
                 f"{_ETF_TYPE_REGION_ZH.get('Broad Market')} ETF 出現更明顯的波動。"
             )
         else:
-            why_text = "今天的新聞沒有指向特別集中的產業反應，影響較為全面、分散。"
+            why_text = "近期新聞沒有指向特別集中的產業反應，影響較為全面、分散。"
         insight_text = _INSIGHT_PHRASE_ZH.get(mood, _INSIGHT_PHRASE_ZH["Neutral"])
         headings = ("今日市場概況", "今天市場為何波動", "投資洞察")
         disclaimer = "此摘要為規則式生成，僅供教育用途，不構成投資建議或價格預測。"
     else:
         _dir = {"Rising": "broadly higher", "Falling": "broadly lower", "Mixed": "mixed", "Unavailable": "not classifiable from available index data"}[snapshot["direction"]]
         overview_text = (
-            f"Based on the actual major equity indices, markets are {_dir} today. "
-            f"Headline classification is {mood.lower()} and is treated only as supplementary context, "
+            f"Based on the current major equity indices, markets are {_dir}. "
+            f"The 7-day time-decayed headline classification is {mood.lower()} and is treated only as supplementary context, "
             f"with {category_en} developments the main classified theme."
         )
         if snapshot["vix_text"]:
@@ -1291,9 +1291,9 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
                 f"volatility than {_ETF_TYPE_REGION_EN.get('Broad Market')} ETFs."
             )
         else:
-            why_text = "Today's news doesn't point to one clearly dominant sector -- the reaction looks broad and spread out."
+            why_text = "Recent news does not point to one clearly dominant sector -- the reaction looks broad and spread out."
         insight_text = _INSIGHT_PHRASE_EN.get(mood, _INSIGHT_PHRASE_EN["Neutral"])
-        headings = ("Today's Market Overview", "Why Markets Moved Today", "Investment Insight")
+        headings = ("Recent Market Context", "Why Markets May Be Reacting", "Investment Insight")
         disclaimer = "This is a rule-based summary for educational purposes only -- not investment advice or a price prediction."
 
     sections = [
@@ -1801,11 +1801,11 @@ def generate_todays_market_action(news_items: list) -> dict:
     items is a single neutral "not enough data" bullet.
     """
     lang = get_language()
-    title = "今日觀察重點" if lang == "zh-TW" else "Today's Watchlist"
+    title = "近期觀察重點" if lang == "zh-TW" else "Recent Watchlist"
 
     if not news_items:
-        no_data = ("目前沒有足夠的新聞資料可產生今日行動建議。" if lang == "zh-TW"
-                   else "Not enough news data is available to generate today's market action.")
+        no_data = ("目前沒有足夠的近期新聞資料可產生觀察重點。" if lang == "zh-TW"
+                   else "Not enough recent news data is available to generate a watchlist.")
         return {"title": title, "items": [no_data]}
 
     top_events = get_todays_major_events(news_items, limit=1)
