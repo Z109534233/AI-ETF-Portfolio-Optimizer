@@ -8,6 +8,7 @@ raising, so the page can never crash.
 """
 
 from collections import Counter
+from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
@@ -61,6 +62,14 @@ def _default_global_watchlist() -> list:
 # Default watch-list shown in the "Global ETFs" section: one ETF per
 # supported country (built dynamically from etf_database.py, see above).
 DEFAULT_WATCHLIST = _default_global_watchlist()
+
+
+def _news_weight(item: dict) -> float:
+    """Return a headline's precomputed recency weight (default 1.0)."""
+    try:
+        return max(0.0, min(1.0, float((item or {}).get("recency_weight", 1.0))))
+    except (TypeError, ValueError):
+        return 1.0
 
 
 @st.cache_data(ttl=900, show_spinner=False)
