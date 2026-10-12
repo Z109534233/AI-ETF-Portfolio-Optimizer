@@ -312,6 +312,14 @@ def test_single_uncorroborated_fed_headline_cannot_receive_high_impact_rating():
     assert result["stars"] <= 3
 
 
+def test_current_october_2026_calendar_surfaces_cpi_in_two_days():
+    events = get_economic_calendar(horizon_days=14, today=date(2026, 10, 12))
+    cpi = next(e for e in events if e["event"] == "U.S. CPI Release")
+    assert cpi["date_text"] == "2026-10-14"
+    assert cpi["days_until"] == 2
+    assert "bls.gov" in cpi["source_url"]
+
+
 def test_verified_fomc_calendar_uses_official_schedule():
     events = get_economic_calendar(horizon_days=14, today=date(2026, 10, 20))
     fomc = next(e for e in events if e["event"] == "FOMC Rate Decision")
