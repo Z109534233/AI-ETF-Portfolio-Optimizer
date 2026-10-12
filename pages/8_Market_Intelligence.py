@@ -2,10 +2,10 @@
 Page 8: Market Intelligence Center (Issue #20 section 10 -- renamed from "AI
 Market Intelligence Center"; classification/impact/sentiment scoring here is
 rule-based, only the "Today's Market Summary" card is genuinely OpenAI-backed)
-A market intelligence dashboard (not a news site): today's index snapshot,
-breaking headlines, an AI/rule-based market summary, ETFs today's news may
-affect, aggregate headline sentiment, a placeholder economic calendar, and
-(when a portfolio has been saved) a portfolio-impact analysis.
+A market intelligence dashboard (not a news site): current index snapshot,
+a seven-day archived headline window with time decay, rule-based/AI-assisted
+summaries, ETF/market relevance, verified scheduled macro events, and
+portfolio-impact analysis.
 
 Issue #22 sections H/I: reorganized into tabs (Overview / News / Portfolio
 Impact / Sentiment / Methodology) to cut scrolling, and audited for
@@ -31,6 +31,7 @@ from src.market_intelligence import (
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
     generate_todays_market_action, stars_to_impact_label,
+    FOMC_SOURCE_URL, CPI_SOURCE_URL,
 )
 from src.charts import sentiment_donut_chart, allocation_donut_chart
 from src.theme import COLORS
@@ -341,6 +342,10 @@ with tab_overview:
             ])
             st.dataframe(calendar_df, use_container_width=True, hide_index=True)
             chart_caption(t("mi_caption_calendar"))
+            st.markdown(
+                f"[{t('mi_calendar_fomc_source_label')}]({FOMC_SOURCE_URL}) · "
+                f"[{t('mi_calendar_cpi_source_label')}]({CPI_SOURCE_URL})"
+            )
             st.caption(t("mi_calendar_expectations_note"))
         else:
             st.info(t("mi_calendar_no_events_14d"))
