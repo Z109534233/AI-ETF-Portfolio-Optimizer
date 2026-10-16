@@ -73,19 +73,10 @@ def _news_weight(item: dict) -> float:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def fetch_market_indices() -> dict:
-    """
-    Fetch the latest price and day-over-day change for the major indices
-    (S&P 500, NASDAQ, Dow Jones, Russell 2000, VIX) via yfinance.
-
-    Returns a dict keyed by index id, each value a dict with "label",
-    "available" (bool), and -- when available -- "price", "change",
-    "change_pct". A per-index failure is isolated: one bad ticker never
-    prevents the others from rendering.
-    """
+def _fetch_market_indices_raw() -> dict:
+    """Fetch language-neutral index values for the current market snapshot."""
     result = {}
     for key, (label_key, symbol) in INDEX_TICKERS.items():
-        label = t(label_key)
         try:
             hist = yf.download(symbol, period="5d", progress=False, auto_adjust=True, threads=False)
             if isinstance(hist.columns, pd.MultiIndex):
@@ -93,20 +84,35 @@ def fetch_market_indices() -> dict:
             closes = hist["Close"].dropna() if "Close" in hist.columns else pd.Series(dtype=float)
 
             if len(closes) < 2:
-                result[key] = {"label": label, "available": False}
+                result[key] = {"label_key": label_key, "available": False}
                 continue
 
             last, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
             change = last - prev
             change_pct = (change / prev * 100) if prev else 0.0
             result[key] = {
-                "label": label, "available": True,
+                "label_key": label_key, "available": True,
                 "price": last, "change": change, "change_pct": change_pct,
             }
         except Exception:
-            result[key] = {"label": label, "available": False}
+            result[key] = {"label_key": label_key, "available": False}
     return result
 
+
+def fetch_market_indices() -> dict:
+    """Return the cached market snapshot with labels localized per rerun.
+
+    Only language-neutral prices are cached. Translating *after* the cache
+    lookup prevents a Traditional-Chinese cache entry from leaking Chinese
+    index labels into a later English session (and vice versa).
+    """
+    raw = _fetch_market_indices_raw()
+    result = {}
+    for key, row in raw.items():
+        localized = dict(row)
+        localized["label"] = t(row.get("label_key", INDEX_TICKERS[key][0]))
+        result[key] = localized
+    return result
 
 def summarize_market_snapshot(indices: dict) -> dict:
     """Deterministic market direction from displayed index data.
