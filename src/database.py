@@ -1,6 +1,7 @@
 """
 Database Module
-SQLite database management using SQLAlchemy for portfolio storage.
+SQLAlchemy persistence with local SQLite by default and optional external
+PostgreSQL through DATABASE_URL for cloud deployments.
 """
 
 import os
@@ -108,9 +109,9 @@ class SimulationHistory(Base):
 class MarketNewsArchive(Base):
     """Persist recently observed market headlines for continuity.
 
-    Yahoo/yfinance can be intermittently unavailable on cloud hosts. Storing
-    source-provided headlines lets Market Intelligence keep a short recent
-    history without fabricating replacement news when the live feed fails.
+    News providers can be intermittently unavailable on cloud hosts. Storing
+    observed headlines lets Market Intelligence keep a short recent history
+    without fabricating replacement news when live feeds fail.
     Publication timestamps are stored as naive UTC datetimes by convention.
     """
     __tablename__ = "market_news_archive"
