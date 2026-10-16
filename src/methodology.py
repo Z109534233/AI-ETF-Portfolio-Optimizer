@@ -368,7 +368,7 @@ RISK_METHODOLOGY = {
 MARKET_INTELLIGENCE_METHODOLOGY = {
     "pipeline": {
         "stages": [
-            "sources (Yahoo Finance plus Google News RSS and the Federal Reserve RSS feed; live retrieval cached for about two minutes; successful headlines archived through SQLAlchemy)",
+            "sources (Yahoo Finance plus Google News RSS and the Federal Reserve monetary-policy RSS feed; live retrieval cached for about two minutes; successful headlines archived through SQLAlchemy)",
             "headline sentiment (keyword-based Positive/Negative/Neutral "
             "classifier, src/news.py's classify_headline_sentiment())",
             "event classification (rule-based keyword matching into a fixed "
@@ -403,7 +403,14 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
         ),
     },
     "measures": {
-        "impact": "how significant an event/headline is estimated to be for a market or ETF (0-100 score / 1-5 stars) -- NOT a confidence level and NOT a relevance flag",
+        "impact": (
+            "headline/event intensity is first scored from the rule-based event taxonomy and "
+            "recency weights, then the page-level 0-100 Market Impact Score is calibrated "
+            "against observed broad-index moves and VIX. Quiet observed markets cap the "
+            "displayed score below the Very High band so headline volume alone cannot imply "
+            "a realized high-impact regime. Per-market/per-ETF stars remain topical relevance "
+            "heuristics, not confidence levels or forecasts."
+        ),
         "confidence": "how one-sided the underlying weighted sentiment signal is (30-95%, never a fabricated 0% or 100%) -- NOT how important the event is",
         "relevance": (
             "a binary gating step applied BEFORE impact/confidence are "
@@ -426,9 +433,12 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
         ),
         "limitation": (
             "the source mix is still US-centric: Yahoo broad-market proxies, "
-            "Google News market/macro RSS, and Federal Reserve press releases. "
+            "Google News market/macro RSS, and Federal Reserve monetary-policy releases. "
             "Taiwan- and UK-specific stories can therefore remain under-represented, "
-            "so cross-market coverage should not be interpreted as comprehensive."
+            "so cross-market coverage should not be interpreted as comprehensive. "
+            "Keyword-based event classification can also misclassify ambiguous headlines; "
+            "for example, a person or institution mentioned in a headline does not by itself "
+            "prove that the story is a monetary-policy event."
         ),
     },
     "validation": {
