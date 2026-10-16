@@ -522,6 +522,66 @@ def calculate_market_impact(news_items: list) -> dict:
         },
     }
 
+def calibrate_market_impact_with_snapshot(impact: dict, indices: dict) -> dict:
+    """Calibrate headline intensity against observed market confirmation.
+
+    The headline taxonomy measures how important/relevant the recent news
+    *could* be. To avoid displaying a near-100 score while the observable
+    market is quiet, the final score is capped when broad equity moves and
+    VIX do not confirm that severity. The uncalibrated value is preserved as
+    ``raw_score`` for methodology/debugging transparency.
+
+    Confirmation bands:
+    - Low: average absolute equity move < 0.75% and VIX < 20/not rising;
+      final score capped at 69 (Moderate / 3-star band).
+    - Moderate: average absolute equity move < 1.50% and VIX < 25;
+      final score capped at 84 (High / 4-star band).
+    - High: otherwise; no additional cap.
+
+    If fewer than two equity indices are available, no market-confirmation
+    cap is applied because the snapshot is too incomplete to justify one.
+    """
+    result = dict(impact or {})
+    raw_score = int(result.get("score", 0) or 0)
+    result["raw_score"] = raw_score
+
+    equity_keys = ("sp500", "nasdaq", "dow", "russell")
+    equity_moves = [
+        abs(float((indices or {}).get(key, {}).get("change_pct", 0.0)))
+        for key in equity_keys
+        if (indices or {}).get(key, {}).get("available")
+    ]
+    if raw_score <= 0 or len(equity_moves) < 2:
+        result["market_confirmation"] = "Unavailable" if len(equity_moves) < 2 else "Low"
+        result["confirmation_cap"] = None
+        return result
+
+    avg_abs_move = sum(equity_moves) / len(equity_moves)
+    vix = (indices or {}).get("vix", {})
+    vix_level = float(vix.get("price", 0.0)) if vix.get("available") else None
+    vix_change = float(vix.get("change_pct", 0.0)) if vix.get("available") else None
+
+    low_vix_confirmation = (
+        vix_level is None
+        or (vix_level < 20.0 and (vix_change is None or vix_change <= 0.0))
+    )
+    moderate_vix_confirmation = vix_level is None or vix_level < 25.0
+
+    if avg_abs_move < 0.75 and low_vix_confirmation:
+        confirmation, cap = "Low", 69
+    elif avg_abs_move < 1.50 and moderate_vix_confirmation:
+        confirmation, cap = "Moderate", 84
+    else:
+        confirmation, cap = "High", 100
+
+    calibrated = min(raw_score, cap)
+    result["score"] = calibrated
+    result["stars"] = _market_impact_score_to_stars(calibrated)
+    result["star_label"] = "★" * result["stars"] + "☆" * (5 - result["stars"])
+    result["market_confirmation"] = confirmation
+    result["confirmation_cap"] = cap
+    result["average_abs_equity_move_pct"] = round(avg_abs_move, 3)
+    return result
 # ── ETF Impact (Event -> Event Type -> ETF Type -> Impact) ──────────────────
 # ticker -> its ETF Type tag(s). An ETF can carry more than one tag (e.g.
 # SOXX is both a Technology fund and a pure-play Semiconductor fund), in
