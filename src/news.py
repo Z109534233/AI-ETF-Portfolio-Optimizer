@@ -153,11 +153,12 @@ def _utc_aware(dt):
 
 
 def _dedupe_key(item: dict) -> str:
-    # Link is preferred when available. The title fallback makes the same
-    # headline observed through Yahoo and RSS converge on one archive row.
-    link = str(item.get("link") or "").strip()
+    # Headline text is the cross-provider identity. Provider-specific links
+    # often differ for the same story, so using the link first would keep
+    # duplicate Yahoo/Google News copies in the archive.
     title = " ".join(str(item.get("title") or "").lower().split())
-    raw = link or title
+    link = str(item.get("link") or "").strip()
+    raw = title or link
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -319,6 +320,13 @@ def _fetch_rss_news(limit_per_source: int = 20) -> dict:
                     publisher = str(getattr(source, "title", "") or "").strip()
             if not publisher:
                 publisher = feed_title
+
+            # Google News commonly appends " - Publisher" to the title while
+            # also exposing publisher metadata. Remove that duplicate suffix
+            # before cross-provider de-duplication and display.
+            suffix = f" - {publisher}"
+            if publisher and title.lower().endswith(suffix.lower()):
+                title = title[:-len(suffix)].strip()
 
             items.append({
                 "title": title,
