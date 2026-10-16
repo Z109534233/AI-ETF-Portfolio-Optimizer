@@ -5,6 +5,7 @@ SQLite database management using SQLAlchemy for portfolio storage.
 
 import os
 import json
+from functools import lru_cache
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float,
@@ -12,9 +13,35 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-# Database path
+# Database path. Local SQLite remains the zero-config development
+# default, while deployments can provide DATABASE_URL (e.g. Neon/Supabase
+# PostgreSQL) so archives and saved data survive ephemeral container restarts.
 DB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "database")
 DB_PATH = os.path.join(DB_DIR, "portfolio.db")
+
+
+def _configured_database_url() -> str:
+    url = (os.getenv("DATABASE_URL") or "").strip()
+    # A few hosted providers still expose the legacy postgres:// scheme;
+    # SQLAlchemy expects postgresql://.
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url or f"sqlite:///{DB_PATH}"
+
+
+def database_backend() -> str:
+    """Human-readable backend name for diagnostics/methodology disclosure."""
+    url = _configured_database_url().lower()
+    return "PostgreSQL" if url.startswith("postgresql") else "SQLite"
+
+
+def database_is_persistent_configured() -> bool:
+    """True when an external DATABASE_URL is configured.
+
+    This intentionally does not claim that arbitrary local SQLite storage is
+    durable on a cloud platform; that depends on the deployment filesystem.
+    """
+    return bool((os.getenv("DATABASE_URL") or "").strip())
 
 # Recorded in a saved portfolio's experiment metadata (Issue #20 section 9C)
 # so a reloaded portfolio's methodology can be traced to the app revision
@@ -141,11 +168,31 @@ class WatchlistItem(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+@lru_cache(maxsize=4)
+def _create_engine_for_url(url: str):
+    if url.startswith("sqlite:"):
+        os.makedirs(DB_DIR, exist_ok=True)
+        return create_engine(
+            url,
+            echo=False,
+            connect_args={"check_same_thread": False},
+        )
+    return create_engine(
+        url,
+        echo=False,
+        pool_pre_ping=True,
+        pool_recycle=300,
+    )
+
+
 def get_engine():
-    """Create and return SQLAlchemy engine."""
-    os.makedirs(DB_DIR, exist_ok=True)
-    engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
-    return engine
+    """Create/reuse the configured SQLAlchemy engine.
+
+    Local development defaults to SQLite. Production can set DATABASE_URL to
+    an external PostgreSQL database so the news archive survives Render's
+    ephemeral filesystem lifecycle.
+    """
+    return _create_engine_for_url(_configured_database_url())
 
 
 def _ensure_metadata_column(engine) -> None:
