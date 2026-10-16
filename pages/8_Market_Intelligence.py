@@ -1,7 +1,7 @@
 """
 Page 8: Market Intelligence Center (Issue #20 section 10 -- renamed from "AI
 Market Intelligence Center"; classification/impact/sentiment scoring here is
-rule-based, only the "Today's Market Summary" card is genuinely OpenAI-backed)
+rule-based, only the generated Recent Market Summary can be OpenAI-backed)
 A market intelligence dashboard (not a news site): current index snapshot,
 a seven-day archived headline window with time decay, rule-based/AI-assisted
 summaries, ETF/market relevance, verified scheduled macro events, and
@@ -18,11 +18,14 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
-from datetime import datetime
+from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.database import load_all_portfolios, init_database
+from src.database import (
+    load_all_portfolios, init_database,
+    database_backend, database_is_persistent_configured,
+)
 from src.news import fetch_market_news_with_status, relative_age_label
 from src.market_intelligence import (
     fetch_market_indices, fetch_fear_greed_index, get_affected_etfs,
@@ -31,7 +34,7 @@ from src.market_intelligence import (
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
     generate_todays_market_action, stars_to_impact_label,
-    FOMC_SOURCE_URL, CPI_SOURCE_URL,
+    FOMC_SOURCE_URL, CPI_SOURCE_URL, get_calendar_coverage_end,
 )
 from src.charts import sentiment_donut_chart, allocation_donut_chart
 from src.theme import COLORS
@@ -138,6 +141,20 @@ elif _news_status == "partial_live":
 elif _news_status == "no_recent_news":
     st.info(t("mi_news_no_recent_verified", days=news_feed.get("lookback_days", 7)))
 
+_source_counts = news_feed.get("source_item_counts") or {}
+if _source_counts:
+    st.caption(t(
+        "mi_news_source_mix",
+        yahoo=_source_counts.get("Yahoo Finance", 0),
+        rss=_source_counts.get("RSS", 0),
+        retry=news_feed.get("cache_ttl_seconds", 120),
+    ))
+
+if not database_is_persistent_configured():
+    st.caption(t("mi_news_archive_ephemeral_warning"))
+else:
+    st.caption(t("mi_news_archive_persistent", backend=database_backend()))
+
 tab_overview, tab_news, tab_impact, tab_sentiment, tab_methodology = st.tabs([
     t("mi_tab_overview"), t("mi_tab_news"), t("mi_tab_portfolio_impact"),
     t("mi_tab_sentiment"), t("mi_tab_methodology"),
@@ -147,7 +164,7 @@ tab_overview, tab_news, tab_impact, tab_sentiment, tab_methodology = st.tabs([
 # OVERVIEW
 # ══════════════════════════════════════════════════════════════════════════
 with tab_overview:
-    # ── Today's Major Events (top 3-5 headlines by Market Impact Score) ──
+    # ── Recent Market Drivers (top 3-5 headlines by Market Impact Score) ──
     section_header(_major_events_title)
     if major_events:
         event_cols = st.columns(len(major_events))
@@ -182,7 +199,7 @@ with tab_overview:
     else:
         empty_state(t("mi_no_news_available"), _major_events_title, icon="activity")
 
-    # ── Today's AI Summary (left) + Today's Watchlist (right) ────────────
+    # ── Recent Summary (left) + Recent Watchlist (right) ────────────────
     section_header(today_ai_summary["title"])
     col_summary, col_watchlist = st.columns([2.5, 1])
     with col_summary:
@@ -193,7 +210,7 @@ with tab_overview:
             if today_ai_summary["disclaimer"]:
                 st.caption(today_ai_summary["disclaimer"])
 
-        # ── Today's Market Action (template-generated, no LLM call) ──────
+        # ── Recent Watchlist (template-generated, no LLM call) ─────────
         with chart_card(todays_market_action["title"], tag=t("ai_tag_rule_based")):
             for _action_item in todays_market_action["items"]:
                 st.markdown(f"• {_action_item}")
@@ -230,7 +247,7 @@ with tab_overview:
         unsafe_allow_html=True,
     )
 
-    # ── Today's Market Overview ────────────────────────────────────────────
+    # ── Current Market Snapshot ───────────────────────────────────────────
     section_header(t("mi_section_overview_title"))
 
     # Fear & Greed has no verified/keyless data source connected yet
@@ -326,8 +343,11 @@ with tab_overview:
                     '</div>',
                     unsafe_allow_html=True,
                 )
-                st.caption(f"{_confidence_caption}: {etf['confidence']}%")
-                st.progress(min(int(etf["confidence"]), 100))
+                if etf["confidence"] is None:
+                    st.caption(f"{_confidence_caption}: {t('mi_not_available')}")
+                else:
+                    st.caption(f"{_confidence_caption}: {etf['confidence']}%")
+                    st.progress(min(int(etf["confidence"]), 100))
     else:
         empty_state(t("mi_no_news_available"), t("mi_section_global_etfs_subtitle"), icon="layers")
 
@@ -340,7 +360,12 @@ with tab_overview:
                 {
                     t("mi_cal_col_event"): e["event"],
                     t("mi_cal_col_when"): t("mi_calendar_days_until", days=e["days_until"]),
-                    t("mi_cal_col_date"): e["date_text"],
+                    t("mi_cal_col_date"): (
+                        e["date_text"] + (
+                            f" {t('mi_calendar_tentative_suffix')}"
+                            if e.get("tentative") else ""
+                        )
+                    ),
                     t("mi_cal_col_affected_etfs"): ", ".join(e["affected_etfs"]),
                     t("mi_cal_col_source"): e["source"],
                 }
@@ -353,8 +378,16 @@ with tab_overview:
                 f"[{t('mi_calendar_cpi_source_label')}]({CPI_SOURCE_URL})"
             )
             st.caption(t("mi_calendar_expectations_note"))
+            st.caption(t("mi_calendar_fomc_tentative_note"))
         else:
             st.info(t("mi_calendar_no_events_14d"))
+
+        _coverage_days = (get_calendar_coverage_end() - date.today()).days
+        if _coverage_days < 90:
+            st.warning(t(
+                "mi_calendar_coverage_warning",
+                date=get_calendar_coverage_end().isoformat(),
+            ))
 
 # ══════════════════════════════════════════════════════════════════════════
 # NEWS
@@ -512,7 +545,7 @@ with tab_sentiment:
                 # breakdown, never predicts a market move (Issue #24 item 4
                 # rule E).
                 _sentiment_context = (
-                    f"Today's news sentiment breakdown: {sentiment['bullish_pct']:.1f}% bullish, "
+                    f"Recent 7-day time-decayed news sentiment: {sentiment['bullish_pct']:.1f}% bullish, "
                     f"{sentiment['neutral_pct']:.1f}% neutral, {sentiment['bearish_pct']:.1f}% bearish."
                 )
                 ai_interpret_button("mi_sentiment_donut_interpret", st.session_state, _sentiment_context)
