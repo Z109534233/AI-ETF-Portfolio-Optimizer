@@ -409,7 +409,7 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
             "against observed broad-index moves and VIX. Quiet observed markets cap the "
             "displayed score below the Very High band so headline volume alone cannot imply "
             "a realized high-impact regime. Per-market/per-ETF stars remain topical relevance "
-            "heuristics, not confidence levels or forecasts."
+            "heuristics -- NOT confidence levels and NOT forecasts."
         ),
         "confidence": "how one-sided the underlying weighted sentiment signal is (30-95%, never a fabricated 0% or 100%) -- NOT how important the event is",
         "relevance": (
