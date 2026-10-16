@@ -140,7 +140,7 @@ Several design choices were added specifically to reduce misleading outputs:
 - **No fabricated live holdings prices:** cross-page analysis from guest holdings is disabled if a required live price cannot be obtained.
 - **Guest-session isolation:** public holdings and watchlist entries are stored only in the current Streamlit session and are not shared between visitors.
 - **AI separation:** AI-generated text interprets already-computed metrics; the financial calculations themselves are deterministic Python code. A rule-based fallback is available when no OpenAI API key is configured.
-- **Recent-news continuity:** Yahoo headlines are cached for 15 minutes and successfully observed items are archived in SQLite. Market Intelligence uses a **7-day lookback with a 2-day half-life**, so recent news matters more while older stories can remain visible when their effects are still being digested.
+- **Recent-news continuity:** Market Intelligence combines Yahoo Finance with Google News RSS and the Federal Reserve RSS feed. Live retrieval is cached for about **2 minutes**, then observed headlines are archived through SQLAlchemy. The analysis uses a **7-day lookback with a 2-day half-life** so recent news matters more while older stories can remain relevant.
 - **Scheduled-event context:** verified FOMC dates come from the Federal Reserve's official meeting calendar and U.S. CPI dates from the Bureau of Labor Statistics release schedule. The dashboard treats scheduled events as context, not directional signals: markets can react in advance, and the surprise relative to expectations often matters more than the event date itself.
 - **Bilingual parity:** English and Traditional Chinese UI strings are covered by regression checks.
 
@@ -171,7 +171,7 @@ Several design choices were added specifically to reduce misleading outputs:
 | Machine Learning | scikit-learn |
 | Visualization | Plotly |
 | Statistical / Risk Logic | Custom Python modules |
-| Persistence | SQLite / SQLAlchemy for saved optimizer history |
+| Persistence | SQLAlchemy with local SQLite or external PostgreSQL via `DATABASE_URL` |
 | Reports | ReportLab |
 | AI Interpretation | OpenAI API with deterministic rule-based fallback |
 | Deployment | Render |
@@ -255,6 +255,10 @@ streamlit run app.py
 
 The application will normally open at `http://localhost:8501`.
 
+### Optional persistent database for cloud deployment
+
+Local development uses SQLite automatically. On an ephemeral deployment such as Render's free tier, set a `DATABASE_URL` environment variable to an external PostgreSQL database (for example Neon or Supabase) so the seven-day news archive and other SQLAlchemy-backed records survive service restarts. Legacy `postgres://` URLs are normalized automatically.
+
 ---
 
 ## Optional OpenAI configuration
@@ -284,7 +288,7 @@ Key limitations include:
 - historical VaR can fail during regime shifts and tail events;
 - ML classification performance is period-dependent and does not establish persistent predictive skill;
 - market data quality and availability depend on external providers;
-- Yahoo's news feed is opportunistic rather than a guaranteed historical-news API; the seven-day archive only contains headlines the application has actually observed, and archive continuity depends on persistent deployment storage (an ephemeral filesystem can reset SQLite after redeploy/restart);
+- no single news source is treated as guaranteed: Yahoo can return empty data on cloud hosts, so the app also uses Google News RSS and Federal Reserve RSS; the archive only contains headlines the application actually observes;
 - scheduled FOMC/CPI dates are verified calendar dates, but a scheduled event does not imply direction or magnitude; pre-positioning and the actual-vs-consensus surprise can dominate the market reaction;
 - cross-market daily returns can be asynchronous because Taiwan, U.K., and U.S. markets close at different times; same-calendar-date alignment does not fully eliminate non-synchronous trading effects and may understate or distort measured correlations;
 - Goal Planner currency labels do not imply that all foreign-exchange risk is modeled.
