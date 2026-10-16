@@ -140,7 +140,7 @@ Several design choices were added specifically to reduce misleading outputs:
 - **No fabricated live holdings prices:** cross-page analysis from guest holdings is disabled if a required live price cannot be obtained.
 - **Guest-session isolation:** public holdings and watchlist entries are stored only in the current Streamlit session and are not shared between visitors.
 - **AI separation:** AI-generated text interprets already-computed metrics; the financial calculations themselves are deterministic Python code. A rule-based fallback is available when no OpenAI API key is configured.
-- **Recent-news continuity:** Market Intelligence combines Yahoo Finance with Google News RSS and the Federal Reserve RSS feed. Live retrieval is cached for about **2 minutes**, then observed headlines are archived through SQLAlchemy. The analysis uses a **7-day lookback with a 2-day half-life** so recent news matters more while older stories can remain relevant.
+- **Recent-news continuity:** Market Intelligence combines Yahoo Finance with Google News RSS and the Federal Reserve **monetary-policy** RSS feed. Live retrieval is cached for about **2 minutes**, then observed headlines are archived through SQLAlchemy. The analysis uses a **7-day lookback with a 2-day half-life** so recent news matters more while older stories can remain relevant.
 - **Scheduled-event context:** verified FOMC dates come from the Federal Reserve's official meeting calendar and U.S. CPI dates from the Bureau of Labor Statistics release schedule. The dashboard treats scheduled events as context, not directional signals: markets can react in advance, and the surprise relative to expectations often matters more than the event date itself.
 - **Bilingual parity:** English and Traditional Chinese UI strings are covered by regression checks.
 
@@ -288,8 +288,10 @@ Key limitations include:
 - historical VaR can fail during regime shifts and tail events;
 - ML classification performance is period-dependent and does not establish persistent predictive skill;
 - market data quality and availability depend on external providers;
-- no single news source is treated as guaranteed: Yahoo can return empty data on cloud hosts, so the app also uses Google News RSS and Federal Reserve RSS; the archive only contains headlines the application actually observes;
+- no single news source is treated as guaranteed: Yahoo can return empty data on cloud hosts, so the app also uses Google News RSS and the Federal Reserve monetary-policy RSS feed; the archive only contains headlines the application actually observes;
 - scheduled FOMC/CPI dates are verified calendar dates, but a scheduled event does not imply direction or magnitude; pre-positioning and the actual-vs-consensus surprise can dominate the market reaction;
+- keyword-based event classification can misclassify ambiguous headlines; institution/person mentions alone are not treated as sufficient evidence of a monetary-policy event, but residual false positives remain possible;
+- the headline-derived Market Impact Score is calibrated against observed broad-index movement and VIX so a quiet market cannot be labeled “Very High Impact” solely because many high-importance keywords appear in the recent-news window;
 - cross-market daily returns can be asynchronous because Taiwan, U.K., and U.S. markets close at different times; same-calendar-date alignment does not fully eliminate non-synchronous trading effects and may understate or distort measured correlations;
 - Goal Planner currency labels do not imply that all foreign-exchange risk is modeled.
 

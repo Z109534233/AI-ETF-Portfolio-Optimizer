@@ -138,3 +138,9 @@ def test_multi_source_live_merge_uses_rss_when_yahoo_is_empty(monkeypatch):
     assert len(result["items"]) == 1
     assert result["source_item_counts"]["Yahoo Finance"] == 0
     assert result["source_item_counts"]["RSS"] == 1
+
+
+def test_federal_reserve_rss_is_monetary_policy_only():
+    urls = [url for name, url in news_mod.RSS_SOURCE_FEEDS if "Federal Reserve" in name]
+    assert urls == ["https://www.federalreserve.gov/feeds/press_monetary.xml"]
+    assert all("press_all.xml" not in url for _, url in news_mod.RSS_SOURCE_FEEDS)

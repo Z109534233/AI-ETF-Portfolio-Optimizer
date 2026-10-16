@@ -73,19 +73,10 @@ def _news_weight(item: dict) -> float:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def fetch_market_indices() -> dict:
-    """
-    Fetch the latest price and day-over-day change for the major indices
-    (S&P 500, NASDAQ, Dow Jones, Russell 2000, VIX) via yfinance.
-
-    Returns a dict keyed by index id, each value a dict with "label",
-    "available" (bool), and -- when available -- "price", "change",
-    "change_pct". A per-index failure is isolated: one bad ticker never
-    prevents the others from rendering.
-    """
+def _fetch_market_indices_raw() -> dict:
+    """Fetch language-neutral index values for the current market snapshot."""
     result = {}
     for key, (label_key, symbol) in INDEX_TICKERS.items():
-        label = t(label_key)
         try:
             hist = yf.download(symbol, period="5d", progress=False, auto_adjust=True, threads=False)
             if isinstance(hist.columns, pd.MultiIndex):
@@ -93,20 +84,35 @@ def fetch_market_indices() -> dict:
             closes = hist["Close"].dropna() if "Close" in hist.columns else pd.Series(dtype=float)
 
             if len(closes) < 2:
-                result[key] = {"label": label, "available": False}
+                result[key] = {"label_key": label_key, "available": False}
                 continue
 
             last, prev = float(closes.iloc[-1]), float(closes.iloc[-2])
             change = last - prev
             change_pct = (change / prev * 100) if prev else 0.0
             result[key] = {
-                "label": label, "available": True,
+                "label_key": label_key, "available": True,
                 "price": last, "change": change, "change_pct": change_pct,
             }
         except Exception:
-            result[key] = {"label": label, "available": False}
+            result[key] = {"label_key": label_key, "available": False}
     return result
 
+
+def fetch_market_indices() -> dict:
+    """Return the cached market snapshot with labels localized per rerun.
+
+    Only language-neutral prices are cached. Translating *after* the cache
+    lookup prevents a Traditional-Chinese cache entry from leaking Chinese
+    index labels into a later English session (and vice versa).
+    """
+    raw = _fetch_market_indices_raw()
+    result = {}
+    for key, row in raw.items():
+        localized = dict(row)
+        localized["label"] = t(row.get("label_key", INDEX_TICKERS[key][0]))
+        result[key] = localized
+    return result
 
 def summarize_market_snapshot(indices: dict) -> dict:
     """Deterministic market direction from displayed index data.
@@ -228,7 +234,9 @@ def stars_to_impact_label(stars: int) -> str:
 EVENT_TYPE_KEYWORDS = {
     "tariff": ["tariff", "tariffs", "trade war", "export ban", "import ban", "trade restriction"],
     "interest_rate": ["interest rate", "rate cut", "rate hike", "fed decision", "fomc",
-                       "rate decision", "central bank", "cuts rate", "raises rate", "hikes rate"],
+                       "rate decision", "monetary policy", "policy rate", "federal funds",
+                       "fed funds", "rate path", "rate outlook",
+                       "cuts rate", "raises rate", "hikes rate"],
     "semiconductor": ["semiconductor", "chip ", "chips", "chipmaker", "foundry", "wafer"],
     "oil": ["oil", "crude", "opec", "energy price", "energy prices"],
     "inflation": ["inflation", "cpi", "ppi", "consumer price", "producer price"],
@@ -312,8 +320,9 @@ EVENT_CLASSIFICATION_KEYWORDS = [
     ("AI", ["artificial intelligence", "generative ai", "ai regulation", "ai adoption",
             "ai boom", "chatgpt", "openai"]),
     ("Interest Rate", ["interest rate", "rate cut", "rate hike", "rate decision",
-                        "fed decision", "fed chair", "federal reserve", "fomc",
-                        "central bank", "cuts rate", "raises rate", "hikes rate"]),
+                        "fed decision", "fomc", "monetary policy", "policy rate",
+                        "federal funds", "fed funds", "rate path", "rate outlook",
+                        "cuts rate", "raises rate", "hikes rate"]),
     ("Inflation", ["inflation", "cpi", "ppi", "consumer price", "producer price"]),
     ("Trade Policy", ["tariff", "tariffs", "trade war", "trade policy", "export ban",
                        "import ban", "trade restriction"]),
@@ -513,6 +522,66 @@ def calculate_market_impact(news_items: list) -> dict:
         },
     }
 
+def calibrate_market_impact_with_snapshot(impact: dict, indices: dict) -> dict:
+    """Calibrate headline intensity against observed market confirmation.
+
+    The headline taxonomy measures how important/relevant the recent news
+    *could* be. To avoid displaying a near-100 score while the observable
+    market is quiet, the final score is capped when broad equity moves and
+    VIX do not confirm that severity. The uncalibrated value is preserved as
+    ``raw_score`` for methodology/debugging transparency.
+
+    Confirmation bands:
+    - Low: average absolute equity move < 0.75% and VIX < 20/not rising;
+      final score capped at 69 (Moderate / 3-star band).
+    - Moderate: average absolute equity move < 1.50% and VIX < 25;
+      final score capped at 84 (High / 4-star band).
+    - High: otherwise; no additional cap.
+
+    If fewer than two equity indices are available, no market-confirmation
+    cap is applied because the snapshot is too incomplete to justify one.
+    """
+    result = dict(impact or {})
+    raw_score = int(result.get("score", 0) or 0)
+    result["raw_score"] = raw_score
+
+    equity_keys = ("sp500", "nasdaq", "dow", "russell")
+    equity_moves = [
+        abs(float((indices or {}).get(key, {}).get("change_pct", 0.0)))
+        for key in equity_keys
+        if (indices or {}).get(key, {}).get("available")
+    ]
+    if raw_score <= 0 or len(equity_moves) < 2:
+        result["market_confirmation"] = "Unavailable" if len(equity_moves) < 2 else "Low"
+        result["confirmation_cap"] = None
+        return result
+
+    avg_abs_move = sum(equity_moves) / len(equity_moves)
+    vix = (indices or {}).get("vix", {})
+    vix_level = float(vix.get("price", 0.0)) if vix.get("available") else None
+    vix_change = float(vix.get("change_pct", 0.0)) if vix.get("available") else None
+
+    low_vix_confirmation = (
+        vix_level is None
+        or (vix_level < 20.0 and (vix_change is None or vix_change <= 0.0))
+    )
+    moderate_vix_confirmation = vix_level is None or vix_level < 25.0
+
+    if avg_abs_move < 0.75 and low_vix_confirmation:
+        confirmation, cap = "Low", 69
+    elif avg_abs_move < 1.50 and moderate_vix_confirmation:
+        confirmation, cap = "Moderate", 84
+    else:
+        confirmation, cap = "High", 100
+
+    calibrated = min(raw_score, cap)
+    result["score"] = calibrated
+    result["stars"] = _market_impact_score_to_stars(calibrated)
+    result["star_label"] = "★" * result["stars"] + "☆" * (5 - result["stars"])
+    result["market_confirmation"] = confirmation
+    result["confirmation_cap"] = cap
+    result["average_abs_equity_move_pct"] = round(avg_abs_move, 3)
+    return result
 # ── ETF Impact (Event -> Event Type -> ETF Type -> Impact) ──────────────────
 # ticker -> its ETF Type tag(s). An ETF can carry more than one tag (e.g.
 # SOXX is both a Technology fund and a pure-play Semiconductor fund), in

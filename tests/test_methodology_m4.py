@@ -49,6 +49,8 @@ def test_methodology_metadata_matches_actual_implementation():
     assert "Federal Reserve" in m["scheduled_events"]["sources"]
     assert "Bureau of Labor Statistics" in m["scheduled_events"]["sources"]
     assert "expectations" in m["scheduled_events"]["expectations_limitation"].lower()
+    assert "keyword" in m["affected_markets"]["limitation"].lower()
+    assert "VIX" in m["measures"]["impact"]
 
 
 # ── Bullish/Bearish/Neutral: never forced when unwarranted ──────────────
@@ -149,7 +151,10 @@ def test_market_intelligence_methodology_i18n_keys_exist_in_both_languages():
         "mi_calendar_coverage_warning",
         "mi_recent_drivers_title", "mi_recent_watchlist_title",
         "mi_news_source_mix", "mi_news_archive_ephemeral_warning",
-        "mi_news_archive_persistent", "mi_not_available",
+        "mi_news_archive_ephemeral_methodology", "mi_news_archive_persistent",
+        "mi_not_available", "mi_market_confirmation_low",
+        "mi_market_confirmation_moderate", "mi_market_confirmation_high",
+        "mi_market_confirmation_unavailable", "mi_market_confirmation_adjustment",
         "mi_impact_caption",
     ]
     for key in new_keys:
