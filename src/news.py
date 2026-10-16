@@ -43,8 +43,8 @@ RSS_SOURCE_FEEDS = [
         "https://news.google.com/rss/search?q=Federal+Reserve+OR+CPI+OR+inflation+when%3A7d&hl=en-US&gl=US&ceid=US:en",
     ),
     (
-        "Federal Reserve",
-        "https://www.federalreserve.gov/feeds/press_all.xml",
+        "Federal Reserve - Monetary Policy",
+        "https://www.federalreserve.gov/feeds/press_monetary.xml",
     ),
 ]
 
