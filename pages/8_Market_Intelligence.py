@@ -16,6 +16,7 @@ status badges already carry that meaning).
 
 import streamlit as st
 import pandas as pd
+import logging
 import sys
 import os
 from datetime import date, datetime
@@ -34,6 +35,7 @@ from src.market_intelligence import (
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
     generate_todays_market_action, stars_to_impact_label,
+    calibrate_market_impact_with_snapshot,
     FOMC_SOURCE_URL, CPI_SOURCE_URL, get_calendar_coverage_end,
 )
 from src.charts import sentiment_donut_chart, allocation_donut_chart
@@ -78,7 +80,9 @@ try:
     calendar_events = get_economic_calendar(horizon_days=14)
     affected_markets = calculate_affected_markets(news_items)
     today_ai_summary = generate_today_ai_summary(news_items, indices)
-    market_impact = calculate_market_impact(news_items)
+    market_impact = calibrate_market_impact_with_snapshot(
+        calculate_market_impact(news_items), indices
+    )
     major_events = get_todays_major_events(news_items, limit=5)
     etf_cards = generate_etf_card_data(news_items)
     news_card_meta = get_news_card_metadata(news_items)
@@ -142,18 +146,10 @@ elif _news_status == "no_recent_news":
     st.info(t("mi_news_no_recent_verified", days=news_feed.get("lookback_days", 7)))
 
 _source_counts = news_feed.get("source_item_counts") or {}
-if _source_counts:
-    st.caption(t(
-        "mi_news_source_mix",
-        yahoo=_source_counts.get("Yahoo Finance", 0),
-        rss=_source_counts.get("RSS", 0),
-        retry=news_feed.get("cache_ttl_seconds", 120),
-    ))
-
 if not database_is_persistent_configured():
-    st.caption(t("mi_news_archive_ephemeral_warning"))
-else:
-    st.caption(t("mi_news_archive_persistent", backend=database_backend()))
+    logging.info(
+        "DATABASE_URL is not configured; Market Intelligence archive is using local SQLite."
+    )
 
 tab_overview, tab_news, tab_impact, tab_sentiment, tab_methodology = st.tabs([
     t("mi_tab_overview"), t("mi_tab_news"), t("mi_tab_portfolio_impact"),
@@ -246,6 +242,12 @@ with tab_overview:
         metric_card_html(_mi_score_title, f"{market_impact['score']}/100", _mi_impact_level_label, color=_mi_score_color),
         unsafe_allow_html=True,
     )
+    if market_impact.get("raw_score", market_impact["score"]) > market_impact["score"]:
+        _confirmation_key = str(market_impact.get("market_confirmation", "Low")).lower()
+        st.caption(t(
+            "mi_market_confirmation_adjustment",
+            level=t(f"mi_market_confirmation_{_confirmation_key}"),
+        ))
 
     # ── Current Market Snapshot ───────────────────────────────────────────
     section_header(t("mi_section_overview_title"))
@@ -576,6 +578,18 @@ with tab_methodology:
         f"- **{t('mi_methodology_source_label')}** — {t('mi_methodology_source_desc')}"
     )
     st.warning(f"**{t('mi_methodology_validation_label')}** — {t('mi_methodology_validation_desc')}")
+
+    if _source_counts:
+        st.caption(t(
+            "mi_news_source_mix",
+            yahoo=_source_counts.get("Yahoo Finance", 0),
+            rss=_source_counts.get("RSS", 0),
+            retry=news_feed.get("cache_ttl_seconds", 120),
+        ))
+    if database_is_persistent_configured():
+        st.caption(t("mi_news_archive_persistent", backend=database_backend()))
+    else:
+        st.caption(t("mi_news_archive_ephemeral_methodology"))
 
 # ── Educational Disclaimer ────────────────────────────────────────────────
 disclaimer_box(t("mi_disclaimer"))
