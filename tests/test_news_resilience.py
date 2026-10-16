@@ -1,6 +1,7 @@
 """Deterministic tests for the resilient recent-news layer."""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -86,3 +87,54 @@ def test_archive_recent_when_source_is_reachable_but_returns_no_new_items(monkey
     result = news_mod.fetch_market_news_with_status(limit=10, lookback_days=7)
     assert result["status"] == "archive_recent"
     assert len(result["items"]) == 1
+
+
+def test_live_news_cache_retries_within_two_minutes():
+    assert news_mod.NEWS_CACHE_TTL_SECONDS == 120
+
+
+def test_rss_parser_produces_market_news(monkeypatch):
+    class Response:
+        content = b"<rss></rss>"
+        def raise_for_status(self):
+            return None
+
+    entry = SimpleNamespace(
+        title="Stocks rally as rate-cut expectations rise - Example News",
+        link="https://example.com/rss-story",
+        published_parsed=(2026, 10, 16, 5, 0, 0, 4, 289, 0),
+        source={"title": "Example News"},
+    )
+    parsed = SimpleNamespace(
+        entries=[entry],
+        feed={"title": "Mock RSS"},
+        bozo=False,
+    )
+
+    monkeypatch.setattr(news_mod.requests, "get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(news_mod.feedparser, "parse", lambda content: parsed)
+
+    result = news_mod._fetch_rss_news(limit_per_source=5)
+    assert result["items"]
+    assert result["items"][0]["title"] == "Stocks rally as rate-cut expectations rise"
+    assert result["items"][0]["publisher"] == "Example News"
+    assert result["items"][0]["source_kind"] == "RSS"
+
+
+def test_multi_source_live_merge_uses_rss_when_yahoo_is_empty(monkeypatch):
+    monkeypatch.setattr(news_mod, "_fetch_yahoo_news", lambda limit_per_source=10: {
+        "items": [], "successful_sources": 4, "failed_sources": {},
+    })
+    rss_item = _item("RSS market headline", "Positive", age_days=0)
+    rss_item["source_kind"] = "RSS"
+    monkeypatch.setattr(news_mod, "_fetch_rss_news", lambda limit_per_source=20: {
+        "items": [rss_item], "successful_sources": 1, "failed_sources": {},
+    })
+
+    news_mod._fetch_live_market_news.clear()
+    result = news_mod._fetch_live_market_news(limit_per_source=20)
+    news_mod._fetch_live_market_news.clear()
+
+    assert len(result["items"]) == 1
+    assert result["source_item_counts"]["Yahoo Finance"] == 0
+    assert result["source_item_counts"]["RSS"] == 1

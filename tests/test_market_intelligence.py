@@ -22,7 +22,7 @@ left unconfigured (no OPENAI_API_KEY) or monkeypatched directly.
 
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -35,8 +35,9 @@ import src.market_intelligence as mi_mod
 from src.market_intelligence import (
     generate_market_summary, _generate_rule_based_summary, _market_summary_prompt,
     stars_to_impact_label, fetch_fear_greed_index, calculate_market_impact,
-    get_economic_calendar, generate_today_ai_summary, get_todays_major_events,
-    generate_todays_market_action, analyze_portfolio_impact,
+    get_economic_calendar, get_calendar_coverage_end,
+    generate_today_ai_summary, get_todays_major_events,
+    generate_todays_market_action, generate_etf_card_data, analyze_portfolio_impact,
 )
 from src.ui import star_rating_html, _star_salience_class
 
@@ -86,6 +87,8 @@ def mocked_market_data(monkeypatch):
             "failed_sources": {},
             "lookback_days": 7,
             "half_life_days": 2.0,
+            "source_item_counts": {"Yahoo Finance": 0, "RSS": len(_sample_news())},
+            "cache_ttl_seconds": 120,
         },
     )
     monkeypatch.setattr(mi_mod, "fetch_market_indices", lambda: {
@@ -328,6 +331,28 @@ def test_verified_fomc_calendar_uses_official_schedule():
     assert fomc["source"] == "Federal Reserve"
     assert "federalreserve.gov" in fomc["source_url"]
     assert "expectations" in fomc["anticipation_note"].lower()
+
+    assert fomc["tentative"] is True
+
+
+def test_calendar_schedule_has_at_least_90_days_of_future_coverage():
+    assert get_calendar_coverage_end() >= date.today() + timedelta(days=90)
+
+
+def test_etf_sentiment_skew_is_na_when_no_relevant_news():
+    rows = generate_etf_card_data([])
+    assert rows
+    assert all(row["confidence"] is None for row in rows)
+
+
+def test_market_intelligence_page_has_no_today_only_overview_label(mocked_market_data):
+    at = _run_market_intelligence("en")
+    corpus = "\n".join(
+        [m.value for m in at.markdown]
+        + [c.value for c in at.caption]
+    )
+    assert "Today's Market Overview" not in corpus
+    assert "Current Market Snapshot" in corpus
 
 
 def test_verified_cpi_calendar_uses_bls_schedule():

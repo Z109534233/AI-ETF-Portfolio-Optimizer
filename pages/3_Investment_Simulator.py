@@ -97,12 +97,30 @@ with st.sidebar:
     _mode_options = ["Future Projection", "Historical Simulation"]
     _mode_labels = {"Future Projection": t("sim_mode_future"), "Historical Simulation": t("sim_mode_historical")}
     _mk, _mv = _shadow_default("simulation_mode", _mode_options[0])
+    _previous_mode = st.session_state.get("_simulation_mode_previous")
     simulation_mode = st.selectbox(
         t("sim_mode_label"), _mode_options,
         index=_mode_options.index(_mv) if _mv in _mode_options else 0,
         format_func=lambda x: _mode_labels.get(x, x), key="simulation_mode",
     )
     st.session_state[_mk] = simulation_mode
+
+    # Streamlit removes widget state when a keyed widget disappears from the
+    # current render tree. The Future and Historical modes intentionally use
+    # different widget keys, but they share one canonical shadow value. On a
+    # mode transition, seed the newly-mounted widget from that canonical value
+    # *before* the widget is instantiated; otherwise a stale hidden widget key
+    # can overwrite the shadow and reset the amount to its original default.
+    if _previous_mode != simulation_mode:
+        _shared_initial = st.session_state.get("_sim_initial_investment_val_shadow", 10000.0)
+        _shared_monthly = st.session_state.get("_sim_monthly_contribution_val_shadow", 500.0)
+        if simulation_mode == "Future Projection":
+            st.session_state["sim_initial_investment_val"] = _shared_initial
+            st.session_state["sim_monthly_contribution_val"] = _shared_monthly
+        else:
+            st.session_state["hist_initial_investment_val"] = _shared_initial
+            st.session_state["hist_monthly_contribution_val"] = _shared_monthly
+    st.session_state["_simulation_mode_previous"] = simulation_mode
 
     if simulation_mode == "Future Projection":
         # ── Primary Controls ─────────────────────────────────────────────

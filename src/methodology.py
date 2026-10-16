@@ -368,7 +368,7 @@ RISK_METHODOLOGY = {
 MARKET_INTELLIGENCE_METHODOLOGY = {
     "pipeline": {
         "stages": [
-            "source (Yahoo Finance news feed via a small set of US-listed broad-market proxies, cached for 15 minutes; successful headlines are archived in SQLite)",
+            "sources (Yahoo Finance plus Google News RSS and the Federal Reserve RSS feed; live retrieval cached for about two minutes; successful headlines archived through SQLAlchemy)",
             "headline sentiment (keyword-based Positive/Negative/Neutral "
             "classifier, src/news.py's classify_headline_sentiment())",
             "event classification (rule-based keyword matching into a fixed "
@@ -425,12 +425,10 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
             "against a market's name, and not a statistically-derived model."
         ),
         "limitation": (
-            "headlines are sourced from a small set of US-listed tickers' "
-            "news feeds (S&P 500/Nasdaq/Dow proxies -- see "
-            "news.NEWS_SOURCE_TICKERS), so Taiwan- and UK-specific stories "
-            "that never surface in US financial headlines can be "
-            "under-represented or missed entirely. Taiwan and UK coverage "
-            "is structurally thinner than US coverage as a direct result."
+            "the source mix is still US-centric: Yahoo broad-market proxies, "
+            "Google News market/macro RSS, and Federal Reserve press releases. "
+            "Taiwan- and UK-specific stories can therefore remain under-represented, "
+            "so cross-market coverage should not be interpreted as comprehensive."
         ),
     },
     "validation": {
@@ -445,17 +443,18 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
     },
     "source_and_as_of": {
         "policy": (
-            "Yahoo news retrieval is cached for 15 minutes. Successfully observed "
-            "headlines are archived in SQLite and the page uses a seven-day lookback; "
-            "when live Yahoo retrieval fails, recent archived headlines are shown with "
-            "an explicit source-failure notice rather than an indistinguishable empty state. "
-            "Publication timestamps are normalized to UTC and displayed with relative age. "
-            "A two-day half-life reduces the influence of older headlines."
+            "Yahoo and RSS retrieval is cached for about two minutes so empty responses "
+            "are retried quickly. Successfully observed headlines are archived through "
+            "SQLAlchemy and the page uses a seven-day lookback. Deployments can set "
+            "DATABASE_URL for external PostgreSQL persistence; otherwise local SQLite is "
+            "used. Publication timestamps are normalized to UTC and displayed with relative "
+            "age. A two-day half-life reduces the influence of older headlines."
         ),
         "persistence_limitation": (
-            "archive continuity depends on persistent application storage. On a deployment "
-            "whose local filesystem is ephemeral, the SQLite archive can reset after a "
-            "redeploy or instance replacement."
+            "local SQLite continuity depends on persistent application storage. On an "
+            "ephemeral deployment such as a free cloud container, the archive can reset "
+            "after sleep/restart. DATABASE_URL should point to an external PostgreSQL "
+            "database when durable accumulation is required."
         ),
     },
     "scheduled_events": {
@@ -463,7 +462,7 @@ MARKET_INTELLIGENCE_METHODOLOGY = {
             "FOMC dates are taken from the official Federal Reserve meeting calendar; "
             "U.S. CPI dates are taken from the Bureau of Labor Statistics release schedule."
         ),
-        "horizon": "the page displays verified scheduled events within the next 14 calendar days",
+        "horizon": "the page displays verified scheduled events within the next 14 calendar days; FOMC dates are labeled tentative because the Federal Reserve notes future meeting dates are tentative until confirmed at the preceding meeting",
         "expectations_limitation": (
             "a scheduled event is not itself a directional signal. Markets may price the "
             "event before the release; the realized market reaction often depends more on "

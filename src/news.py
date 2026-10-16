@@ -1,29 +1,52 @@
 """
 Market News Module
 
-Yahoo Finance is treated as an opportunistic live source, not a guaranteed
-availability contract. Successfully observed headlines are archived in SQLite
-and reused for a short recent-news window when the live source is unavailable.
+Market news is intentionally multi-source. Yahoo Finance is treated as one
+opportunistic provider rather than a single point of failure; RSS feeds provide
+a second path that works on cloud hosts where Yahoo may return an empty list.
 
-All publication timestamps are normalized to UTC. Recent-news analytics attach
-an exponential time-decay weight with a 2-day half-life, so older headlines can
-remain relevant without carrying the same influence as fresh information.
+Successfully observed headlines are archived through SQLAlchemy. Local
+development defaults to SQLite, while deployments can set DATABASE_URL to a
+persistent PostgreSQL database. Publication timestamps are normalized to UTC
+and recent-news analytics apply a two-day half-life.
 """
 
 from datetime import datetime, timedelta, timezone
+import calendar
 import hashlib
 import logging
-import math
 
+import feedparser
+import requests
 import streamlit as st
 import yfinance as yf
 
 from src.database import MarketNewsArchive, get_session
 
 NEWS_SOURCE_TICKERS = ["SPY", "QQQ", "DIA", "^GSPC"]
-NEWS_CACHE_TTL_SECONDS = 900
+
+# A short live cache prevents an empty Yahoo result from locking the deployment
+# into a blank state for 15 minutes. Two minutes is a deliberate compromise:
+# enough to avoid request storms, short enough to retry transient provider
+# blocks quickly.
+NEWS_CACHE_TTL_SECONDS = 120
 NEWS_LOOKBACK_DAYS = 7
 NEWS_HALF_LIFE_DAYS = 2.0
+
+RSS_SOURCE_FEEDS = [
+    (
+        "Google News - Markets",
+        "https://news.google.com/rss/search?q=stock+market+when%3A7d&hl=en-US&gl=US&ceid=US:en",
+    ),
+    (
+        "Google News - Macro",
+        "https://news.google.com/rss/search?q=Federal+Reserve+OR+CPI+OR+inflation+when%3A7d&hl=en-US&gl=US&ceid=US:en",
+    ),
+    (
+        "Federal Reserve",
+        "https://www.federalreserve.gov/feeds/press_all.xml",
+    ),
+]
 
 POSITIVE_KEYWORDS = [
     "surge", "rally", "soar", "jump", "gain", "record high", "rebound",
@@ -70,7 +93,7 @@ def classify_headline_sentiment(title: str) -> str:
 
 
 def _parse_publish_time(entry: dict, content: dict):
-    """Return a timezone-aware UTC datetime when the source provides one."""
+    """Return a timezone-aware UTC datetime for a Yahoo news item."""
     ts = entry.get("providerPublishTime")
     if ts:
         try:
@@ -87,6 +110,29 @@ def _parse_publish_time(entry: dict, content: dict):
             return parsed.astimezone(timezone.utc)
         except (TypeError, ValueError):
             pass
+    return None
+
+
+def _parse_rss_publish_time(entry):
+    """Return an RSS/Atom entry timestamp as timezone-aware UTC."""
+    for attr in ("published_parsed", "updated_parsed"):
+        parsed = getattr(entry, attr, None)
+        if parsed:
+            try:
+                return datetime.fromtimestamp(calendar.timegm(parsed), tz=timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                pass
+
+    for attr in ("published", "updated"):
+        raw = getattr(entry, attr, None)
+        if raw:
+            try:
+                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc)
+            except (TypeError, ValueError):
+                pass
     return None
 
 
@@ -107,12 +153,40 @@ def _utc_aware(dt):
 
 
 def _dedupe_key(item: dict) -> str:
-    raw = "|".join([
-        str(item.get("link") or "").strip(),
-        str(item.get("title") or "").strip().lower(),
-        str(_utc_naive(item.get("published")) or ""),
-    ])
+    # Headline text is the cross-provider identity. Provider-specific links
+    # often differ for the same story, so using the link first would keep
+    # duplicate Yahoo/Google News copies in the archive.
+    title = " ".join(str(item.get("title") or "").lower().split())
+    link = str(item.get("link") or "").strip()
+    raw = title or link
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _merge_news_items(items: list) -> list:
+    """De-duplicate a multi-provider list while preserving the newest item."""
+    by_key = {}
+    for item in items:
+        if not item or not item.get("title"):
+            continue
+        key = _dedupe_key(item)
+        existing = by_key.get(key)
+        if existing is None:
+            by_key[key] = dict(item)
+            continue
+
+        old_time = _utc_aware(existing.get("published"))
+        new_time = _utc_aware(item.get("published"))
+        if old_time is None or (new_time is not None and new_time > old_time):
+            merged = dict(existing)
+            merged.update(item)
+            by_key[key] = merged
+
+    merged = list(by_key.values())
+    merged.sort(
+        key=lambda x: _utc_naive(x.get("published")) or datetime.min,
+        reverse=True,
+    )
+    return merged
 
 
 def recency_weight(published, now=None, half_life_days: float = NEWS_HALF_LIFE_DAYS) -> float:
@@ -154,21 +228,19 @@ def relative_age_label(published, lang: str = "en", now=None) -> str:
     return f"{minutes} 分鐘前" if lang == "zh-TW" else f"{minutes}m ago"
 
 
-@st.cache_data(ttl=NEWS_CACHE_TTL_SECONDS, show_spinner=False)
-def _fetch_live_market_news(limit_per_source: int = 10) -> dict:
-    """Fetch Yahoo news once per cache window and preserve source status."""
-    seen_titles = set()
+def _fetch_yahoo_news(limit_per_source: int = 10) -> dict:
     items = []
     failures = {}
     successful_sources = 0
 
     for symbol in NEWS_SOURCE_TICKERS:
+        source_name = f"Yahoo:{symbol}"
         try:
             raw_news = yf.Ticker(symbol).news or []
             successful_sources += 1
         except Exception as exc:
-            failures[symbol] = f"{type(exc).__name__}: {exc}"
-            logging.warning("Yahoo news fetch failed for %s: %s", symbol, failures[symbol])
+            failures[source_name] = f"{type(exc).__name__}: {exc}"
+            logging.warning("Yahoo news fetch failed for %s: %s", symbol, failures[source_name])
             continue
 
         for entry in raw_news[:limit_per_source]:
@@ -176,9 +248,8 @@ def _fetch_live_market_news(limit_per_source: int = 10) -> dict:
                 continue
             content = entry.get("content") if isinstance(entry.get("content"), dict) else {}
             title = (content.get("title") or entry.get("title") or "").strip()
-            if not title or title in seen_titles:
+            if not title:
                 continue
-            seen_titles.add(title)
 
             canonical = content.get("canonicalUrl")
             link = canonical.get("url", "") if isinstance(canonical, dict) else ""
@@ -196,17 +267,106 @@ def _fetch_live_market_news(limit_per_source: int = 10) -> dict:
                 "link": link,
                 "published": _parse_publish_time(entry, content),
                 "impact": classify_headline_sentiment(title),
-                "source_symbol": symbol,
+                "source_symbol": source_name,
+                "source_kind": "Yahoo Finance",
             })
 
-    items.sort(
-        key=lambda x: _utc_naive(x.get("published")) or datetime.min,
-        reverse=True,
-    )
     return {
-        "items": items,
+        "items": _merge_news_items(items),
         "successful_sources": successful_sources,
         "failed_sources": failures,
+    }
+
+
+def _fetch_rss_news(limit_per_source: int = 20) -> dict:
+    items = []
+    failures = {}
+    successful_sources = 0
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (compatible; AI-ETF-Portfolio-Optimizer/1.0; "
+            "+https://github.com/Z109534233/AI-ETF-Portfolio-Optimizer)"
+        )
+    }
+
+    for source_name, url in RSS_SOURCE_FEEDS:
+        try:
+            response = requests.get(url, headers=headers, timeout=8)
+            response.raise_for_status()
+            parsed = feedparser.parse(response.content)
+            entries = list(getattr(parsed, "entries", []) or [])
+            if getattr(parsed, "bozo", False) and not entries:
+                raise ValueError(f"RSS parse error: {getattr(parsed, 'bozo_exception', 'unknown')}")
+            successful_sources += 1
+        except Exception as exc:
+            failures[f"RSS:{source_name}"] = f"{type(exc).__name__}: {exc}"
+            logging.warning("RSS news fetch failed for %s: %s", source_name, failures[f"RSS:{source_name}"])
+            continue
+
+        feed_title = str(getattr(getattr(parsed, "feed", {}), "title", "") or source_name)
+        for entry in entries[:limit_per_source]:
+            title = str(getattr(entry, "title", "") or "").strip()
+            if not title:
+                continue
+            link = str(getattr(entry, "link", "") or "").strip()
+
+            publisher = ""
+            source = getattr(entry, "source", None)
+            if source:
+                try:
+                    publisher = str(source.get("title") or "").strip()
+                except Exception:
+                    publisher = str(getattr(source, "title", "") or "").strip()
+            if not publisher:
+                publisher = feed_title
+
+            # Google News commonly appends " - Publisher" to the title while
+            # also exposing publisher metadata. Remove that duplicate suffix
+            # before cross-provider de-duplication and display.
+            suffix = f" - {publisher}"
+            if publisher and title.lower().endswith(suffix.lower()):
+                title = title[:-len(suffix)].strip()
+
+            items.append({
+                "title": title,
+                "publisher": publisher,
+                "link": link,
+                "published": _parse_rss_publish_time(entry),
+                "impact": classify_headline_sentiment(title),
+                "source_symbol": f"RSS:{source_name}",
+                "source_kind": "RSS",
+            })
+
+    return {
+        "items": _merge_news_items(items),
+        "successful_sources": successful_sources,
+        "failed_sources": failures,
+    }
+
+
+@st.cache_data(ttl=NEWS_CACHE_TTL_SECONDS, show_spinner=False)
+def _fetch_live_market_news(limit_per_source: int = 20) -> dict:
+    """Fetch and merge Yahoo + RSS providers.
+
+    The whole probe is cached for only two minutes. Therefore a provider that
+    returns an empty list is retried quickly instead of freezing a blank result
+    for a quarter hour.
+    """
+    yahoo = _fetch_yahoo_news(limit_per_source=min(limit_per_source, 10))
+    rss = _fetch_rss_news(limit_per_source=limit_per_source)
+
+    items = _merge_news_items(yahoo["items"] + rss["items"])
+    failures = {**yahoo["failed_sources"], **rss["failed_sources"]}
+    source_item_counts = {
+        "Yahoo Finance": len(yahoo["items"]),
+        "RSS": len(rss["items"]),
+    }
+    return {
+        "items": items,
+        "successful_sources": yahoo["successful_sources"] + rss["successful_sources"],
+        "failed_sources": failures,
+        "source_item_counts": source_item_counts,
     }
 
 
@@ -284,11 +444,12 @@ def _load_archived_news(lookback_days: int = NEWS_LOOKBACK_DAYS, limit: int = 50
         return [
             {
                 "title": row.title,
-                "publisher": row.publisher or "Yahoo Finance",
+                "publisher": row.publisher or "Unknown source",
                 "link": row.link or "",
                 "published": _utc_aware(row.published_at),
                 "impact": row.impact or classify_headline_sentiment(row.title),
                 "source_symbol": row.source_symbol,
+                "source_kind": "Archive",
                 "archived": True,
             }
             for row in rows
@@ -302,21 +463,22 @@ def _load_archived_news(lookback_days: int = NEWS_LOOKBACK_DAYS, limit: int = 50
 
 def fetch_market_news_with_status(limit: int = 25,
                                   lookback_days: int = NEWS_LOOKBACK_DAYS) -> dict:
-    """Return a recent-news feed plus explicit live-source/archive status."""
+    """Return a seven-day, multi-source feed plus explicit provider status."""
     live = _fetch_live_market_news()
     live_items = live["items"]
     if live_items:
         _archive_news_items(live_items)
 
-    archived = _load_archived_news(lookback_days=lookback_days, limit=max(limit * 3, 50))
-    if archived:
-        items = archived[:limit]
-    else:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=int(lookback_days))
-        items = [
-            item for item in live_items
-            if item.get("published") is None or _utc_aware(item["published"]) >= cutoff
-        ][:limit]
+    archived = _load_archived_news(
+        lookback_days=lookback_days,
+        limit=max(limit * 3, 50),
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=int(lookback_days))
+    eligible_live = [
+        item for item in live_items
+        if item.get("published") is None or _utc_aware(item["published"]) >= cutoff
+    ]
+    items = _merge_news_items(eligible_live + archived)[:limit]
 
     items = [enrich_recency(item) for item in items]
     items.sort(
@@ -326,7 +488,7 @@ def fetch_market_news_with_status(limit: int = 25,
 
     failures = live["failed_sources"]
     successful_sources = int(live["successful_sources"])
-    if live_items:
+    if eligible_live:
         status = "partial_live" if failures else "live"
     elif failures and items:
         status = "archive_fallback"
@@ -340,12 +502,14 @@ def fetch_market_news_with_status(limit: int = 25,
     return {
         "items": items[:limit],
         "status": status,
-        "live_item_count": len(live_items),
+        "live_item_count": len(eligible_live),
         "archive_item_count": len(archived),
         "successful_sources": successful_sources,
         "failed_sources": failures,
+        "source_item_counts": live.get("source_item_counts", {}),
         "lookback_days": int(lookback_days),
         "half_life_days": NEWS_HALF_LIFE_DAYS,
+        "cache_ttl_seconds": NEWS_CACHE_TTL_SECONDS,
     }
 
 
