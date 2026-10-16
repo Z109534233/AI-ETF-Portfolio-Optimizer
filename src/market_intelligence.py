@@ -1,7 +1,7 @@
 """
 Market Intelligence Module
-Aggregates market indices, headline sentiment, an AI/rule-based market
-summary, a placeholder economic calendar, and portfolio-impact analysis for
+Aggregates market indices, multi-source recent-news sentiment, rule-based/AI
+summaries, a verified scheduled-event calendar, and portfolio-impact analysis for
 pages/8_Market_Intelligence.py. Every public function is defensive: on any
 data or API failure it returns a safe empty/placeholder value instead of
 raising, so the page can never crash.
@@ -967,6 +967,7 @@ def get_economic_calendar(horizon_days: int = 14, today=None) -> list:
                 "category": category,
                 "source": "Federal Reserve" if "FOMC" in name else "U.S. Bureau of Labor Statistics",
                 "source_url": source_url,
+                "tentative": bool("FOMC" in name),
                 "affected_etfs": list(affected_etfs),
                 "anticipation_note": (
                     "Scheduled events may be partly priced in before release; "
@@ -975,6 +976,11 @@ def get_economic_calendar(horizon_days: int = 14, today=None) -> list:
                 ),
             })
     return sorted(results, key=lambda item: item["date"])
+
+
+def get_calendar_coverage_end() -> date:
+    """Last date represented by the embedded verified schedule."""
+    return max(date.fromisoformat(row[0]) for row in _VERIFIED_SCHEDULED_EVENTS)
 
 
 _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS = (
@@ -988,7 +994,7 @@ _MARKET_SUMMARY_SYSTEM_INSTRUCTIONS = (
 def generate_market_summary(news_items: list, sentiment: dict, affected_etfs: list,
                              session_state=None, market_indices: dict = None) -> dict:
     """
-    Generate a ~100-200 word "Today's Market Summary" from current headlines
+    Generate a ~100-200 word recent-market summary from the recent headline window
     and the app's OWN deterministic classifications (sentiment split,
     affected ETFs -- both computed elsewhere and passed in, never
     recomputed or invented by the model). Uses the central OpenAI Responses
@@ -1037,7 +1043,7 @@ def _market_summary_prompt(news_items: list, sentiment: dict, affected_etfs: lis
         "quoted source title distinct from your own Chinese prose."
         if get_language() == "zh-TW" else "Respond entirely in English."
     )
-    return f"""Based on the deterministic market snapshot and today's headlines below, write a "Recent Market Summary" of about 100-200 words. MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT; headline sentiment is supplementary context and must never override or contradict the index direction. VIX wording must follow its displayed level and daily change. Do not invent upcoming Fed decisions, releases, or calendar events. Do not predict future prices or give personalised investment advice. {language_instruction}
+    return f"""Based on the deterministic market snapshot and the recent headlines below, write a "Recent Market Summary" of about 100-200 words. MARKET DIRECTION MUST FOLLOW THE ACTUAL INDEX SNAPSHOT; headline sentiment is supplementary context and must never override or contradict the index direction. VIX wording must follow its displayed level and daily change. Do not invent upcoming Fed decisions, releases, or calendar events. Do not predict future prices or give personalised investment advice. {language_instruction}
 
 Current index snapshot (authoritative for current market direction):
 Direction: {snapshot['direction']}
@@ -1296,7 +1302,7 @@ def generate_today_ai_summary(news_items: list, market_indices: dict = None) -> 
         else:
             why_text = "近期新聞沒有指向特別集中的產業反應，影響較為全面、分散。"
         insight_text = _INSIGHT_PHRASE_ZH.get(mood, _INSIGHT_PHRASE_ZH["Neutral"])
-        headings = ("今日市場概況", "今天市場為何波動", "投資洞察")
+        headings = ("近期市場概況", "近期市場為何波動", "投資洞察")
         disclaimer = "此摘要為規則式生成，僅供教育用途，不構成投資建議或價格預測。"
     else:
         _dir = {"Rising": "broadly higher", "Falling": "broadly lower", "Mixed": "mixed", "Unavailable": "not classifiable from available index data"}[snapshot["direction"]]
@@ -1643,7 +1649,7 @@ def generate_etf_card_data(news_items: list, tickers: list = None) -> list:
             confidence = int(max(30, min(95, round(50 + abs(avg) * 50))))
         else:
             mood = "Neutral"
-            confidence = 30
+            confidence = None
 
         stars = impact_rows.get(ticker, {}).get("stars", 1)
         results.append({
@@ -1719,7 +1725,7 @@ _ACTION_REASON_EN = {
     "AI": "accelerating AI-driven demand",
     "Banking": "renewed scrutiny on the banking sector",
     "Cryptocurrency": "volatile crypto market conditions",
-    "Other": "today's market developments",
+    "Other": "recent market developments",
 }
 _ACTION_REASON_ZH = {
     "Interest Rate": "利率預期出現變化",
@@ -1733,7 +1739,7 @@ _ACTION_REASON_ZH = {
     "AI": "AI 需求加速成長",
     "Banking": "銀行業受到更多關注",
     "Cryptocurrency": "加密貨幣市場波動",
-    "Other": "今日市場動態",
+    "Other": "近期市場動態",
 }
 
 # category -> a verified-information follow-up phrase per language.
