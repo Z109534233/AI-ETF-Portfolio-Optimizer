@@ -35,7 +35,8 @@ import src.market_intelligence as mi_mod
 from src.market_intelligence import (
     generate_market_summary, _generate_rule_based_summary, _market_summary_prompt,
     stars_to_impact_label, fetch_fear_greed_index, calculate_market_impact,
-    get_economic_calendar, get_calendar_coverage_end,
+    calibrate_market_impact_with_snapshot, classify_event, classify_event_types,
+    fetch_market_indices, get_economic_calendar, get_calendar_coverage_end,
     generate_today_ai_summary, get_todays_major_events,
     generate_todays_market_action, generate_etf_card_data, analyze_portfolio_impact,
 )
@@ -142,6 +143,58 @@ def test_market_summary_prompt_english_has_no_quoting_instruction_noise(monkeypa
 
 
 # ── Issue #43 item F: Market Impact Score has one scale, not two ──────────
+
+def test_ambiguous_federal_reserve_personnel_headline_is_not_interest_rate():
+    headline = "Lisa Cook's lawyers criticize White House hearing involving a Federal Reserve governor"
+    assert classify_event(headline) == "Other"
+    assert "interest_rate" not in classify_event_types(headline)
+
+
+def test_market_impact_is_capped_when_observed_market_confirmation_is_low():
+    raw = {
+        "score": 93, "stars": 5, "star_label": "★★★★★",
+        "category": "Interest Rate", "breakdown": {},
+    }
+    quiet = {
+        "sp500": {"available": True, "change_pct": 0.25},
+        "nasdaq": {"available": True, "change_pct": -0.30},
+        "dow": {"available": True, "change_pct": 0.15},
+        "russell": {"available": True, "change_pct": -0.20},
+        "vix": {"available": True, "price": 15.8, "change_pct": -3.0},
+    }
+    calibrated = calibrate_market_impact_with_snapshot(raw, quiet)
+    assert calibrated["raw_score"] == 93
+    assert calibrated["score"] == 69
+    assert calibrated["stars"] == 3
+    assert calibrated["market_confirmation"] == "Low"
+
+
+def test_market_index_labels_are_localized_after_cached_values(monkeypatch):
+    raw = {
+        "dow": {"label_key": "mi_dow", "available": True, "price": 1.0, "change_pct": 0.0},
+        "russell": {"label_key": "mi_russell", "available": True, "price": 1.0, "change_pct": 0.0},
+        "vix": {"label_key": "mi_vix", "available": True, "price": 1.0, "change_pct": 0.0},
+    }
+    monkeypatch.setattr(mi_mod, "_fetch_market_indices_raw", lambda: raw)
+
+    en = {
+        "mi_dow": "Dow Jones", "mi_russell": "Russell 2000", "mi_vix": "VIX",
+    }
+    monkeypatch.setattr(mi_mod, "t", lambda key: en[key])
+    first = fetch_market_indices()
+    assert [first[k]["label"] for k in ("dow", "russell", "vix")] == [
+        "Dow Jones", "Russell 2000", "VIX",
+    ]
+
+    zh = {
+        "mi_dow": "道瓊工業指數", "mi_russell": "羅素 2000", "mi_vix": "VIX 恐慌指數",
+    }
+    monkeypatch.setattr(mi_mod, "t", lambda key: zh[key])
+    second = fetch_market_indices()
+    assert [second[k]["label"] for k in ("dow", "russell", "vix")] == [
+        "道瓊工業指數", "羅素 2000", "VIX 恐慌指數",
+    ]
+
 
 def test_stars_to_impact_label_is_qualitative_text_not_stars():
     for stars in range(0, 6):
