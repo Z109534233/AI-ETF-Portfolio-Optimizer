@@ -19,6 +19,7 @@ import pandas as pd
 import logging
 import sys
 import os
+import logging
 from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -33,6 +34,7 @@ from src.market_intelligence import (
     calculate_market_sentiment, calculate_ai_market_sentiment, get_economic_calendar,
     generate_market_summary, analyze_portfolio_impact,
     calculate_affected_markets, generate_today_ai_summary, calculate_market_impact,
+    calibrate_market_impact_with_snapshot,
     get_todays_major_events, generate_etf_card_data, get_news_card_metadata,
     generate_todays_market_action, stars_to_impact_label,
     calibrate_market_impact_with_snapshot,
@@ -99,7 +101,9 @@ except Exception:
     ai_sentiment = calculate_ai_market_sentiment([])
     affected_markets = []
     today_ai_summary = generate_today_ai_summary([], {})
-    market_impact = calculate_market_impact([])
+    market_impact = calibrate_market_impact_with_snapshot(
+        calculate_market_impact([]), {}
+    )
     major_events = []
     etf_cards = generate_etf_card_data([])
     news_card_meta = get_news_card_metadata([])
@@ -148,7 +152,7 @@ elif _news_status == "no_recent_news":
 _source_counts = news_feed.get("source_item_counts") or {}
 if not database_is_persistent_configured():
     logging.info(
-        "DATABASE_URL is not configured; Market Intelligence archive is using local SQLite."
+        "Market-news archive is using local SQLite; set DATABASE_URL for durable cloud persistence."
     )
 
 tab_overview, tab_news, tab_impact, tab_sentiment, tab_methodology = st.tabs([
@@ -565,6 +569,18 @@ with tab_sentiment:
 # METHODOLOGY
 # ══════════════════════════════════════════════════════════════════════════
 with tab_methodology:
+    if _source_counts:
+        st.caption(t(
+            "mi_news_source_mix",
+            yahoo=_source_counts.get("Yahoo Finance", 0),
+            rss=_source_counts.get("RSS", 0),
+            retry=news_feed.get("cache_ttl_seconds", 120),
+        ))
+    if database_is_persistent_configured():
+        st.caption(t("mi_news_archive_persistent", backend=database_backend()))
+    else:
+        st.caption(t("mi_news_archive_methodology_note"))
+
     # Compact disclosure of the ACTUAL pipeline and its validation status --
     # see src/methodology.py's MARKET_INTELLIGENCE_METHODOLOGY, the single
     # source of truth this panel and tests/test_methodology_m4.py both read
